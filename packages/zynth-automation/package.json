@@ -1,6 +1,6 @@
 {
   "name": "@zynth/automation",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.0",
   "description": "Native screen automation primitives for Zynth (inspection + execution)",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -29,7 +29,7 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1",
+    "@zynth/core": ">=0.0.1-alpha.0",
     "solid-js": ">=1.8.0"
   },
   "devDependencies": {

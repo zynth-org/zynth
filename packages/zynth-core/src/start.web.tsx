@@ -98,7 +98,7 @@ export function start(App: () => any): () => void {
         id: lastRootId,
         type: "root",
       } as any);
-      console.log("[ZynthRuntime] rerender completed");
+      // console.log("[ZynthRuntime] rerender completed");
     } catch (error) {
       const msg = String((error as any)?.message || error);
       const stack = String((error as any)?.stack || "");

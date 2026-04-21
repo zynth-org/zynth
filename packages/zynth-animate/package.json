@@ -1,6 +1,6 @@
 {
   "name": "@zynth/animate",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.0",
   "description": "Animation primitives for Zynth",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -17,7 +17,8 @@
     "dist",
     "ios",
     "android",
-    "ZynthAnimate.podspec"
+    "ZynthAnimate.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
@@ -34,8 +35,8 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1",
-    "@zynth/components": ">=0.0.1",
+    "@zynth/core": ">=0.0.1-alpha.0",
+    "@zynth/components": ">=0.0.1-alpha.0",
     "solid-js": ">=1.8.0"
   },
   "devDependencies": {
@@ -65,7 +66,9 @@
         "className": "ZynthAnimate",
         "method": "initialize",
         "package": "dev.zynth.animate",
-        "args": ["runtime"]
+        "args": [
+          "runtime"
+        ]
       }
     }
   }

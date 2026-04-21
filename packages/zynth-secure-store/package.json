@@ -17,7 +17,8 @@
     "dist",
     "ios",
     "android",
-    "ZynthSecureStore.podspec"
+    "ZynthSecureStore.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",

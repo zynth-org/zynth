@@ -53,6 +53,9 @@ export const Platform = Object.freeze({
   get OS(): OS {
     return resolveOS();
   },
+  get isWeb(): boolean {
+    return resolveOS() === OS.WEB;
+  },
   select<T>(spec: PlatformSelectSpec<T>): T {
     return getSpecValue(spec, resolveOS());
   },

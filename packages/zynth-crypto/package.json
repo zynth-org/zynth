@@ -1,6 +1,6 @@
 {
   "name": "@zynth/crypto",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.0",
   "description": "Native WebCrypto-compatible primitives for Zynth",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -27,7 +27,7 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@zynth/core": "0.0.1"
+    "@zynth/core": "0.0.1-alpha.0"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

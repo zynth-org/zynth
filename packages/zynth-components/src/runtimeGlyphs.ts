@@ -1,4 +1,5 @@
 import { Glyphs } from "@zynth/apis";
+import { Platform } from "@zynth/core";
 import {
   runtimeGlyphMap,
   runtimeFontFamily,
@@ -6,7 +7,7 @@ import {
 } from "./runtimeGlyphMap";
 
 let webSource: string | undefined;
-if (typeof document !== "undefined") {
+if (Platform.isWeb) {
   try {
     webSource = new URL(
       `../assets/fonts/${runtimeFontFile}`,

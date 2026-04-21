@@ -4,7 +4,8 @@
   "description": "Zynth Framework Agent Skills",
   "private": true,
   "files": [
-    "building-zynth-ui"
+    "building-zynth-ui",
+    "src"
   ],
   "keywords": [
     "zynth",

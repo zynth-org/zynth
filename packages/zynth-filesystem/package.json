@@ -17,7 +17,8 @@
     "dist",
     "ios",
     "android",
-    "ZynthFileSystem.podspec"
+    "ZynthFileSystem.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",

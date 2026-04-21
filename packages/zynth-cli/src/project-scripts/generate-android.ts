@@ -466,6 +466,15 @@ function toBuildConfigStringLiteral(value: string): string {
   return JSON.stringify(JSON.stringify(value));
 }
 
+function normalizeAndroidPackage(id: string): string {
+  return id
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, "_") // Replace hyphens and other special chars with underscores
+    .split(".")
+    .map((segment) => (/^\d/.test(segment) ? `_${segment}` : segment)) // Prefix segments starting with digits
+    .join(".");
+}
+
 function collectNativeAndroidModules(appDir: string): any[] {
   const modulesByName = new Map();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
@@ -778,9 +787,9 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const androidRuntimePackage = "@zynth/core";
   const androidRuntimeSubdir = "android/ZynthKit";
   const baseConfig = getAppConfig(appDir);
-  const androidPackage = (
-    baseConfig.bundleId || `com.zynth.${baseConfig.appDir.replace(/-/g, "")}`
-  ).toLowerCase();
+  const androidPackage = normalizeAndroidPackage(
+    baseConfig.bundleId || `com.zynth.${baseConfig.appDir}`
+  );
   const config = {
     ...baseConfig,
     bundleId: androidPackage,

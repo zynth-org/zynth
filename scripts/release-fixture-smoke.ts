@@ -33,7 +33,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
 const manifestPath = join(repoRoot, "docs", "package-release-manifest.json");
 const npmCacheDir = join(repoRoot, ".tmp", "npm-cache");
-const requiredFixturePackages = ["@zynth/core", "@zynth/apis", "@zynth/components", "zynth"];
+const requiredFixturePackages = ["@zynth/core", "@zynth/apis", "@zynth/components", "@zynth/rsbuild-plugin", "zynth"];
 
 function log(message: string) {
   process.stdout.write(`${message}\n`);
@@ -185,7 +185,7 @@ async function main() {
 
     runCommand(
       "npm",
-      ["install", "--ignore-scripts", "--no-package-lock", "--save-dev", tarballsByPackage.get("zynth")!],
+      ["install", "--ignore-scripts", "--no-package-lock", "--save-dev", "--legacy-peer-deps", tarballsByPackage.get("zynth")!],
       harnessDir,
     );
 
@@ -212,16 +212,25 @@ async function main() {
     const hermesCompilerVersion = rootPackageJson.devDependencies?.["hermes-compiler"] ?? "250829098.0.6";
     const appPackageJsonPath = join(appDir, "package.json");
     const appPackageJson = await readJsonFile<PackageJson>(appPackageJsonPath);
-    appPackageJson.dependencies = {
-      "@zynth/core": `file:${tarballsByPackage.get("@zynth/core")!}`,
-      "@zynth/apis": `file:${tarballsByPackage.get("@zynth/apis")!}`,
-      "@zynth/components": `file:${tarballsByPackage.get("@zynth/components")!}`,
-      "solid-js": "^1.9.9",
+    const patchDependencies = (deps: Record<string, string> | undefined) => {
+      if (!deps) return;
+      for (const name of Object.keys(deps)) {
+        if (name === "zynth" || name.startsWith("@zynth/")) {
+          const tarball = tarballsByPackage.get(name);
+          if (tarball) {
+            deps[name] = `file:${tarball}`;
+          }
+        }
+      }
     };
+
+    patchDependencies(appPackageJson.dependencies);
+    patchDependencies(appPackageJson.devDependencies);
+
     if (platforms.includes("ios")) {
+      appPackageJson.dependencies = appPackageJson.dependencies || {};
       appPackageJson.dependencies["hermes-compiler"] = hermesCompilerVersion;
     }
-    appPackageJson.devDependencies = {};
     await writeFile(appPackageJsonPath, JSON.stringify(appPackageJson, null, 2));
 
     runCommand(
@@ -231,6 +240,7 @@ async function main() {
         "--ignore-scripts",
         "--no-package-lock",
         "--omit=dev",
+        "--legacy-peer-deps",
       ],
       appDir,
     );

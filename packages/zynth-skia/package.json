@@ -1,6 +1,6 @@
 {
   "name": "@zynth/skia",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.0",
   "description": "Declarative Skia renderer for Zynth",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -21,7 +21,8 @@
     "scripts",
     "binaries.manifest.json",
     "ZynthSkia.podspec",
-    "README.md"
+    "README.md",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
@@ -41,8 +42,8 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1",
-    "@zynth/components": ">=0.0.1",
+    "@zynth/core": ">=0.0.1-alpha.0",
+    "@zynth/components": ">=0.0.1-alpha.0",
     "solid-js": ">=1.8.0"
   },
   "devDependencies": {
@@ -72,7 +73,9 @@
         "className": "Skia",
         "method": "initialize",
         "package": "dev.zynth.skia",
-        "args": ["runtime"]
+        "args": [
+          "runtime"
+        ]
       }
     }
   }

@@ -1,0 +1,7 @@
+# Android local build outputs
+android/**/build/
+android/**/.cxx/
+android/**/.gradle/
+
+# Native binaries (Fetched on user machine via postinstall)
+native/

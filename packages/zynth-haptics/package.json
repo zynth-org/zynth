@@ -1,6 +1,6 @@
 {
   "name": "@zynth/haptics",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.0",
   "description": "Haptics feedback for Zynth framework",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -17,7 +17,8 @@
     "dist",
     "ios",
     "android",
-    "ZynthHaptics.podspec"
+    "ZynthHaptics.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
@@ -35,7 +36,7 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1",
+    "@zynth/core": ">=0.0.1-alpha.0",
     "solid-js": ">=1.9.9"
   },
   "devDependencies": {

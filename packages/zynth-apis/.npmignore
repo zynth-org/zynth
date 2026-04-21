@@ -1,0 +1,4 @@
+# Android local build outputs
+android/**/build/
+android/**/.cxx/
+android/**/.gradle/

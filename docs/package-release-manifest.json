@@ -164,7 +164,7 @@
       "releaseTier": "later-alpha",
       "versionTrack": "later-alpha",
       "distribution": "js-built",
-      "readiness": "staged",
+      "readiness": "ready-for-alpha-preflight",
       "notes": "Build integration package staged until CLI and template flow are validated."
     },
     {

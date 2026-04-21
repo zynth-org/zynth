@@ -1,6 +1,7 @@
 # Node modules
 node_modules
 **/node_modules
+releases/
 
 # JS build outputs
 /dist

@@ -18,7 +18,8 @@
     "ios",
     "android",
     "native",
-    "ZynthWebServer.podspec"
+    "ZynthWebServer.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",

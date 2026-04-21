@@ -32,23 +32,16 @@ const FONT_ASSET_LOADER_PATH = path.join(
 );
 const require = createRequire(import.meta.url);
 
-let solidJsxRuntime: string | null = null;
-let solidJsxDevRuntime: string | null = null;
-let solidHyperscriptRuntime: string | null = null;
-try {
-  solidJsxRuntime =
-    safeResolve(require, "solid-js/h/jsx-runtime/dist/jsx.js") ??
-    safeResolve(require, "solid-js/h/jsx-runtime");
-  solidJsxDevRuntime =
-    safeResolve(require, "solid-js/h/jsx-dev-runtime/dist/jsx.js") ??
-    safeResolve(require, "solid-js/h/jsx-dev-runtime");
-  solidHyperscriptRuntime =
-    safeResolve(require, "solid-js/h/dist/h.cjs") ??
-    safeResolve(require, "solid-js/h");
-} catch {
-  solidJsxRuntime = null;
-  solidJsxDevRuntime = null;
-  solidHyperscriptRuntime = null;
+interface SolidPaths {
+  jsxRuntime: string | null;
+  jsxDevRuntime: string | null;
+  hyperscript: string | null;
+  core: string | null;
+  web: string | null;
+  store: string | null;
+  universal: string | null;
+  html: string | null;
+  packageRoot: string | null;
 }
 
 const DEFAULT_ARTIFACT_RELATIVE_PATH = ".zynth/artifacts.json";
@@ -85,7 +78,12 @@ export function createZynthRsbuildPlugin(
         repoRoot,
         isWeb,
       );
-      const solidAliases = resolveSolidAliases(repoRoot);
+      const solidPaths = resolveSolidPaths(
+        [api.context.rootPath, repoRoot],
+        isDev,
+      );
+      const solidAliases = createSolidAliases(solidPaths);
+
       // Prefer app-local node_modules package resolution for production parity.
       // Workspace aliases are fallback-only when app dependencies are absent.
       const mergedAliases = {
@@ -162,9 +160,15 @@ export function createZynthRsbuildPlugin(
           ...solidAliases,
           ...(extraAliases ?? {}),
         };
-        ensureAliases(config, mergedExtraAliases, mergedAliases);
+        ensureAliases(
+          config,
+          mergedExtraAliases,
+          mergedAliases,
+          solidPaths,
+        );
         configureImageAssets(config);
         configureFontAssets(config);
+        configureModuleResolution(config);
         if (isDev) {
           ensureResolveCondition(config, "development");
         }
@@ -223,7 +227,7 @@ export function createZynthRsbuildPlugin(
           const devServerPort = config.server?.port || (isWeb ? 7076 : 7070);
 
           let hostForUrl = devServerHost;
-          if (hostForUrl === "0.0.0.0") {
+          if (hostForUrl === "0.0.0.0" || hostForUrl === "127.0.0.1" || hostForUrl === "localhost") {
             hostForUrl = getLocalIpAddress() || "localhost";
           }
 
@@ -352,6 +356,17 @@ function configureFontAssets(config: rspack.Configuration) {
   });
 }
 
+function configureModuleResolution(config: rspack.Configuration) {
+  config.module ??= {};
+  config.module.rules ??= [];
+  config.module.rules.push({
+    test: /\.m?[tj]sx?$/,
+    resolve: {
+      fullySpecified: false,
+    },
+  });
+}
+
 function createStaticAssetMiddleware() {
   return async (req: any, res: any, next: any) => {
     const url = req.url || "";
@@ -400,6 +415,7 @@ function ensureAliases(
   config: rspack.Configuration,
   extraAliases?: Record<string, string | false | (string | false)[]>,
   discoveredAliases?: Record<string, string>,
+  solidPaths?: SolidPaths,
 ) {
   config.resolve ??= {};
   const aliasConfig = config.resolve.alias;
@@ -428,12 +444,25 @@ function ensureAliases(
     "@rsbuild/rsbuild/dist/client/overlay.js": OVERLAY_SHIM_PATH,
   };
 
-  if (solidJsxRuntime) staticAliases["solid-js/jsx-runtime"] = solidJsxRuntime;
-  const resolvedDevRuntime = solidJsxDevRuntime ?? solidJsxRuntime;
-  if (resolvedDevRuntime)
-    staticAliases["solid-js/jsx-dev-runtime"] = resolvedDevRuntime;
-  if (solidHyperscriptRuntime)
-    staticAliases["solid-js/h"] = solidHyperscriptRuntime;
+  if (solidPaths) {
+    if (solidPaths.jsxRuntime)
+      staticAliases["solid-js/jsx-runtime"] = solidPaths.jsxRuntime;
+    const resolvedDevRuntime =
+      solidPaths.jsxDevRuntime ?? solidPaths.jsxRuntime;
+    if (resolvedDevRuntime)
+      staticAliases["solid-js/jsx-dev-runtime"] = resolvedDevRuntime;
+    if (solidPaths.hyperscript)
+      staticAliases["solid-js/h"] = solidPaths.hyperscript;
+    if (solidPaths.web)
+      staticAliases["solid-js/web"] = solidPaths.web;
+    if (solidPaths.store)
+      staticAliases["solid-js/store"] = solidPaths.store;
+    if (solidPaths.universal)
+      staticAliases["solid-js/universal"] = solidPaths.universal;
+    if (solidPaths.packageRoot) {
+      staticAliases["solid-js$"] = solidPaths.core ?? solidPaths.packageRoot;
+    }
+  }
 
   for (const [key, value] of Object.entries(staticAliases)) {
     if (alias[key] === undefined) alias[key] = value;
@@ -610,41 +639,116 @@ function resolveImportExport(
   return null;
 }
 
-function resolveSolidAliases(repoRoot: string): Record<string, string> {
+function resolveSolidPaths(roots: string[], isDev?: boolean): SolidPaths {
+  for (const root of roots) {
+    try {
+      const rootRequire = createRequire(path.join(root, "package.json"));
+      const core = isDev
+        ? safeResolve(rootRequire, "solid-js/dist/dev.js") ??
+          safeResolve(rootRequire, "solid-js")
+        : safeResolve(rootRequire, "solid-js/dist/solid.js") ??
+          safeResolve(rootRequire, "solid-js");
+
+      if (!core) continue;
+
+      const packageJson = safeResolve(rootRequire, "solid-js/package.json");
+      const packageRoot = packageJson ? path.dirname(packageJson) : null;
+
+      const jsxRuntime =
+        safeResolve(rootRequire, "solid-js/h/jsx-runtime/dist/jsx.js") ??
+        safeResolve(rootRequire, "solid-js/h/jsx-runtime");
+      const jsxDevRuntime =
+        safeResolve(rootRequire, "solid-js/h/jsx-dev-runtime/dist/jsx.js") ??
+        safeResolve(rootRequire, "solid-js/h/jsx-dev-runtime");
+      const hyperscript =
+        safeResolve(rootRequire, "solid-js/h/dist/h.cjs") ??
+        safeResolve(rootRequire, "solid-js/h");
+
+      const web = isDev
+        ? safeResolve(rootRequire, "solid-js/web/dist/dev.js") ??
+          safeResolve(rootRequire, "solid-js/web")
+        : safeResolve(rootRequire, "solid-js/web/dist/web.js") ??
+          safeResolve(rootRequire, "solid-js/web");
+
+      const store = isDev
+        ? safeResolve(rootRequire, "solid-js/store/dist/dev.js") ??
+          safeResolve(rootRequire, "solid-js/store")
+        : safeResolve(rootRequire, "solid-js/store/dist/store.js") ??
+          safeResolve(rootRequire, "solid-js/store");
+
+      const universal = isDev
+        ? safeResolve(rootRequire, "solid-js/universal/dist/dev.js") ??
+          safeResolve(rootRequire, "solid-js/universal")
+        : safeResolve(rootRequire, "solid-js/universal/dist/universal.js") ??
+          safeResolve(rootRequire, "solid-js/universal");
+
+      const html =
+        safeResolve(rootRequire, "solid-js/html/dist/html.js") ??
+        safeResolve(rootRequire, "solid-js/html");
+
+      return {
+        core,
+        packageRoot,
+        jsxRuntime,
+        jsxDevRuntime,
+        hyperscript,
+        web,
+        store,
+        universal,
+        html,
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return {
+    core: null,
+    packageRoot: null,
+    jsxRuntime: null,
+    jsxDevRuntime: null,
+    hyperscript: null,
+    web: null,
+    store: null,
+    universal: null,
+    html: null,
+  };
+}
+
+function createSolidAliases(paths: SolidPaths): Record<string, string> {
   const aliases: Record<string, string> = {};
-  const rootRequire = createRequire(path.join(repoRoot, "package.json"));
-  const solidHFromRoot = safeResolve(rootRequire, "solid-js/h/dist/h.cjs");
-  const solidHFallbackFromRoot = safeResolve(rootRequire, "solid-js/h");
-
-  const solidJsxRuntimeFromRoot = safeResolve(
-    rootRequire,
-    "solid-js/h/jsx-runtime/dist/jsx.js",
-  );
-  const solidJsxDevRuntimeFromRoot = safeResolve(
-    rootRequire,
-    "solid-js/h/jsx-dev-runtime/dist/jsx.js",
-  );
-  const solidJsxRuntimeFallbackFromRoot = safeResolve(
-    rootRequire,
-    "solid-js/h/jsx-runtime",
-  );
-  const solidJsxDevRuntimeFallbackFromRoot = safeResolve(
-    rootRequire,
-    "solid-js/h/jsx-dev-runtime",
-  );
-
-  if (solidJsxRuntimeFromRoot || solidJsxRuntimeFallbackFromRoot) {
-    aliases["solid-js/jsx-runtime"] =
-      solidJsxRuntimeFromRoot || solidJsxRuntimeFallbackFromRoot!;
+  if (paths.packageRoot) {
+    aliases["solid-js$"] = paths.core ?? paths.packageRoot;
+    // Do NOT alias the root prefix "solid-js" as it breaks condition resolution for sub-packages
   }
-  if (solidJsxDevRuntimeFromRoot || solidJsxDevRuntimeFallbackFromRoot) {
-    aliases["solid-js/jsx-dev-runtime"] =
-      solidJsxDevRuntimeFromRoot || solidJsxDevRuntimeFallbackFromRoot!;
+  if (paths.web) {
+    aliases["solid-js/web$"] = paths.web;
+    aliases["solid-js/web"] = path.dirname(paths.web);
   }
-  if (solidHFromRoot || solidHFallbackFromRoot) {
-    aliases["solid-js/h"] = solidHFromRoot || solidHFallbackFromRoot!;
+  if (paths.store) {
+    aliases["solid-js/store$"] = paths.store;
+    aliases["solid-js/store"] = path.dirname(paths.store);
   }
-
+  if (paths.universal) {
+    aliases["solid-js/universal$"] = paths.universal;
+    aliases["solid-js/universal"] = path.dirname(paths.universal);
+  }
+  if (paths.html) {
+    aliases["solid-js/html$"] = paths.html;
+    aliases["solid-js/html"] = path.dirname(paths.html);
+  }
+  if (paths.jsxRuntime) {
+    aliases["solid-js/jsx-runtime$"] = paths.jsxRuntime;
+    aliases["solid-js/jsx-runtime"] = path.dirname(paths.jsxRuntime);
+  }
+  if (paths.jsxDevRuntime) {
+    aliases["solid-js/jsx-dev-runtime$"] = paths.jsxDevRuntime;
+    aliases["solid-js/jsx-dev-runtime"] = path.dirname(paths.jsxDevRuntime);
+  }
+  if (paths.hyperscript) {
+    aliases["solid-js/h$"] = paths.hyperscript;
+    aliases["solid-js/h"] = path.dirname(paths.hyperscript);
+  }
   return aliases;
 }
 

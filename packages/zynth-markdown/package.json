@@ -18,7 +18,8 @@
     "ios",
     "android",
     "native",
-    "ZynthMarkdown.podspec"
+    "ZynthMarkdown.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",

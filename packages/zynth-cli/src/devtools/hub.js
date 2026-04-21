@@ -266,6 +266,10 @@ function createDevtoolsHub({
           port,
           close: () =>
             new Promise((closeResolve) => {
+              // Force terminate all active clients to ensure immediate shutdown
+              for (const client of wss.clients) {
+                client.terminate();
+              }
               wss.close(() => {
                 server.close(() => closeResolve());
               });

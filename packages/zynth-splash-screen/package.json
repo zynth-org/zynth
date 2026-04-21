@@ -1,6 +1,6 @@
 {
   "name": "@zynth/splash-screen",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.0",
   "description": "Native splash screen management for Zynth framework",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -17,7 +17,8 @@
     "dist",
     "ios",
     "android",
-    "ZynthSplashScreen.podspec"
+    "ZynthSplashScreen.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
@@ -34,7 +35,7 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1",
+    "@zynth/core": ">=0.0.1-alpha.0",
     "solid-js": ">=1.8.0"
   },
   "devDependencies": {
@@ -62,11 +63,18 @@
         "className": "ZynthSplashScreen",
         "method": "initialize",
         "package": "dev.zynth.splashscreen",
-        "args": ["activity", "runtime"]
+        "args": [
+          "activity",
+          "runtime"
+        ]
       },
       "activityHooks": {
-        "onCreate": ["ZynthSplashScreen.attach(splashScreen)"],
-        "onFirstFrame": ["ZynthSplashScreen.markContentReady()"]
+        "onCreate": [
+          "ZynthSplashScreen.attach(splashScreen)"
+        ],
+        "onFirstFrame": [
+          "ZynthSplashScreen.markContentReady()"
+        ]
       }
     }
   }

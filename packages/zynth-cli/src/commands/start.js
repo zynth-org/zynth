@@ -64,6 +64,11 @@ module.exports = {
       if (shuttingDown) return;
       shuttingDown = true;
 
+      // Force exit if cleanup takes too long (safety fallback)
+      const forceExitTimeout = setTimeout(() => {
+        process.exit(exitCode);
+      }, 3000);
+
       if (devtoolsServer?.close) {
         try {
           await devtoolsServer.close();
@@ -73,10 +78,15 @@ module.exports = {
       }
 
       if (rsbuildProcess && !rsbuildProcess.killed) {
-        rsbuildProcess.kill("SIGTERM");
-        await waitForClose();
+        try {
+          rsbuildProcess.kill("SIGTERM");
+          await waitForClose();
+        } catch (_error) {
+          // ensure we don't hang if waitForClose fails
+        }
       }
 
+      clearTimeout(forceExitTimeout);
       process.exit(exitCode);
     };
 

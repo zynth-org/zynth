@@ -1,6 +1,6 @@
 {
   "name": "@zynth/file-intents",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.0",
   "description": "System open/share/export intents for Zynth",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -17,7 +17,8 @@
     "dist",
     "ios",
     "android",
-    "ZynthFileIntents.podspec"
+    "ZynthFileIntents.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
@@ -69,6 +70,6 @@
     }
   },
   "dependencies": {
-    "@zynth/core": "*"
+    "@zynth/core": "0.0.1-alpha.0"
   }
 }

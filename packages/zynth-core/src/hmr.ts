@@ -746,8 +746,10 @@ export function setupEntryPointHMR(): (() => void) | undefined {
   }
 
   ensureModuleTables();
+  installWebpackHotUpdateHook();
 
   ensureNativeHMRHooks();
+  setupModuleHotAccept(hot);
 
   const disposeNativeWarningListener = onNativeHMR((payload) => {
     if (payload?.type === "warnings") {

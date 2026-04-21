@@ -65,6 +65,20 @@ module.exports = {
     console.log(
       `◆ Zynth devtools hub listening at ws://${server.host}:${server.port}`
     );
+
+    let shuttingDown = false;
+    const shutdown = async (exitCode = 0) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      if (server.close) {
+        await server.close();
+      }
+      process.exit(exitCode);
+    };
+
+    process.on("SIGINT", () => shutdown(0));
+    process.on("SIGTERM", () => shutdown(0));
+
     await new Promise(() => {});
   },
 };

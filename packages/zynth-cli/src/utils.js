@@ -997,10 +997,19 @@ function getIOSConfig(root, appDir) {
   }
 }
 
+function normalizeAndroidPackage(id) {
+  return id
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, "_") // Replace hyphens and other special chars with underscores
+    .split(".")
+    .map((segment) => (/^\d/.test(segment) ? `_${segment}` : segment)) // Prefix segments starting with digits
+    .join(".");
+}
+
 function getAndroidConfig(root, appDir) {
   const base = getIOSConfig(root, appDir);
-  const fallback = `com.zynth.${base.appDir.replace(/-/g, "")}`;
-  const pkgName = (base.bundleId || fallback).toLowerCase();
+  const fallback = `com.zynth.${base.appDir}`;
+  const pkgName = normalizeAndroidPackage(base.bundleId || fallback);
   return { ...base, bundleId: pkgName };
 }
 
@@ -2277,8 +2286,6 @@ async function devAndroid(root, appDir, options = {}) {
   };
   serializedConfig = `${JSON.stringify(runtimeConfig)}\n`;
 
-  writeAndroidDevAsset(androidDir, serializedConfig.trim());
-
   const devices = getConnectedAndroidDevices();
   if (!devices.length) {
     console.warn(
@@ -2359,6 +2366,8 @@ async function devAndroid(root, appDir, options = {}) {
     devtoolsToken: devtoolsToken,
   };
   serializedConfig = `${JSON.stringify(runtimeConfig)}\n`;
+
+  writeAndroidDevAsset(androidDir, serializedConfig.trim());
 
   for (const deviceId of devices) {
     writeDeviceDevConfig(deviceId, config.bundleId, serializedConfig);

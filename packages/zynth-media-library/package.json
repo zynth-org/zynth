@@ -1,6 +1,6 @@
 {
   "name": "@zynth/media-library",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.0",
   "description": "Save media files to the system Photos/Gallery from Zynth",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -17,7 +17,8 @@
     "dist",
     "ios",
     "android",
-    "ZynthMediaLibrary.podspec"
+    "ZynthMediaLibrary.podspec",
+    "src"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
@@ -69,6 +70,6 @@
     }
   },
   "dependencies": {
-    "@zynth/core": "*"
+    "@zynth/core": "0.0.1-alpha.0"
   }
 }

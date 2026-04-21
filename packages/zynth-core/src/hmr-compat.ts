@@ -1,5 +1,5 @@
 import "./polyfills/fetch";
-import "./polyfills/URL";
+import { URL as URLPolyfill } from "./polyfills/URL";
 import { callNative } from "./bridge";
 import { installWebSocket } from "./polyfills/WebSocket";
 
@@ -76,7 +76,7 @@ function installWindowShape(): void {
   g.window = windowObject;
 
   const base = getDevServerBase() ?? "http://localhost";
-  const parsed = new URL(base);
+  const parsed = new URLPolyfill(base);
   debugLog("install window shape", {
     base,
     hostname: parsed.hostname,
