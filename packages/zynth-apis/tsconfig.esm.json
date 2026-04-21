@@ -1,16 +1,11 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "node",
     "rootDir": "src",
     "outDir": "dist/esm",
     "declaration": false,
     "emitDeclarationOnly": false,
-    "strict": true,
-    "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "solid-js"
+    "paths": {}
   },
   "include": [
     "src"

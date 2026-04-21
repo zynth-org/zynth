@@ -3,7 +3,8 @@
   "compilerOptions": {
     "outDir": "dist/types",
     "emitDeclarationOnly": true,
-    "declaration": true
+    "declaration": true,
+    "paths": {}
   },
   "exclude": ["**/*.test.ts", "**/*.spec.ts"]
 }

@@ -6,7 +6,7 @@
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
     "typeRoots": ["./types", "./node_modules/@types"],
-    "types": ["zynth-jsx"],
+    "types": [],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,

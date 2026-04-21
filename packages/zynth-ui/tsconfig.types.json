@@ -1,16 +1,12 @@
 {
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "node",
-    "strict": true,
-    "skipLibCheck": true,
     "outDir": "dist/types",
-    "rootDir": "src",
-    "declaration": true,
+    "noEmit": false,
     "emitDeclarationOnly": true,
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js"
+    "declaration": true,
+    "paths": {}
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["**/*.test.ts", "**/*.spec.ts"]
 }
