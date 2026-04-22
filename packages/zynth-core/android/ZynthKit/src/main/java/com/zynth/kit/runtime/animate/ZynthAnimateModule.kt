@@ -1,4 +1,4 @@
-package dev.zynth.animate
+package com.zynth.kit.runtime.animate
 
 import android.os.Handler
 import android.os.Looper

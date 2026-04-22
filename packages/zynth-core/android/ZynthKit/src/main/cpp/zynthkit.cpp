@@ -2066,8 +2066,11 @@ Java_com_zynth_kit_runtime_JSBridge_getSharedSignal(JNIEnv *, jobject, jlong ptr
   return value;
 }
 
-extern "C" jint JNI_OnLoad(JavaVM *vm, void *) {
+extern "C" jint ZynthAnimate_JNI_OnLoad(JavaVM *vm, void *);
+
+extern "C" jint JNI_OnLoad(JavaVM *vm, void *reserved) {
   gVm = vm;
+  ZynthAnimate_JNI_OnLoad(vm, reserved);
   return facebook::jni::initialize(vm, [] {});
 }
 

@@ -17,7 +17,27 @@ const r = createRenderer<HostNode>({
   createElement: (t: any) => H().createNode(t as any),
   createTextNode: (v: any) => H().createText(v),
   replaceText: (n: any, v: any) => H().setText(n, v),
-  setProperty: (n: any, k: any, v: any, prev: any) => H().setProperty(n, k, v),
+  setProperty: (n: any, k: any, v: any, prev: any) => {
+    if (k === "style") {
+      const actualPrev = prev || n.__prevStyle;
+      if (actualPrev && typeof actualPrev === "object") {
+        const prevResolved = Array.isArray(actualPrev) ? Object.assign({}, ...actualPrev) : actualPrev;
+        const currentResolved = Array.isArray(v) ? Object.assign({}, ...v) : (v || {});
+        const merged = { ...currentResolved };
+        for (const key in prevResolved) {
+          if (!(key in merged) || merged[key] === undefined) {
+            merged[key] = null;
+          }
+        }
+        H().setProperty(n, k, merged);
+      } else {
+        H().setProperty(n, k, v);
+      }
+      n.__prevStyle = v;
+    } else {
+      H().setProperty(n, k, v);
+    }
+  },
   insertNode: (p: any, n: any, a: any) => H().insertNode(p, n, a ?? undefined),
   removeNode: (p: any, n: any) => H().removeNode(p, n),
   isTextNode: (n: any) => n.type === "text",

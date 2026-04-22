@@ -51,6 +51,7 @@ export const Text: ParentComponent<TextProps> = (props) => {
   });
 
   onCleanup(() => {
+    setHostNode(null);
     props.ref?.(null);
   });
 

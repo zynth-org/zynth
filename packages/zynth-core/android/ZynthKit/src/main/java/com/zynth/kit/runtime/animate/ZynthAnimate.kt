@@ -1,4 +1,4 @@
-package dev.zynth.animate
+package com.zynth.kit.runtime.animate
 
 import com.zynth.kit.runtime.ZynthRuntime
 

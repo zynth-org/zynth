@@ -15,9 +15,6 @@
   },
   "files": [
     "dist",
-    "ios",
-    "android",
-    "ZynthGestureHandler.podspec",
     "src"
   ],
   "scripts": {

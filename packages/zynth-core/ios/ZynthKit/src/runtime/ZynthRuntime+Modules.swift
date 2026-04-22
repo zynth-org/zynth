@@ -110,6 +110,7 @@ public extension ZynthRuntime {
     installDevtoolsCrashHandlersIfNeeded()
 #endif
     installModules(modules)
+    ZynthAnimate.initialize(with: self)
   }
 
   func emitEvent(name: String, payload: Any?) {

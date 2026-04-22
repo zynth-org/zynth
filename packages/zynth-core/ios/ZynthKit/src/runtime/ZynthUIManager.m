@@ -262,7 +262,11 @@ static NSString *ZynthVisibility(UIView *view) {
     return;
   }
   if ([name isEqualToString:@"opacity"]) {
-    view.alpha = (CGFloat)[value doubleValue];
+    if (!value || value == (id)kCFNull) {
+      view.alpha = 1.0;
+    } else {
+      view.alpha = (CGFloat)[value doubleValue];
+    }
     return;
   }
   if ([name isEqualToString:@"zIndex"]) {

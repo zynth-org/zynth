@@ -1,4 +1,4 @@
-package dev.zynth.animate
+package com.zynth.kit.runtime.animate
 
 import android.util.LongSparseArray
 import android.view.Choreographer

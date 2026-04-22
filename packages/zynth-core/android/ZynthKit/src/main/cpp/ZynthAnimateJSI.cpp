@@ -850,14 +850,14 @@ void registerInstaller() {
 }
 } // namespace
 
-extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
+extern "C" JNIEXPORT jint JNICALL ZynthAnimate_JNI_OnLoad(JavaVM *vm, void *) {
   gVm = vm;
   registerInstaller();
   return JNI_VERSION_1_6;
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_dev_zynth_animate_ZynthAnimateFrameClock_nativeInstall(
+Java_com_zynth_kit_runtime_animate_ZynthAnimateFrameClock_nativeInstall(
     JNIEnv *env, jclass, jclass clazz) {
   if (!clazz) return;
   gFrameClockClass = static_cast<jclass>(env->NewGlobalRef(clazz));
@@ -866,7 +866,7 @@ Java_dev_zynth_animate_ZynthAnimateFrameClock_nativeInstall(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_dev_zynth_animate_ZynthAnimateFrameClock_nativeOnFrame(
+Java_com_zynth_kit_runtime_animate_ZynthAnimateFrameClock_nativeOnFrame(
     JNIEnv *, jclass, jlong handle, jdouble timeMs) {
   auto *instance = reinterpret_cast<ZynthAnimateRuntime *>(handle);
   if (!instance) return;

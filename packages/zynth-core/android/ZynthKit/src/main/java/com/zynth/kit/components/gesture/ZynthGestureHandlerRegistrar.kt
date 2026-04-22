@@ -1,4 +1,4 @@
-package com.zynth.gesturehandler
+package com.zynth.kit.components.gesture
 
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.components.ZynthComponentRegistrar

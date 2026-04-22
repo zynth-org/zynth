@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import ZynthKit
 
 private enum ZynthAnimateLogs {
   static let isVerboseEnabled: Bool = {

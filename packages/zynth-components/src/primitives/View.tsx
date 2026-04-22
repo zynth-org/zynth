@@ -1,7 +1,6 @@
 import {
   Show,
   batch,
-  children as resolveChildren,
   createEffect,
   createMemo,
   createSignal,
@@ -109,7 +108,6 @@ export const View: ParentComponent<ViewProps> = (props) => {
     "ref",
   ]);
 
-  const resolvedChildren = resolveChildren(() => props.children);
   const isNative = isNativePlatform();
 
   // ─── Entry / exit presence state ──────────────────────────────────────────
@@ -139,6 +137,13 @@ export const View: ParentComponent<ViewProps> = (props) => {
   });
 
   const hasStyleAccessor = createMemo(() => typeof local.style === "function");
+  const needsImperativeStyleSync = createMemo(
+    () =>
+      hasStyleAccessor() ||
+      local.entering !== undefined ||
+      local.exiting !== undefined ||
+      local.visible !== undefined,
+  );
 
   const resolvedLayout = createMemo(() =>
     resolveLayoutTransition(local.layout ?? null) ?? undefined,
@@ -149,11 +154,30 @@ export const View: ParentComponent<ViewProps> = (props) => {
   useAnimatedStyleMapper(() => local.style, hostNode);
 
   // ─── Imperative style update when using an accessor-based style ────────────
-  createEffect(() => {
-    if (!hasStyleAccessor()) return;
+  createEffect((prevStyle?: Style | (Style | undefined | null)[]) => {
+    if (!needsImperativeStyleSync()) return;
     const node = hostNode();
     if (!node) return;
-    setProperty(node, "style", resolvedStyle());
+    const current = resolvedStyle();
+
+    let merged = current;
+    if (prevStyle && typeof prevStyle === "object") {
+      const currentResolved = Array.isArray(current)
+        ? Object.assign({}, ...current)
+        : current || {};
+      const prevResolved = Array.isArray(prevStyle)
+        ? Object.assign({}, ...prevStyle)
+        : prevStyle;
+      merged = { ...currentResolved };
+      for (const key in prevResolved) {
+        if (!(key in merged) || (merged as any)[key] === undefined) {
+          (merged as any)[key] = null;
+        }
+      }
+    }
+
+    setProperty(node, "style", merged);
+    return current;
   });
 
   // ─── Ref forwarding ────────────────────────────────────────────────────────
@@ -163,6 +187,11 @@ export const View: ParentComponent<ViewProps> = (props) => {
   };
 
   onCleanup(() => {
+    const node = hostNode();
+    if (node && isNative) {
+      void stopNativeTransition(node.id);
+    }
+    setHostNode(null);
     (local.ref ?? noopRef)(null);
     if (cancelJsAnimation) {
       cancelJsAnimation();
@@ -410,7 +439,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
         testID={local.testID}
         ref={refProp}
       >
-        {resolvedChildren()}
+        {props.children}
       </view>
     </Show>
   );

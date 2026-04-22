@@ -10,6 +10,7 @@ add_library(zynthkit SHARED
   src/main/cpp/zynthkit.cpp
   src/main/cpp/UICommandsRegistry.cpp
   src/main/cpp/ScrollViewUICommands.cpp
+  src/main/cpp/ZynthAnimateJSI.cpp
 )
 find_package(hermes-engine REQUIRED CONFIG)
 find_package(ReactAndroid REQUIRED CONFIG)

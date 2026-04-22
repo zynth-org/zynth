@@ -139,6 +139,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     startupMetrics.markModuleInitStart()
     DevtoolsModule.start(root.context)
     installModules(listOf(DevtoolsModule(root.context, this), FetchModule(this), CoreSystemModule(this), WebSocketModule(this)))
+    com.zynth.kit.runtime.animate.ZynthAnimate.initialize(this)
     startupMetrics.markModuleInitEnd()
   }
 

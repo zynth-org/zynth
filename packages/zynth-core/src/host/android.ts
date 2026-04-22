@@ -289,16 +289,24 @@ export function createAndroidHost(): Host {
       if (!resolved || typeof resolved !== "object") return;
       for (const [key, value] of Object.entries(resolved)) {
         if (key === "transform") {
-          const normalized = normalizeTransform(value);
-          if (normalized != null) {
-            encodeProp(nodeId, key, normalized);
+          if (value == null) {
+            encodeProp(nodeId, key, null);
+          } else {
+            const normalized = normalizeTransform(value);
+            if (normalized != null) {
+              encodeProp(nodeId, key, normalized);
+            }
           }
           continue;
         }
         if (key === "shadowOffset") {
-          const normalized = normalizeShadowOffset(value);
-          if (normalized != null) {
-            encodeProp(nodeId, key, normalized);
+          if (value == null) {
+            encodeProp(nodeId, key, null);
+          } else {
+            const normalized = normalizeShadowOffset(value);
+            if (normalized != null) {
+              encodeProp(nodeId, key, normalized);
+            }
           }
           continue;
         }

@@ -1,4 +1,4 @@
-package com.zynth.gesturehandler
+package com.zynth.kit.components.gesture
 
 import android.content.Context
 import android.os.Handler
