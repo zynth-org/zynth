@@ -45,7 +45,7 @@
       "versionTrack": "framework-lockstep",
       "distribution": "native-source",
       "readiness": "ready-for-alpha-preflight",
-      "notes": "Core runtime and renderer. Ships built JS plus iOS, Android, native, Yoga, and podspec payloads."
+      "notes": "Core runtime and renderer. Ships built JS plus iOS, Android, native, Yoga, and podspec payloads. Animation runtime (@zynth/core/motion) and gesture definitions (@zynth/core/gesture) now included as subpath exports."
     },
     {
       "name": "@zynth/apis",
@@ -65,7 +65,7 @@
       "versionTrack": "framework-lockstep",
       "distribution": "native-source",
       "readiness": "ready-for-alpha-preflight",
-      "notes": "Initial public component package."
+      "notes": "Initial public component package. Includes GestureDetector as a first-class primitive. Animated style, entering/exiting, and layout transition props are native to View."
     },
     {
       "name": "zynth",
@@ -101,11 +101,11 @@
       "name": "@zynth/animate",
       "path": "packages/zynth-animate",
       "publishName": "@zynth/animate",
-      "releaseTier": "later-alpha",
-      "versionTrack": "later-alpha",
-      "distribution": "native-source",
-      "readiness": "staged",
-      "notes": "Animation package requires hot-path and native payload validation before public alpha."
+      "releaseTier": "archived",
+      "versionTrack": "internal",
+      "distribution": "internal",
+      "readiness": "private",
+      "notes": "DEPRECATED. Consolidated into @zynth/core/motion and @zynth/components. Package is now a backward-compat shim. Exclude from release scripts — native payload is now owned by @zynth/core."
     },
     {
       "name": "@zynth/screens",
@@ -151,11 +151,11 @@
       "name": "@zynth/gesture-handler",
       "path": "packages/zynth-gesture-handler",
       "publishName": "@zynth/gesture-handler",
-      "releaseTier": "later-alpha",
-      "versionTrack": "later-alpha",
-      "distribution": "native-source",
-      "readiness": "staged",
-      "notes": "Gesture package staged for later alpha after native interaction validation."
+      "releaseTier": "archived",
+      "versionTrack": "internal",
+      "distribution": "internal",
+      "readiness": "private",
+      "notes": "DEPRECATED. Consolidated into @zynth/core/gesture and @zynth/components (GestureDetector). Package is now a backward-compat shim. Exclude from release scripts — native payload is now owned by @zynth/core."
     },
     {
       "name": "@zynth/rsbuild-plugin",

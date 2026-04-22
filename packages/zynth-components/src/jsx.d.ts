@@ -8,6 +8,14 @@ import type { SwitchProps } from "./primitives/Switch";
 import type { StatusBarProps } from "./primitives/StatusBar";
 import type { SliderProps } from "./primitives/Slider";
 import type { BottomSheetProps } from "./primitives/BottomSheet";
+import type {
+  FlingGestureEvent,
+  LongPressGestureEvent,
+  PanGestureEvent,
+  PinchGestureEvent,
+  RotationGestureEvent,
+  TapGestureEvent,
+} from "@zynth/core/gesture";
 
 type ZynthChildren = JSX.Element | JSX.Element[] | null | undefined;
 type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;
@@ -113,6 +121,23 @@ declare module "solid-js" {
       "date-picker-trigger-view": { [key: string]: any };
       "zynth-modal": ViewElementProps & { [key: string]: any };
       "zynth-bottom-sheet": BottomSheetProps & { [key: string]: any };
+      "zynth-gesture-detector": {
+        style?: Style | StyleRef;
+        pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+        panSharedSignalX?: number;
+        panSharedSignalY?: number;
+        testID?: string;
+        longPressMinDurationMs?: number;
+        flingMinVelocity?: number;
+        ref?: (node: any) => void;
+        onTapGesture?: (event: TapGestureEvent) => void;
+        onLongPressGesture?: (event: LongPressGestureEvent) => void;
+        onRotationGesture?: (event: RotationGestureEvent) => void;
+        onPinchGesture?: (event: PinchGestureEvent) => void;
+        onFlingGesture?: (event: FlingGestureEvent) => void;
+        onPanGesture?: (event: PanGestureEvent) => void;
+        children?: ZynthChildren;
+      };
     }
   }
 }

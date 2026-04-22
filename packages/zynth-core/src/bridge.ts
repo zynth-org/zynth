@@ -59,8 +59,27 @@ declare global {
   var __zynth_worklets: ZynthWorkletsBridge;
   var __zynth_sync_signals: ZynthSyncSignalsBridge;
   var __zynth_ui_commands: ZynthUICommandsBridge;
+  /** JSI HostObject injected by the native animation runtime (ZynthAnimateJSI). */
+  var __zynth_animate: ZynthAnimateJSIBridge | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   var NativeConstants: Record<string, any>;
 }
+
+/**
+ * Shape of the native animation JSI HostObject (`__zynth_animate`).
+ * Exposed globally by the iOS/Android ZynthAnimateJSI native module.
+ */
+export type ZynthAnimateJSIBridge = {
+  createSharedValue: (initialValue: number) => number;
+  getSharedValue: (id: number) => number;
+  setSharedValue: (id: number, value: number) => void;
+  animateSharedValue: (id: number, config: Record<string, unknown>) => void;
+  cancelSharedValue: (id: number) => void;
+  consumeAnimationCompletions: () => Array<{ callbackId: number; finished: boolean }>;
+  createStyleMapper: (nodeId: number, style: Record<string, unknown>) => number;
+  updateStyleMapper: (mapperId: number, style: Record<string, unknown>) => void;
+  removeStyleMapper: (mapperId: number) => void;
+};
 
 let _nextNonce = Date.now();
 

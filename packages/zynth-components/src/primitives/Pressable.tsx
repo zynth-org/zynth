@@ -16,6 +16,7 @@ import {
   type PressableRef,
 } from "./pressable/controller";
 import type { KeyEvent, Modifiers } from "./events";
+import { useAnimatedStyleMapper } from "../hooks/useAnimatedStyleMapper";
 export type { KeyEvent } from "./events";
 
 export type PressablePointerType =
@@ -237,6 +238,13 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
   });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+
+  // ─── Animated style mapper ─────────────────────────────────────────────────
+  // Detects `createAnimatedStyle` metadata on the style prop and lazily
+  // attaches a native style mapper. Zero cost for plain Style objects.
+  // Note: `local.style` may be a state-based callback `(state) => Style` —
+  // `getAnimatedStyleMeta` will return null for those (no `__zynthAnimatedStyle`).
+  useAnimatedStyleMapper(() => local.style, hostNode);
 
   controller.__attachHost?.(hostNode());
 

@@ -1,13 +1,15 @@
 import {
   children as resolveChildren,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
 } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { HostNode, Style, StyleProp } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynth/core";
 import { setProperty } from "@zynth/core";
 import { createStyle } from "../hooks/createStyle";
+import { useAnimatedStyleMapper } from "../hooks/useAnimatedStyleMapper";
 
 export interface TextProps {
   style?: StyleProp | (() => StyleProp | undefined);
@@ -18,23 +20,34 @@ export interface TextProps {
 
 export const Text: ParentComponent<TextProps> = (props) => {
   const resolvedChildren = resolveChildren(() => props.children);
-  const style = createStyle(() => {
+
+  // NOTE: `props` is a SolidJS reactive proxy — do NOT destructure.
+  const resolvedStyle = createStyle(() => {
     const nextStyle = props.style;
     return typeof nextStyle === "function" ? nextStyle() : nextStyle;
   });
+
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  const hasStyleAccessor = typeof props.style === "function";
+
+  // Reactive memo — avoids the stale closure bug of a plain `typeof props.style === "function"`.
+  const hasStyleAccessor = createMemo(() => typeof props.style === "function");
 
   const refProp = (node: HostNode | null) => {
     setHostNode(node);
     props.ref?.(node);
   };
 
+  // ─── Animated style mapper ─────────────────────────────────────────────────
+  // Lazily attaches a native style mapper when `props.style` is an animated
+  // style accessor from `createAnimatedStyle`. Zero cost for plain styles.
+  useAnimatedStyleMapper(() => props.style, hostNode);
+
+  // ─── Imperative style update for accessor-based styles ────────────────────
   createEffect(() => {
     const node = hostNode();
     if (!node) return;
-    if (!hasStyleAccessor) return;
-    setProperty(node, "style", style() ?? {});
+    if (!hasStyleAccessor()) return;
+    setProperty(node, "style", resolvedStyle() ?? {});
   });
 
   onCleanup(() => {
@@ -43,9 +56,13 @@ export const Text: ParentComponent<TextProps> = (props) => {
 
   return (
     <text
-      style={(hasStyleAccessor ? undefined : (style() as any)) as any}
+      style={
+        (hasStyleAccessor()
+          ? undefined
+          : (resolvedStyle() as JSX.Element)) as JSX.Element
+      }
       text={props.text}
-      ref={refProp as any}
+      ref={refProp as unknown as any}
     >
       {resolvedChildren()}
     </text>
