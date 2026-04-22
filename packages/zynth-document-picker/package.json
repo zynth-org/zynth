@@ -11,12 +11,15 @@
       "import": "./dist/esm/index.js",
       "types": "./dist/types/index.d.ts"
     },
+    "./web": "./web/index.ts",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "ios",
     "android",
+    "src",
+    "web",
     "ZynthDocumentPicker.podspec"
   ],
   "scripts": {
