@@ -1,101 +1,88 @@
 # View
 
-`View` is the fundamental building block for UI layout in Zynth. It supports Flexbox positioning via the Yoga layout engine, responsive touch interactions, accessibility features, and layout measurement.
+`View` is the fundamental container in Zynth, mapping directly to `UIView` on iOS and `ViewGroup` on Android. It is the core building block for layouts and supports high-performance native styles, integrated gestures, and motion transitions.
 
 ## Basic Usage
 
-`View` acts as a container for other elements. It is designed to be highly reactive, supporting style accessor functions for high-frequency updates during gestures or animations.
+`View` behaves like a standard container with flexbox layout support powered by Yoga.
 
 ```tsx
 import { View, Text } from "@zynth/components";
 
-function Card() {
+function Layout() {
+  return (
+    <View style={{ flex: 1, padding: 20, backgroundColor: "#f5f5f5" }}>
+      <Text>Hello Zynth</Text>
+    </View>
+  );
+}
+```
+
+## Motion & Transitions
+
+One of the most powerful features of `View` is its native support for entry, exit, and layout animations without requiring extra wrappers.
+
+```tsx
+import { View } from "@zynth/components";
+import { FadeIn, FadeOut, LinearTransition } from "@zynth/core/motion";
+
+function AnimatedList({ items }) {
+  return (
+    <View style={{ gap: 8 }}>
+      <For each={items}>
+        {(item) => (
+          <View 
+            entering={FadeIn} 
+            exiting={FadeOut}
+            layout={LinearTransition}
+            style={{ height: 50, backgroundColor: "#fff" }}
+          >
+            <Text>{item.text}</Text>
+          </View>
+        )}
+      </For>
+    </View>
+  );
+}
+```
+
+## Integrated Gestures
+
+Gestures can be attached directly to a `View` using the `gesture` prop. This wires native recognizers to the view's host node on the UI thread.
+
+```tsx
+import { View } from "@zynth/components";
+import { createPanGesture } from "@zynth/core/gesture";
+
+function Draggable() {
+  const pan = createPanGesture({
+    onUpdate: (e) => {
+      // Worklet-driven update
+      offset.value = e.translationX;
+    }
+  });
+
   return (
     <View 
-      style={{
-        padding: 16,
-        backgroundColor: "#ffffff",
-        borderRadius: 8,
-        shadowOpacity: 0.1,
-      }}
-    >
-      <Text>Card Content</Text>
-    </View>
+      gesture={pan}
+      style={{ width: 100, height: 100, borderRadius: 12 }} 
+    />
   );
 }
-```
-
-## Layout Measurement
-
-To retrieve the runtime dimensions and position of a container, use the `onLayout` callback. This is dispatched once after the first layout pass and subsequently whenever the view's size or position changes.
-
-```tsx
-function MeasuredView() {
-  const [size, setSize] = createSignal({ width: 0, height: 0 });
-
-  const handleLayout = (event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setSize({ width, height });
-  };
-
-  return (
-    <View onLayout={handleLayout} style={{ flex: 1 }}>
-      <Text>Width: {size().width}, Height: {size().height}</Text>
-    </View>
-  );
-}
-```
-
-## Pointer Interactivity
-
-Control how the view and its children react to touch events using the `pointerEvents` prop. This is useful for creating transparent overlays or disabling input for specific sub-hierarchies.
-
-| Value | Description |
-|---|---|
-| `auto` | Receives touches normally (default). |
-| `none` | View and children are transparent to touches. |
-| `box-none` | View is transparent, but children can receive touches. |
-| `box-only` | View receives touches, but children are transparent. |
-
-```tsx
-{/* Transparent overlay that doesn't block touches */}
-<View 
-  style={{ position: "absolute", inset: 0 }} 
-  pointerEvents="none" 
-/>
-```
-
-## Glass Aesthetics
-
-On supported iOS versions, `View` can enable native glass effects (blur/vibrancy) by setting `enableGlassIOS`. This leverages system SF Symbol and UIBlurEffect for a premium frosted-glass appearance.
-
-```tsx
-<View 
-  enableGlassIOS={true} 
-  tintColor="#7c3aed"
-  style={{ padding: 24 }}
->
-  <Text>Frosted Overlay</Text>
-</View>
 ```
 
 ## Props
 
 | Prop | Type | Description |
 |---|---|---|
-| `children` | `JSX.Element` | Nested components. |
-| `style` | `StyleProp \| () => StyleProp` | Component styles. Supports reactive accessor functions for synchronous updates. |
-| `onLayout` | `(event: LayoutChangeEvent) => void` | Called once on mount and on every layout change. |
-| `onPress` | `() => void` | Simplified tap handler for non-complex interactions. |
-| `pointerEvents` | `auto` \| `none` \| `box-none` \| `box-only` | Controls touch event propagation. |
-| `accessibilityLabel` | `string` | Spoken description for screen readers. |
-| `accessibilityRole` | `button` \| `header` \| `link` \| `none` | Accessibility behavior hint. |
-| `enableGlassIOS` | `boolean` | Enables native frosted-glass effects (iOS). |
-| `tintColor` | `string` | Tint color for glass effects or certain native styles. |
-| `testID` | `string` | Unique identifier for automation tests. |
-| `ref` | `(node: HostNode) => void` | Access the underlying native host node. |
+| `style` | `StyleProp` | Standard or animated styles. |
+| `entering` | `EntryExitAnimationLike` | Animation to run when the view mounts. |
+| `exiting` | `EntryExitAnimationLike` | Animation to run before the view unmounts. |
+| `layout` | `LayoutTransitionLike` | Transition to apply when bounds change. |
+| `gesture` | `GestureDefinition[]` | Native gesture recognizers to attach. |
+| `visible` | `boolean` | Controls visibility with automatic enter/exit triggers. |
+| `pointerEvents`| `auto` \| `none` \| `box-none` \| `box-only` | Controls touch propagation behavior. |
+| `onLayout` | `(event) => void` | Called when the view's frame is measured. |
+| `enableGlassIOS`| `boolean` | Enables native SF Symbol glass effects on iOS. |
+| `testID` | `string` | Identifier for automated testing. |
 
-## Notes
-
-- **Implementation Tip**: When performing synchronous style updates (e.g., during a scroll or drag), pass a function to the `style` prop. This allows Zynth to update the native layout props directly on the host node without triggering a full SolidJS reactive cycle.
-- **Flexbox**: Laying out views is done using Standard Flexbox. If no dimensions are provided, `View` will collapse to 0 size unless expanded by its children or a `flex` property.

@@ -157,6 +157,7 @@ static double parseAngleString(const std::string &value) {
 - (void)stopDisplayLinkIfNeeded;
 - (double)sharedSignalValueForId:(int)signalId;
 - (void)setSharedSignalValue:(int)signalId value:(double)value;
+- (BOOL)cancelSharedAnimationForSignalId:(int)signalId;
 - (void)pushSharedAnimationCompletion:(int)callbackId finished:(BOOL)finished;
 - (StyleMapper)buildStyleMapper:(Runtime &)rt value:(const Value &)value nodeId:(int)nodeId;
 
@@ -190,6 +191,25 @@ static void onSharedSignalChanged(void *state, int signalId) {
     }
   }
   [instance markNeedsStyleUpdate];
+}
+
+bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
+  if (!state || signalId <= 0) return false;
+
+  ZynthAnimateJSI *instance = nil;
+  {
+    std::lock_guard<std::mutex> lock(gInstanceMutex);
+    auto it = gInstances.find(state);
+    if (it != gInstances.end()) {
+      instance = it->second;
+      if (!instance) {
+        gInstances.erase(it);
+      }
+    }
+  }
+
+  if (!instance) return false;
+  return [instance cancelSharedAnimationForSignalId:signalId];
 }
 
 - (instancetype)initWithHost:(ZynthHermesRuntimeHost *)host {
@@ -267,6 +287,26 @@ static void onSharedSignalChanged(void *state, int signalId) {
   if ([worklets setSharedSignalValue:signalId value:value]) {
     [self markNeedsStyleUpdate];
   }
+}
+
+- (BOOL)cancelSharedAnimationForSignalId:(int)signalId {
+  if (signalId <= 0) return NO;
+  BOOL canceled = NO;
+  {
+    std::lock_guard<std::mutex> lock(_sharedAnimationsMutex);
+    auto existing = _sharedAnimations.find(signalId);
+    if (existing != _sharedAnimations.end()) {
+      if (existing->second.callbackId > 0) {
+        [self pushSharedAnimationCompletion:existing->second.callbackId finished:NO];
+      }
+      _sharedAnimations.erase(existing);
+      canceled = YES;
+    }
+  }
+  if (canceled) {
+    [self stopDisplayLinkIfNeeded];
+  }
+  return canceled;
 }
 
 - (void)pushSharedAnimationCompletion:(int)callbackId finished:(BOOL)finished {
@@ -406,9 +446,19 @@ static void onSharedSignalChanged(void *state, int signalId) {
 - (void)markNeedsStyleUpdate {
   if (_needsStyleUpdate) return;
   _needsStyleUpdate = YES;
-  dispatch_async(dispatch_get_main_queue(), ^{
+  CFRunLoopRef mainRunLoop = CFRunLoopGetMain();
+  if (!mainRunLoop) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self applyStyleMappers];
+    });
+    return;
+  }
+  // Schedule in common modes so gesture-driven updates are not deferred while
+  // UIKit is running the touch tracking loop.
+  CFRunLoopPerformBlock(mainRunLoop, kCFRunLoopCommonModes, ^{
     [self applyStyleMappers];
   });
+  CFRunLoopWakeUp(mainRunLoop);
 }
 
 - (void)applyStyleMappers {

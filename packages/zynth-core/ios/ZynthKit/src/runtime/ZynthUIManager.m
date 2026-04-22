@@ -1016,6 +1016,14 @@ static NSString *ZynthVisibility(UIView *view) {
   return @(value);
 }
 
+- (BOOL)cancelSharedSignalAnimation:(int)signalId {
+  ZynthRuntime *runtime = self.zynthRuntime;
+  if (!runtime) return NO;
+  ZynthHermesRuntimeHost *host = [runtime valueForKey:@"runtime"];
+  if (!host) return NO;
+  return ZynthCancelSharedSignalAnimationForHost(host, signalId);
+}
+
 - (void)setSyncSignal:(int)signalId value:(NSString *)value {
   ZynthRuntime *runtime = self.zynthRuntime;
   if (!runtime) return;

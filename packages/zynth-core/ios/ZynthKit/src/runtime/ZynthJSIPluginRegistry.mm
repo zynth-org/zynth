@@ -8,6 +8,11 @@ BOOL ZynthSetSharedSignalForHost(ZynthHermesRuntimeHost *host, int signalId, dou
   return [[host worklets] setSharedSignalValue:signalId value:value];
 }
 
+BOOL ZynthCancelSharedSignalAnimationForHost(ZynthHermesRuntimeHost *host, int signalId) {
+  if (!host) return NO;
+  return ZynthCancelSharedSignalAnimation((__bridge void *)host, signalId);
+}
+
 double ZynthGetSharedSignalForHost(ZynthHermesRuntimeHost *host, int signalId, BOOL *found) {
   if (!host) {
     if (found) *found = NO;

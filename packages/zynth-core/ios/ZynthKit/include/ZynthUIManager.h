@@ -39,6 +39,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight;
 - (void)setSharedSignal:(int)signalId value:(double)value;
 - (NSNumber *_Nullable)sharedSignalValue:(int)signalId;
+- (BOOL)cancelSharedSignalAnimation:(int)signalId;
 - (void)setSyncSignal:(int)signalId value:(NSString *)value;
 - (NSString *_Nullable)syncSignalValue:(int)signalId;
 - (NSString *_Nullable)runInputHandlerWorklet:(int)workletId

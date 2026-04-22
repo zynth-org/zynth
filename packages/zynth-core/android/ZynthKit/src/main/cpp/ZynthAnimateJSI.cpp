@@ -344,6 +344,20 @@ class ZynthAnimateRuntime {
 
   void *getState() const { return state; }
 
+  bool cancelSharedAnimation(int signalId) {
+    if (signalId <= 0) return false;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto existing = animations.find(signalId);
+    if (existing == animations.end()) {
+      return false;
+    }
+    if (existing->second.callbackId > 0) {
+      completions.push_back({existing->second.callbackId, false});
+    }
+    animations.erase(existing);
+    return true;
+  }
+
   void install() {
     auto createSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "createSharedValue"), 1,
@@ -817,6 +831,20 @@ class ZynthAnimateRuntime {
 
 std::mutex gInstanceMutex;
 std::unordered_map<ZynthAnimateRuntime *, std::shared_ptr<ZynthAnimateRuntime>> gInstances;
+
+extern "C" bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
+  if (!state || signalId <= 0) return false;
+
+  std::lock_guard<std::mutex> lock(gInstanceMutex);
+  for (auto &pair : gInstances) {
+    if (pair.first->getState() != state) continue;
+    auto &instance = pair.second;
+    if (!instance) return false;
+    return instance->cancelSharedAnimation(signalId);
+  }
+
+  return false;
+}
 
 void onSharedSignalChanged(void *state, int signalId) {
   (void)signalId;

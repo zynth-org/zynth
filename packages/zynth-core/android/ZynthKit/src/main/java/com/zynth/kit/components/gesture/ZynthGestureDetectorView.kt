@@ -287,6 +287,7 @@ class ZynthGestureDetectorView(context: Context) : FrameLayout(context) {
         downRawY = event.rawY
         downTimestamp = event.eventTime
         syncPanSignalBaseFromNative()
+        cancelNativePanSignalAnimations()
         panSignalBaseX = panSignalCurrentX
         panSignalBaseY = panSignalCurrentY
         panActive = false
@@ -632,6 +633,16 @@ class ZynthGestureDetectorView(context: Context) : FrameLayout(context) {
       if (value != null) {
         panSignalCurrentY = value
       }
+    }
+  }
+
+  private fun cancelNativePanSignalAnimations() {
+    val currentManager = manager ?: return
+    if (panSharedSignalX > 0) {
+      currentManager.cancelSharedSignalAnimation(panSharedSignalX)
+    }
+    if (panSharedSignalY > 0) {
+      currentManager.cancelSharedSignalAnimation(panSharedSignalY)
     }
   }
 

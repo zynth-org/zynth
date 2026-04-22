@@ -2066,6 +2066,15 @@ Java_com_zynth_kit_runtime_JSBridge_getSharedSignal(JNIEnv *, jobject, jlong ptr
   return value;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_zynth_kit_runtime_JSBridge_cancelSharedSignalAnimation(JNIEnv *, jobject, jlong ptr, jint id) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return JNI_FALSE;
+  auto state = sharedStateFor(runtime);
+  if (!state) return JNI_FALSE;
+  return ZynthCancelSharedSignalAnimation(state.get(), id) ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" jint ZynthAnimate_JNI_OnLoad(JavaVM *vm, void *);
 
 extern "C" jint JNI_OnLoad(JavaVM *vm, void *reserved) {

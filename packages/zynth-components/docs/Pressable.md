@@ -1,83 +1,53 @@
 # Pressable
 
-`Pressable` is the fundamental interaction primitive. It detects various gesture events (taps, long presses, double presses, and hovers) while providing granular state tracking. To ensure responsiveness, all interaction states follow reactive proxies, allowing for low-latency visual feedback on any platform.
+`Pressable` is a versatile interaction wrapper that detects various stages of press interactions across all platforms. It is designed to replace legacy touchable components with a more performant, state-aware primitive.
 
 ## Basic Usage
 
-The component is at its simplest as a wrapper for detecting primary tap gestures:
+The component provides a `style` prop that can be a function, allowing you to change the appearance based on the interaction state.
 
 ```tsx
-import { Pressable, Text, View } from "@zynth/components";
+import { Pressable, Text } from "@zynth/components";
 
-function ActionItem() {
-  const handlePress = () => console.log("Action triggered");
-
+function SimpleButton() {
   return (
-    <Pressable 
-      onPress={handlePress} 
-      style={{ padding: 16, backgroundColor: "#eee" }}
+    <Pressable
+      onPress={() => console.log("Pressed")}
+      style={(state) => ({
+        padding: 16,
+        borderRadius: 8,
+        backgroundColor: state.pressed ? "#ddd" : "#eee",
+        transform: [{ scale: state.pressed ? 0.98 : 1 }]
+      })}
     >
-      <Text>Tap here</Text>
+      <Text>Interaction State</Text>
     </Pressable>
   );
 }
 ```
 
-## Functional Styling Based on State
+## Interaction States
 
-To create dynamic visual feedback without manual state management, both `style` and `stateLayerStyle` can be functions that receive the current interaction state (`pressed`, `hovered`, `focused`, `disabled`).
+`Pressable` tracks several states that are passed to the style function or children accessor:
 
-```tsx
-<Pressable
-  style={(state) => ({
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: state.pressed ? "#ccc" : "#eee",
-    opacity: state.disabled ? 0.5 : 1,
-    transform: [{ scale: state.pressed ? 0.98 : 1 }]
-  })}
->
-  <Text>Responsive Feedback</Text>
-</Pressable>
-```
+- `pressed`: True when the user is actively pressing the component.
+- `hovered`: True when a pointer (mouse/trackpad) is over the component.
+- `focused`: True when the component has keyboard focus.
+- `disabled`: True when the component is in a disabled state.
+- `longPressActive`: True during a long press duration.
 
-## Advanced Gesture Control
+## Advanced Press Behaviors
 
-`Pressable` supports several high-level gesture refinements:
-
-- **Double Press**: Enable with `enableDoublePress` and tune the `doublePressWindowMs`.
-- **Long Press**: Configure the minimum required hold time with `longPressMinDurationMs`.
-- **Hit Slop**: Expand the interactive touchable area beyond the visible boundaries (crucial for accessibility on small targets).
+You can configure detailed press behaviors like hit slop, retention offsets, and delays.
 
 ```tsx
 <Pressable
-  onDoublePress={() => console.log("Double tap!")}
-  enableDoublePress={true}
-  doublePressWindowMs={200}
-  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} // Easier to tap
+  hitSlop={20} // Expands touch area by 20pt
+  delayLongPressMs={1000}
+  pressRetentionOffset={30}
+  onLongPress={() => console.log("Long Press!")}
 >
-  <Text>Advanced Gestures</Text>
-</Pressable>
-```
-
-## Native Interaction Feedback
-
-On supported platforms, `Pressable` can trigger native visual effects like material ripples or highlight overlays via the `pressEffect` prop.
-
-```tsx
-<Pressable 
-  pressEffect="ripple" 
-  onPress={onPress} 
-  style={{ height: 60, justifyContent: "center" }}
->
-  <Text>Native Ripple (Android)</Text>
-</Pressable>
-
-<Pressable 
-  pressEffect="highlight" 
-  onPress={onPress}
->
-  <Text>Native Highlight (iOS)</Text>
+  <Text>Advanced Config</Text>
 </Pressable>
 ```
 
@@ -85,27 +55,13 @@ On supported platforms, `Pressable` can trigger native visual effects like mater
 
 | Prop | Type | Description |
 |---|---|---|
-| `children` | `JSX.Element` | Content placed inside the interaction area. |
-| `disabled` | `boolean` | If true, all interactive events are blocked. |
-| `onPress` | `(event) => void` | Primary tap action. |
-| `onLongPress` | `({ durationMs }) => void` | Hold gesture action. |
-| `onDoublePress` | `(event) => void` | Sequential tap action. |
-| `onHoverIn` / `onHoverOut`| `() => void` | Mouse/stylus cursor entry/exit. |
-| `onFocus` / `onBlur`| `() => void` | Keyboard or programmatic focus changes. |
-| `style` | `Style \| (state) => Style` | Reactive styling based on interaction. |
-| `hitSlop` | `number \| HitSlop` | Insets to expand the touch area. |
-| `pressEffect` | `none \| ripple \| highlight` | Native interaction visuals. |
-| `enableGlassIOS` | `boolean` | Enables native glass effects on tap (iOS). |
-| `role` | `button \| link \| menuitem \| none` | Semantic role for accessibility. |
+| `onPress` | `(event) => void` | Called when a press is completed. |
+| `onPressIn` | `(event) => void` | Called immediately when a press starts. |
+| `onPressOut` | `(event) => void` | Called when a press is released. |
+| `onLongPress` | `(event) => void` | Called after a sustained press. |
+| `style` | `Style \| (state) => Style` | Standard or state-dependent style. |
+| `disabled` | `boolean` | Disables all interactions. |
+| `hitSlop` | `number \| HitSlop` | Expands the interactive area. |
+| `delayLongPressMs`| `number` | Duration required for a long press. |
+| `pressEffect` | `ripple \| highlight \| none` | Native feedback effect. |
 
-## Imperative Ref
-
-A `ref` provides an interface to query or trigger the component's state programmatically:
-
-- `pressed()`: Returns true ifcurrently held.
-- `hovered()`: Returns true on cursor entry.
-- `focused()`: Returns true during focus focus.
-- `click()`: Triggers the `onPress` sequence manually.
-- `cancel()`: Immediately terminates the current press event sequence.
-- `focus()` / `blur()`: Manually manages focus.
-- `setDisabled(boolean)`: Programmatically toggles the interaction state.

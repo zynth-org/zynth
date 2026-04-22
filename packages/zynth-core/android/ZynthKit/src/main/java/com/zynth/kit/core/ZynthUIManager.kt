@@ -343,6 +343,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     return if (value.isNaN()) null else value
   }
 
+  fun cancelSharedSignalAnimation(id: Int): Boolean {
+    if (runtimePtr == 0L) return false
+    return JSBridge.cancelSharedSignalAnimation(runtimePtr, id)
+  }
+
   fun runInputHandlerWorklet(
     nodeId: Int,
     workletId: Int,

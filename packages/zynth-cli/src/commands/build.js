@@ -205,15 +205,21 @@ function scanBundleForGlyphs(bundlePath) {
     // Match patterns like "glyph","ZynthIconsXX" or 'glyph','ZynthIconsXX'
     // including cases where the character is now unescaped.
     // We allow optional spaces and handle both ' and " quotes.
-    const regex = /(['"])([\uE000-\uF8FF])\1\s*,\s*(['"])(ZynthIcons[A-Z]{2})\3/g;
+    const regex = /(['"])([^'"]*?[\uE000-\uF8FF][^'"]*?)\1\s*,\s*(['"])(ZynthIcons[A-Z]{2})\3/g;
     let match;
     let count = 0;
     while ((match = regex.exec(content)) !== null) {
-      const glyph = match[2];
+      const glyphString = match[2];
       const font = match[4];
       if (!glyphMap[font]) glyphMap[font] = new Set();
-      glyphMap[font].add(glyph);
-      count++;
+      
+      // Extract all PUA characters from the string literal
+      for (const char of glyphString) {
+        if (char >= "\uE000" && char <= "\uF8FF") {
+          glyphMap[font].add(char);
+          count++;
+        }
+      }
     }
     
     // Convert Sets to sorted strings for the subsetter
@@ -222,7 +228,9 @@ function scanBundleForGlyphs(bundlePath) {
       result[font] = Array.from(glyphs).sort().join("");
     }
     if (count > 0) {
-      console.log(`◆ Discovered ${count} used glyphs across ${Object.keys(result).length} icon libraries`);
+      console.log(`◆ [Scanner] Discovered ${count} used glyphs across ${Object.keys(result).length} icon libraries`);
+    } else {
+      console.log(`◆ [Scanner] No glyphs discovered in bundle: ${bundlePath}`);
     }
     return result;
   } catch (e) {

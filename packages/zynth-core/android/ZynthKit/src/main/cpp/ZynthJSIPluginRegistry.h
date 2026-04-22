@@ -16,6 +16,7 @@ void ZynthRegisterSharedSignalChangedCallback(ZynthSharedSignalChangedCallback c
 int ZynthCreateSharedSignal(void *state, double initialValue);
 double ZynthGetSharedSignal(void *state, int signalId, bool *found);
 bool ZynthSetSharedSignal(void *state, int signalId, double value);
+bool ZynthCancelSharedSignalAnimation(void *state, int signalId);
 
 void ZynthApplyAnimatedStyle(
     void *state,

@@ -212,6 +212,7 @@ public final class ZynthGestureDetectorView: UIView, UIGestureRecognizerDelegate
       switch recognizer.state {
       case .began:
         syncPanSignalBaseFromNative()
+        cancelNativePanSignalAnimations()
         panSignalBaseX = panSignalCurrentX
         panSignalBaseY = panSignalCurrentY
         updateNativePanSignals(translationX: translation.x, translationY: translation.y)
@@ -431,6 +432,16 @@ public final class ZynthGestureDetectorView: UIView, UIGestureRecognizerDelegate
     if panSharedSignalY > 0,
        let value = manager.sharedSignalValue(Int32(panSharedSignalY)) {
       panSignalCurrentY = value.doubleValue
+    }
+  }
+
+  private func cancelNativePanSignalAnimations() {
+    guard let manager = manager else { return }
+    if panSharedSignalX > 0 {
+      _ = manager.cancelSharedSignalAnimation(Int32(panSharedSignalX))
+    }
+    if panSharedSignalY > 0 {
+      _ = manager.cancelSharedSignalAnimation(Int32(panSharedSignalY))
     }
   }
 }

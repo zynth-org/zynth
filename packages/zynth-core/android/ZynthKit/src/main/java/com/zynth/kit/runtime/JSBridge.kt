@@ -45,6 +45,7 @@ internal object JSBridge {
   external fun invokeAnimationFrame(runtimePtr: Long, callbackId: Int, timestampMs: Double)
   external fun setSharedSignal(runtimePtr: Long, id: Int, value: Double)
   external fun getSharedSignal(runtimePtr: Long, id: Int): Double
+  external fun cancelSharedSignalAnimation(runtimePtr: Long, id: Int): Boolean
   external fun setSyncSignal(runtimePtr: Long, id: Int, value: String): Boolean
   external fun getSyncSignal(runtimePtr: Long, id: Int, value: StringBuilder): Boolean
   external fun registerWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)

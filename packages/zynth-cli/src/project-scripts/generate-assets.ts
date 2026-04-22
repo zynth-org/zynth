@@ -583,6 +583,18 @@ export async function generateAssets(appDir: string, platform: 'ios' | 'android'
   }
 
   if (platform === 'ios') {
+      // Clear residual assets to prevent bloat from previous builds (e.g. dev mode)
+      const fontsDir = path.join(appDir, 'ios', cleanAppName, 'fonts');
+      const imagesDir = path.join(appDir, 'ios', cleanAppName, 'images');
+      if (fs.existsSync(fontsDir)) {
+          fs.rmSync(fontsDir, { recursive: true, force: true });
+          if (!quiet) console.log(`  ✓ Cleared residual fonts: ${path.relative(appDir, fontsDir)}`);
+      }
+      if (fs.existsSync(imagesDir)) {
+          fs.rmSync(imagesDir, { recursive: true, force: true });
+          if (!quiet) console.log(`  ✓ Cleared residual images: ${path.relative(appDir, imagesDir)}`);
+      }
+
       if (appConfig.icon) {
         const iconPath = path.resolve(appDir, appConfig.icon);
         generateIOSIcons(appDir, iconPath, cleanAppName);
@@ -595,6 +607,18 @@ export async function generateAssets(appDir: string, platform: 'ios' | 'android'
   }
 
   if (platform === 'android') {
+      // Clear residual assets to prevent bloat from previous builds (e.g. dev mode)
+      const fontsDir = path.join(appDir, 'android', 'app', 'src', 'main', 'assets', 'fonts');
+      const imagesDir = path.join(appDir, 'android', 'app', 'src', 'main', 'assets', 'images');
+      if (fs.existsSync(fontsDir)) {
+          fs.rmSync(fontsDir, { recursive: true, force: true });
+          if (!quiet) console.log(`  ✓ Cleared residual fonts: ${path.relative(appDir, fontsDir)}`);
+      }
+      if (fs.existsSync(imagesDir)) {
+          fs.rmSync(imagesDir, { recursive: true, force: true });
+          if (!quiet) console.log(`  ✓ Cleared residual images: ${path.relative(appDir, imagesDir)}`);
+      }
+
       if (appConfig.android?.adaptiveIcon) {
           generateAndroidAdaptiveIcons(appDir, appConfig.android.adaptiveIcon);
           // Also generate legacy icons using the foreground image as fallback (or the main icon if present)

@@ -17,6 +17,8 @@ FOUNDATION_EXPORT BOOL ZynthSetSharedSignalForHost(ZynthHermesRuntimeHost *_Null
 FOUNDATION_EXPORT double ZynthGetSharedSignalForHost(ZynthHermesRuntimeHost *_Nullable host,
                                                     int signalId,
                                                     BOOL *_Nullable found);
+FOUNDATION_EXPORT BOOL ZynthCancelSharedSignalAnimationForHost(ZynthHermesRuntimeHost *_Nullable host,
+                                                               int signalId);
 
 #ifdef __cplusplus
 typedef void (*ZynthJSIPluginInstaller)(ZynthHermesRuntimeHost *host, facebook::jsi::Runtime &rt);
@@ -29,6 +31,7 @@ void ZynthRegisterSharedSignalChangedCallback(ZynthSharedSignalChangedCallback c
 
 double ZynthGetSharedSignal(void *state, int signalId, bool *found);
 bool ZynthSetSharedSignal(void *state, int signalId, double value);
+bool ZynthCancelSharedSignalAnimation(void *state, int signalId);
 #endif
 
 NS_ASSUME_NONNULL_END
