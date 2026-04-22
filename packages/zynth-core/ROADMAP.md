@@ -48,7 +48,8 @@ During the refactor, the new runtime should not reintroduce these APIs.
 
 4. **Optional Runtime Features**
    - Native signals + worklets.
-   - Animation driver (plugin-style, owned by `@zynth/animate`).
+   - Motion and gesture runtime surfaces exposed through
+     `@zynth/core/motion` and `@zynth/core/gesture`.
 
 ---
 
@@ -278,7 +279,7 @@ Core support now covers the Phase 4 style list with a few remaining caveats:
 
 - JSI shared value store and worklet registry per runtime.
 - UI-thread worklet execution with synchronous shared value reads.
-- `@zynth/animate` installs this feature as a plugin.
+- Runtime-owned motion APIs exposed from `@zynth/core/motion`.
 
 **Exit Criteria**
 
@@ -366,7 +367,8 @@ Core support now covers the Phase 4 style list with a few remaining caveats:
 ## Open Decisions to Resolve
 
 - Whether to move Android Yoga to C++ for more control (likely not needed initially).
-- Whether native signals should be required in the base runtime or optional via `@zynth/animate`.
+- Whether native signals should be required in the base runtime or remain a
+  modular subpath surface via `@zynth/core/motion`.
 - Whether multi-surface support is required in phase 4 or deferred.
 
 ---

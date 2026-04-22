@@ -81,11 +81,14 @@ These should be the only packages treated as required for the first public alpha
 These are good candidates for later alpha waves after the install story is proven:
 
 - `@zynth/router`
-- `@zynth/animate`
 - `@zynth/screens`
 - `@zynth/skia`
 - `@zynth/icons`
 - `@zynth/safe-area`
+
+Motion and gesture are part of the core alpha surface through
+`@zynth/core/motion`, `@zynth/core/gesture`, and `@zynth/components`, not
+separate release-track packages.
 
 ### Tier 3: extras and specialized modules
 

@@ -112,4 +112,6 @@ Provides mapping to native `HapticFeedbackConstants`, including:
 
 ---
 
-This package provides essential physical feedback for interactive applications. For gestures that trigger haptics, it is often used within callbacks from `@zynth/gesture-handler`.
+This package provides essential physical feedback for interactive applications.
+For gestures that trigger haptics, it is often used within callbacks built with
+`@zynth/core/gesture`.

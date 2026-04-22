@@ -98,16 +98,6 @@
       "notes": "Navigation package staged for a later alpha wave."
     },
     {
-      "name": "@zynth/animate",
-      "path": "packages/zynth-animate",
-      "publishName": "@zynth/animate",
-      "releaseTier": "archived",
-      "versionTrack": "internal",
-      "distribution": "internal",
-      "readiness": "private",
-      "notes": "DEPRECATED. Consolidated into @zynth/core/motion and @zynth/components. Package is now a backward-compat shim. Exclude from release scripts — native payload is now owned by @zynth/core."
-    },
-    {
       "name": "@zynth/screens",
       "path": "packages/zynth-screens",
       "publishName": "@zynth/screens",
@@ -146,16 +136,6 @@
       "distribution": "native-source",
       "readiness": "staged",
       "notes": "Safe area package staged for later alpha."
-    },
-    {
-      "name": "@zynth/gesture-handler",
-      "path": "packages/zynth-gesture-handler",
-      "publishName": "@zynth/gesture-handler",
-      "releaseTier": "archived",
-      "versionTrack": "internal",
-      "distribution": "internal",
-      "readiness": "private",
-      "notes": "DEPRECATED. Consolidated into @zynth/core/gesture and @zynth/components (GestureDetector). Package is now a backward-compat shim. Exclude from release scripts — native payload is now owned by @zynth/core."
     },
     {
       "name": "@zynth/rsbuild-plugin",
