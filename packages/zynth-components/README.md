@@ -12,27 +12,53 @@ This package provides the core building blocks for constructing native user inte
 - **Lists**: `VirtualList`, `FlatList` (Virtualized, recycled list for high performance)
 - **Overlays**: `Modal`, `Alert`
 
-## Usage
+## Motion & Gestures
+
+All core primitives are "Motion-Ready" and support JSI-first animations and gestures directly.
+
+### Unified Animation
+
+You can use `entering`, `exiting`, and `layout` props directly on any `View` or `Text`.
 
 ```tsx
-import { View, Text, Button } from "@zynth/components";
+import { View, Text } from "@zynth/components";
+import { FadeIn, FadeOut, LinearTransition } from "@zynth/core/motion";
 
-export function MyComponent() {
-  return (
-    <View style={{ padding: 20 }}>
-      <Text style={{ fontSize: 18, fontWeight: "bold" }}>Hello Zynth</Text>
-      <Button onPress={() => console.log("Pressed!")}>Press Me</Button>
-    </View>
-  );
-}
+<View 
+  entering={FadeIn} 
+  exiting={FadeOut} 
+  layout={LinearTransition}
+>
+  <Text>Animated Entry/Exit & Layout</Text>
+</View>
+```
+
+### Integrated Gestures
+
+Attach gestures via the `gesture` prop without extra wrappers.
+
+```tsx
+import { View } from "@zynth/components";
+import { createTapGesture } from "@zynth/core/gesture";
+
+const tap = createTapGesture({
+  onStart: () => console.log("Tapped!")
+});
+
+<View gesture={tap} />
 ```
 
 ## Styling
 
-Zynth uses a subset of CSS Flexbox for layout, powered by Yoga. Styles are passed via the `style` prop, similar to React Native.
+Zynth uses a subset of CSS Flexbox for layout, powered by Yoga. Styles are passed via the `style` prop. For high-performance animations, use `createAnimatedStyle` from `@zynth/core/motion`.
 
 ```tsx
-<View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-  <Text>Centered Text</Text>
-</View>
+import { createAnimatedStyle, createSharedValue } from "@zynth/core/motion";
+
+const scale = createSharedValue(1);
+const animatedStyle = createAnimatedStyle(() => ({
+  transform: [{ scale: scale.value }]
+}));
+
+<View style={animatedStyle} />
 ```
