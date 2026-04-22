@@ -11,13 +11,20 @@
       "import": "./dist/esm/index.js",
       "types": "./dist/types/index.d.ts"
     },
+    "./web": "./web/index.ts",
     "./package.json": "./package.json"
   },
+  "sideEffects": [
+    "./src/index.web.ts",
+    "./web/**/*"
+  ],
   "files": [
     "dist",
     "ios",
     "android",
     "native",
+    "src",
+    "web",
     "ZynthWebServer.podspec"
   ],
   "scripts": {
