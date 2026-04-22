@@ -239,7 +239,6 @@ async function main() {
         "install",
         "--ignore-scripts",
         "--no-package-lock",
-        "--omit=dev",
         "--legacy-peer-deps",
       ],
       appDir,

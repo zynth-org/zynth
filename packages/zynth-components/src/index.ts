@@ -25,7 +25,6 @@ export * from "./primitives/GlassView";
 export * from "./primitives/GlassContainer";
 export * from "./primitives/BlurView";
 import "./runtimeGlyphs";
-import "./jsx";
 export { createStyle, mergeStyles } from "./hooks/createStyle";
 export { createPressableRef } from "./primitives/pressable/controller";
 export type { PressableRef } from "./primitives/pressable/controller";

@@ -373,14 +373,14 @@ function runCommandFilteredAndroid(command, args, options = {}) {
       } else if (now - lastDiagnosticAt < 2000) {
         // Show context lines for 2 seconds after a diagnostic
         // but avoid showing too much noise (like task names or downloads)
-        const isNoise = 
+        const isNoise =
           shouldSkip(line) ||
-          line.startsWith("> Task") || 
+          line.startsWith("> Task") ||
           line.startsWith("Searching for") ||
           line.startsWith("Download") ||
           line.startsWith("Get ") ||
           line.startsWith("Checking ");
-          
+
         if (!isNoise) {
           writeBuildLine(stream, line, "    ");
         }
@@ -817,53 +817,53 @@ function createProgressIndicator(label, total) {
 
     },
 
-        stop(silent = false) {
+    stop(silent = false) {
 
-          if (timer) {
+      if (timer) {
 
-            clearInterval(timer);
+        clearInterval(timer);
 
-            timer = null;
+        timer = null;
 
-          }
+      }
 
-          clearLine();
+      clearLine();
 
-          process.stdout.write("\u001b[?25h"); // Show cursor
+      process.stdout.write("\u001b[?25h"); // Show cursor
 
-    
 
-          if (silent) return;
 
-    
+      if (silent) return;
 
-          const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
-    
 
-          if (total > 0) {
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
-            // Final summary for progress-based tasks
 
-            process.stdout.write("\x1b[32m◆\x1b[0m " + text + "\n");
 
-            process.stdout.write(
+      if (total > 0) {
 
-              `\x1b[32m✔\x1b[0m Completed ${currentCount} modules in ${duration}s\n`
+        // Final summary for progress-based tasks
 
-            );
+        process.stdout.write("\x1b[32m◆\x1b[0m " + text + "\n");
 
-          } else {
+        process.stdout.write(
 
-            // Simple success for non-progress tasks (like install)
+          `\x1b[32m✔\x1b[0m Completed ${currentCount} modules in ${duration}s\n`
 
-            process.stdout.write(`\x1b[32m✔\x1b[0m ${text} finished in ${duration}s\n`);
+        );
 
-          }
+      } else {
 
-        },
+        // Simple success for non-progress tasks (like install)
 
-    
+        process.stdout.write(`\x1b[32m✔\x1b[0m ${text} finished in ${duration}s\n`);
+
+      }
+
+    },
+
+
 
     clearLine,
 
@@ -1050,9 +1050,9 @@ function resolveWebTitle(appDir) {
     const appJson = readJSON(appJsonPath);
     const zynthName =
       appJson &&
-      appJson.zynth &&
-      typeof appJson.zynth === "object" &&
-      typeof appJson.zynth.name === "string"
+        appJson.zynth &&
+        typeof appJson.zynth === "object" &&
+        typeof appJson.zynth.name === "string"
         ? appJson.zynth.name.trim()
         : "";
     const appName =
@@ -1965,10 +1965,10 @@ async function devIOS(root, appDir, options = {}) {
   }
   const devtoolsUrl = devtoolsEnabled
     ? buildDevtoolsUrl({
-        deviceHost: hmrServer.deviceHost,
-        port: devtoolsPort,
-        override: devtoolsUrlOverride,
-      })
+      deviceHost: hmrServer.deviceHost,
+      port: devtoolsPort,
+      override: devtoolsUrlOverride,
+    })
     : null;
 
   const serverReady = await waitForDevServer(hmrServer.localUrl);
@@ -2103,7 +2103,7 @@ async function devIOS(root, appDir, options = {}) {
     });
   }
 
-  await new Promise(() => {});
+  await new Promise(() => { });
 }
 
 async function devAndroid(root, appDir, options = {}) {
@@ -2241,10 +2241,10 @@ async function devAndroid(root, appDir, options = {}) {
   runtimeDeviceUrl = hmrServer.deviceUrl;
   devtoolsDeviceUrl = devtoolsEnabled
     ? buildDevtoolsUrl({
-        deviceHost: lanHost || hmrServer.deviceHost,
-        port: devtoolsPort,
-        override: devtoolsUrlOverride,
-      })
+      deviceHost: lanHost || hmrServer.deviceHost,
+      port: devtoolsPort,
+      override: devtoolsUrlOverride,
+    })
     : null;
   if (config.devServerUrl) {
     runtimeDeviceUrl = config.devServerUrl;
@@ -2415,7 +2415,7 @@ async function devAndroid(root, appDir, options = {}) {
   });
 
   if (devtoolsEnabled) {
-    await new Promise(() => {});
+    await new Promise(() => { });
   }
 }
 
