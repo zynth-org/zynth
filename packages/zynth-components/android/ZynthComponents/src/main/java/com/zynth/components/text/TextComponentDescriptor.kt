@@ -146,11 +146,23 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           return@setMeasureHandler measuredWidth to measuredHeight
         }
 
+        // Temporarily clear padding for measurement as Yoga provides content-only constraints
+        // and expects content-only dimensions in return.
+        val pl = textView.paddingLeft
+        val pt = textView.paddingTop
+        val pr = textView.paddingRight
+        val pb = textView.paddingBottom
+        textView.setPadding(0, 0, 0, 0)
+
         textView.measure(widthSpec, heightSpec)
         val measuredWidth = textView.measuredWidth.coerceAtLeast(1).toFloat()
         val measuredHeight = textView.measuredHeight
           .coerceAtLeast((textView.textSize * 1.2f).roundToInt())
           .toFloat()
+        
+        // Restore padding
+        textView.setPadding(pl, pt, pr, pb)
+
         node.attachments[textMeasureCacheKey] =
           TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
         val durationMs = (SystemClock.elapsedRealtimeNanos() - measureStart) / 1_000_000.0

@@ -23,6 +23,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign) BOOL zynth_hasExplicitFontFamily;
 /// The requested fontFamily string (kept even if the font is not yet resolved)
 @property (nonatomic, copy, nullable) NSString *zynth_explicitFontFamily;
+/// The internal padding for text rendering
+@property (nonatomic, assign) UIEdgeInsets zynth_padding;
 
 /// Refreshes the composed text from all child text nodes
 - (void)zynth_refreshComposedText;

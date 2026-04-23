@@ -16,8 +16,27 @@
     self.zynth_textTransform = nil;
     self.zynth_hasExplicitFontSize = NO;
     self.zynth_explicitFontFamily = nil;
+    self.zynth_padding = UIEdgeInsetsZero;
   }
   return self;
+}
+
+- (void)drawTextInRect:(CGRect)rect {
+  [super drawTextInRect:UIEdgeInsetsInsetRect(rect, self.zynth_padding)];
+}
+
+- (CGSize)intrinsicContentSize {
+  CGSize size = [super intrinsicContentSize];
+  size.width += self.zynth_padding.left + self.zynth_padding.right;
+  size.height += self.zynth_padding.top + self.zynth_padding.bottom;
+  return size;
+}
+
+- (CGSize)sizeThatFits:(CGSize)size {
+  CGSize fitSize = [super sizeThatFits:size];
+  fitSize.width += self.zynth_padding.left + self.zynth_padding.right;
+  fitSize.height += self.zynth_padding.top + self.zynth_padding.bottom;
+  return fitSize;
 }
 
 - (void)zynth_refreshComposedText {

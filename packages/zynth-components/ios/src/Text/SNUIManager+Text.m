@@ -13,6 +13,10 @@
 #import <Yoga/Yoga.h>
 #import <CoreText/CoreText.h>
 
+@protocol ZynthPaddingSupport <NSObject>
+@property (nonatomic, assign) UIEdgeInsets zynth_padding;
+@end
+
 static CGFloat ZynthTextNum(id x) {
   return x && ![x isKindOfClass:[NSNull class]] ? [x doubleValue] : NAN;
 }
@@ -28,6 +32,12 @@ static YGSize ZynthTextMeasureFunc(YGNodeConstRef node,
     return (YGSize){.width = 0, .height = 0};
   }
   
+  UIEdgeInsets oldPadding = UIEdgeInsetsZero;
+  if ([label respondsToSelector:@selector(zynth_padding)]) {
+    oldPadding = [(id<ZynthPaddingSupport>)label zynth_padding];
+    [(id<ZynthPaddingSupport>)label setZynth_padding:UIEdgeInsetsZero];
+  }
+  
   CGFloat maxW;
   switch (widthMode) {
     case YGMeasureModeExactly: maxW = width; break;
@@ -36,6 +46,10 @@ static YGSize ZynthTextMeasureFunc(YGNodeConstRef node,
   }
   
   CGSize fit = [label sizeThatFits:CGSizeMake(maxW, CGFLOAT_MAX)];
+  
+  if ([label respondsToSelector:@selector(zynth_padding)]) {
+    [(id<ZynthPaddingSupport>)label setZynth_padding:oldPadding];
+  }
   
   float outW;
   switch (widthMode) {

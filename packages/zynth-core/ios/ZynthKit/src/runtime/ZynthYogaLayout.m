@@ -1,6 +1,10 @@
 #import "ZynthYogaLayout.h"
 #import <Yoga/Yoga.h>
 
+@protocol ZynthPaddingSupport <NSObject>
+@property (nonatomic, assign) UIEdgeInsets zynth_padding;
+@end
+
 @implementation ZynthYogaLayout {
   __weak UIView *_rootView;
   NSMutableDictionary<NSNumber *, NSValue *> *_nodes;
@@ -18,9 +22,20 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     return (YGSize){0, 0};
   }
   UILabel *label = (UILabel *)view;
+  
+  UIEdgeInsets oldPadding = UIEdgeInsetsZero;
+  if ([label respondsToSelector:@selector(zynth_padding)]) {
+    oldPadding = [(id<ZynthPaddingSupport>)label zynth_padding];
+    [(id<ZynthPaddingSupport>)label setZynth_padding:UIEdgeInsetsZero];
+  }
+  
   CGFloat maxWidth = widthMode == YGMeasureModeUndefined ? CGFLOAT_MAX : width;
   CGSize size = [label sizeThatFits:CGSizeMake(maxWidth, CGFLOAT_MAX)];
-  // NSLog(@"[ZynthYoga] measure text '%@' => %.1fx%.1f", label.text, size.width, size.height);
+  
+  if ([label respondsToSelector:@selector(zynth_padding)]) {
+    [(id<ZynthPaddingSupport>)label setZynth_padding:oldPadding];
+  }
+  
   return (YGSize){size.width, size.height};
 }
 
@@ -457,6 +472,21 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
         UIView *view = [strongSelf viewForNode:nodeId];
         YGNodeRef node = [strongSelf yogaForNode:nodeId];
         if (!view || !node) continue;
+        
+        // Sync padding for text views
+        if ([view respondsToSelector:@selector(setZynth_padding:)]) {
+          UIEdgeInsets padding = UIEdgeInsetsMake(
+            YGNodeLayoutGetPadding(node, YGEdgeTop),
+            YGNodeLayoutGetPadding(node, YGEdgeLeft),
+            YGNodeLayoutGetPadding(node, YGEdgeBottom),
+            YGNodeLayoutGetPadding(node, YGEdgeRight)
+          );
+          UIEdgeInsets current = [(id<ZynthPaddingSupport>)view zynth_padding];
+          if (!UIEdgeInsetsEqualToEdgeInsets(padding, current)) {
+            [(id<ZynthPaddingSupport>)view setZynth_padding:padding];
+          }
+        }
+
         CGFloat x = YGNodeLayoutGetLeft(node);
         CGFloat y = YGNodeLayoutGetTop(node);
         CGFloat w = YGNodeLayoutGetWidth(node);

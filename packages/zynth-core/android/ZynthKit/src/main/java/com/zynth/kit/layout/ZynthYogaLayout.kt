@@ -368,6 +368,17 @@ class ZynthYogaLayout {
 
       val frameChanged =
         view.left != left || view.top != top || view.right != right || view.bottom != bottom
+      
+      if (view is TextView && view !is com.zynth.kit.core.ZynthLayoutView) {
+        val pl = node.getLayoutPadding(YogaEdge.LEFT).toInt()
+        val pt = node.getLayoutPadding(YogaEdge.TOP).toInt()
+        val pr = node.getLayoutPadding(YogaEdge.RIGHT).toInt()
+        val pb = node.getLayoutPadding(YogaEdge.BOTTOM).toInt()
+        if (view.paddingLeft != pl || view.paddingTop != pt || view.paddingRight != pr || view.paddingBottom != pb) {
+          view.setPadding(pl, pt, pr, pb)
+        }
+      }
+
       if (view is ZynthLayoutView) {
         view.updateYogaLayout(width, height)
       }
@@ -395,8 +406,23 @@ class ZynthYogaLayout {
       measureCount += 1
       val widthSpec = makeMeasureSpec(width, widthMode)
       val heightSpec = makeMeasureSpec(height, heightMode)
+
+      // Temporarily clear padding for measurement as Yoga provides content-only constraints
+      // and expects content-only dimensions in return.
+      val pl = view.paddingLeft
+      val pt = view.paddingTop
+      val pr = view.paddingRight
+      val pb = view.paddingBottom
+      view.setPadding(0, 0, 0, 0)
+      
       view.measure(widthSpec, heightSpec)
-      YogaMeasureOutput.make(view.measuredWidth.toFloat(), view.measuredHeight.toFloat())
+      val mw = view.measuredWidth.toFloat()
+      val mh = view.measuredHeight.toFloat()
+      
+      // Restore padding
+      view.setPadding(pl, pt, pr, pb)
+      
+      YogaMeasureOutput.make(mw, mh)
     }
   }
 
