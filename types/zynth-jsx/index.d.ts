@@ -1,5 +1,5 @@
-import "../../packages/zynth-components/src/jsx.d.ts";
-import "../../packages/zynth-rsbuild-plugin/src/env.d.ts";
+import "@zynth/components/src/jsx.d.ts";
+import "@zynth/core";
 import "solid-js";
 
 declare global {

@@ -1,4 +1,3 @@
-/// <reference path="./env.d.ts" />
 import type { RsbuildConfig } from "@rsbuild/core";
 import { getWebConfig } from "./config-web.js";
 import { getNativeConfig } from "./config-native.js";

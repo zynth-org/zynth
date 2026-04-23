@@ -11,7 +11,8 @@
       "import": "./src/index.ts",
       "types": "./src/index.ts"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./src/*": "./src/*"
   },
   "files": [
     "dist",

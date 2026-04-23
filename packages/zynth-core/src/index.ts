@@ -1,3 +1,4 @@
+/// <reference path="./assets.d.ts" />
 export * from "./index.base";
 export { start } from "./start";
 
