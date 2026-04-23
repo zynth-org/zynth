@@ -201,7 +201,7 @@ async function main() {
         "--display-name",
         "Fixture App",
         "--slug",
-        "fixture-app",
+        "com.fixtureapp",
         "--yes",
       ],
       harnessDir,
