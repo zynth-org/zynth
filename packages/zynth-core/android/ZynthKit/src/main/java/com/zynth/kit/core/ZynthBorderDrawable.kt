@@ -103,8 +103,15 @@ class ZynthBorderDrawable : Drawable() {
             invalidateSelf()
         }
 
-    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { 
+        style = Paint.Style.FILL 
+        isDither = true
+        isFilterBitmap = true
+    }
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { 
+        style = Paint.Style.STROKE 
+        isDither = true
+    }
     private val path = Path()
     private val rectF = RectF()
     private val tempOutlineRect = Rect()

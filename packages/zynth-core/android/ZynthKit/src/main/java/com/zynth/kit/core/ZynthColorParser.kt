@@ -157,9 +157,9 @@ object ZynthColorParser {
         "transparent" to 0x00000000
     )
 
-    private val RGB_REGEX = Regex("""^rgba?\(\s*([0-9]+)\s*(?:,|\s)\s*([0-9]+)\s*(?:,|\s)\s*([0-9]+)\s*(?:[,/]\s*([0-9]*\.?[0-9]+%?))?\s*\)$""", RegexOption.IGNORE_CASE)
-    private val HSL_REGEX = Regex("""^hsla?\(\s*([0-9]+)\s*(?:deg)?\s*(?:,|\s)\s*([0-9]+)%\s*(?:,|\s)\s*([0-9]+)%\s*(?:[,/]\s*([0-9]*\.?[0-9]+%?))?\s*\)$""", RegexOption.IGNORE_CASE)
-    private val HWB_REGEX = Regex("""^hwb\(\s*([0-9]+)\s*(?:deg)?\s*(?:,|\s)\s*([0-9]+)%\s*(?:,|\s)\s*([0-9]+)%\s*(?:[,/]\s*([0-9]*\.?[0-9]+%?))?\s*\)$""", RegexOption.IGNORE_CASE)
+    private val RGB_REGEX = Regex("""^rgba?\(\s*([0-9.]+%?)\s*(?:,|\s)\s*([0-9.]+%?)\s*(?:,|\s)\s*([0-9.]+%?)\s*(?:[,/]\s*([0-9.]+%?))?\s*\)$""", RegexOption.IGNORE_CASE)
+    private val HSL_REGEX = Regex("""^hsla?\(\s*([0-9.]+)(deg|rad|turn|grad)?\s*(?:,|\s)\s*([0-9.]+)%\s*(?:,|\s)\s*([0-9.]+)%\s*(?:[,/]\s*([0-9.]+%?))?\s*\)$""", RegexOption.IGNORE_CASE)
+    private val HWB_REGEX = Regex("""^hwb\(\s*([0-9.]+)(deg|rad|turn|grad)?\s*(?:,|\s)\s*([0-9.]+)%\s*(?:,|\s)\s*([0-9.]+)%\s*(?:[,/]\s*([0-9.]+%?))?\s*\)$""", RegexOption.IGNORE_CASE)
 
     fun parse(value: String?): Int? {
         if (value.isNullOrBlank()) return null
@@ -205,29 +205,58 @@ object ZynthColorParser {
 
     private fun parseRgb(value: String): Int? {
         val match = RGB_REGEX.find(value) ?: return null
-        val r = match.groupValues[1].toIntOrNull() ?: return null
-        val g = match.groupValues[2].toIntOrNull() ?: return null
-        val b = match.groupValues[3].toIntOrNull() ?: return null
+        val r = parseRgbComponent(match.groupValues[1])
+        val g = parseRgbComponent(match.groupValues[2])
+        val b = parseRgbComponent(match.groupValues[3])
         val alpha = parseAlpha(match.groupValues.getOrNull(4))
         return Color.argb(alpha, r, g, b)
     }
 
+    private fun parseRgbComponent(raw: String): Int {
+        return if (raw.endsWith("%")) {
+            val p = raw.removeSuffix("%").toFloatOrNull() ?: 0f
+            (p / 100f * 255f).roundToInt().coerceIn(0, 255)
+        } else {
+            raw.toFloatOrNull()?.roundToInt()?.coerceIn(0, 255) ?: 0
+        }
+    }
+
     private fun parseHsl(value: String): Int? {
         val match = HSL_REGEX.find(value) ?: return null
-        val h = (match.groupValues[1].toFloatOrNull() ?: return null) % 360f
-        val s = (match.groupValues[2].toFloatOrNull() ?: return null) / 100f
-        val l = (match.groupValues[3].toFloatOrNull() ?: return null) / 100f
-        val alpha = parseAlpha(match.groupValues.getOrNull(4))
+        var h = match.groupValues[1].toFloatOrNull() ?: return null
+        val unit = match.groupValues[2].lowercase(Locale.ROOT)
+        h = when (unit) {
+            "rad" -> Math.toDegrees(h.toDouble()).toFloat()
+            "turn" -> h * 360f
+            "grad" -> h * 0.9f
+            else -> h
+        }
+        h %= 360f
+        if (h < 0) h += 360f
+        
+        val s = (match.groupValues[3].toFloatOrNull() ?: return null) / 100f
+        val l = (match.groupValues[4].toFloatOrNull() ?: return null) / 100f
+        val alpha = parseAlpha(match.groupValues.getOrNull(5))
         val color = ColorUtils.HSLToColor(floatArrayOf(h, s, l))
         return ColorUtils.setAlphaComponent(color, alpha)
     }
 
     private fun parseHwb(value: String): Int? {
         val match = HWB_REGEX.find(value) ?: return null
-        val h = (match.groupValues[1].toFloatOrNull() ?: return null) % 360f
-        val w = (match.groupValues[2].toFloatOrNull() ?: return null) / 100f
-        val b = (match.groupValues[3].toFloatOrNull() ?: return null) / 100f
-        val alpha = parseAlpha(match.groupValues.getOrNull(4))
+        var h = match.groupValues[1].toFloatOrNull() ?: return null
+        val unit = match.groupValues[2].lowercase(Locale.ROOT)
+        h = when (unit) {
+            "rad" -> Math.toDegrees(h.toDouble()).toFloat()
+            "turn" -> h * 360f
+            "grad" -> h * 0.9f
+            else -> h
+        }
+        h %= 360f
+        if (h < 0) h += 360f
+        
+        val w = (match.groupValues[3].toFloatOrNull() ?: return null) / 100f
+        val b = (match.groupValues[4].toFloatOrNull() ?: return null) / 100f
+        val alpha = parseAlpha(match.groupValues.getOrNull(5))
         val color = ColorUtils.HSLToColor(floatArrayOf(h, 1f, 0.5f))
         val rgb = ColorUtils.blendARGB(color, Color.WHITE, w)
         val finalColor = ColorUtils.blendARGB(rgb, Color.BLACK, b)
