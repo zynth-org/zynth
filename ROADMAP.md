@@ -79,6 +79,8 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [x] Improve zynth-cli
 - [x] zynth-ui TextInput use SytemGlyphs for icons on Android.
 - [ ] zynth-network Warn about app.json Info.plist information left
+- [ ] Investigate this HMR Error: ` WARN  [HMR] unexpected require(./src/App.tsx) from disposed module ../../packages/zynth-core/src/hmr.ts
+WARN  [HMR] unexpected require(./src/components/styles/GradientExample.tsx) from disposed module ../../packages/zynth-core/src/hmr.ts`
 - [ ] Improve templates of CLI, avoid ios and android packages
 - [ ] zynth-cli Hook for third-party native packages
 - [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
