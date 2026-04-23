@@ -40,5 +40,6 @@ export type { AppStateStatus } from "./app-state";
 export type { NetworkState, NetworkType } from "./network";
 export type { DeviceInfo, DevicePlatform } from "./device";
 export type { PlatformValue } from "./platform";
+export type { FontAssetDescriptor } from "./font";
 
 export * from "./safe-area";
