@@ -34,6 +34,7 @@ interface ViewElementProps {
   key?: string | number;
   ref?: (node: any) => void;
   layout?: unknown;
+  __zynthExiting?: unknown;
   onLayout?: (event: {
     nativeEvent: {
       layout: {

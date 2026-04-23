@@ -8,6 +8,11 @@ import type {
 } from "./HostTypes";
 import type { ZynthUIBridge } from "../bridge";
 import { ensureNativeEmitter } from "../nativeEmitter";
+import {
+  startNativeTransition,
+  stopNativeTransition,
+  type NativeTransitionConfig,
+} from "../animation/native";
 
 export function createIOSHost(): Host {
   ensureNativeEmitter();
@@ -62,6 +67,28 @@ export function createIOSHost(): Host {
   const queue: QueueItem[] = [];
   const pendingRemovals = new Map<number, number>();
   const pendingDrops = new Set<number>();
+  const exitTransitions = new Map<
+    number,
+    Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">
+  >();
+  const exitRemovalTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  let nextExitAnimationId = 1;
+
+  const cancelPendingExitRemoval = (nodeId: number) => {
+    const timer = exitRemovalTimers.get(nodeId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    exitRemovalTimers.delete(nodeId);
+    void stopNativeTransition(nodeId);
+  };
+
+  const getExitDurationMs = (
+    transition: Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">,
+  ) => {
+    const duration = typeof transition.duration === "number" ? transition.duration : 300;
+    const delay = typeof transition.delay === "number" ? transition.delay : 0;
+    return Math.max(0, duration) + Math.max(0, delay);
+  };
 
   const enqueueOperation = (operation: () => void) => {
     if (isSuppressed()) return;
@@ -396,6 +423,8 @@ export function createIOSHost(): Host {
     }
 
     for (const nodeId of ordered) {
+      cancelPendingExitRemoval(nodeId);
+      exitTransitions.delete(nodeId);
       if (!isMarkerId(nodeId)) {
         recordPendingDrop(nodeId);
       }
@@ -583,6 +612,15 @@ export function createIOSHost(): Host {
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
+      if (props?.__zynthExiting && typeof props.__zynthExiting === "object") {
+        exitTransitions.set(
+          id,
+          props.__zynthExiting as Omit<
+            NativeTransitionConfig,
+            "nodeId" | "animationId" | "phase"
+          >,
+        );
+      }
       if (props?.style) {
         const op: BatchOperation = {
           type: "setProp",
@@ -686,6 +724,17 @@ export function createIOSHost(): Host {
       if (value === undefined && name !== "style") {
         return;
       }
+      if (name === "__zynthExiting") {
+        if (value && typeof value === "object") {
+          exitTransitions.set(
+            node.id,
+            value as Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">,
+          );
+        } else {
+          exitTransitions.delete(node.id);
+        }
+        return;
+      }
       if (name === "style") {
         if (
           tryEnqueueBatch({
@@ -764,6 +813,7 @@ export function createIOSHost(): Host {
     },
     insertNode(parent, node, anchor) {
       if (anchor && anchor.id === node.id) return;
+      cancelPendingExitRemoval(node.id);
       if (pendingRemovals.has(node.id)) {
         pendingRemovals.delete(node.id);
       }
@@ -850,6 +900,7 @@ export function createIOSHost(): Host {
       const contextId = NODE_TO_CONTEXT.get(node.id);
       const shouldRecycle =
         contextId && RECYCLING_CONTEXTS.has(contextId) && node.type !== "text";
+      const exitTransition = exitTransitions.get(node.id);
 
       const enqueueRemoveOp = () => {
         recordPendingRemoval(parent.id, node.id);
@@ -875,10 +926,31 @@ export function createIOSHost(): Host {
       }
 
       PARENTS.set(node.id, null);
-      if (!isMarkerId(node.id)) {
+      if (!isMarkerId(node.id) && exitTransition) {
+        void startNativeTransition({
+          nodeId: node.id,
+          animationId: nextExitAnimationId++,
+          phase: "exit",
+          from: exitTransition.from,
+          to: exitTransition.to,
+          frames: exitTransition.frames,
+          duration: exitTransition.duration,
+          delay: exitTransition.delay,
+          easing: exitTransition.easing,
+        });
+        const timer = setTimeout(() => {
+          exitRemovalTimers.delete(node.id);
+          enqueueRemoveOp();
+          destroySubtreeTracking(node.id);
+          schedule();
+        }, getExitDurationMs(exitTransition) + 17);
+        exitRemovalTimers.set(node.id, timer);
+      } else if (!isMarkerId(node.id)) {
         enqueueRemoveOp();
+        destroySubtreeTracking(node.id);
+      } else {
+        destroySubtreeTracking(node.id);
       }
-      destroySubtreeTracking(node.id);
       schedule();
     },
     getParentNode(node) {

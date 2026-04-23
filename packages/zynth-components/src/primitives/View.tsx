@@ -25,6 +25,7 @@ import {
   type ResolvedStyleAnimation,
   type LayoutTransitionLike,
 } from "@zynth/core/motion";
+import type { NativeTransitionConfig } from "@zynth/core/motion";
 import { createStyle } from "../hooks/createStyle";
 import { useAnimatedStyleMapper } from "../hooks/useAnimatedStyleMapper";
 
@@ -89,6 +90,37 @@ let nextAnimationId = 1;
 
 const noopRef = () => {};
 
+const resolveNativeTransitionConfig = (
+  input?: EntryExitAnimationLike | Keyframe,
+) => {
+  if (!input) return null;
+  if (input instanceof Keyframe) {
+    const built = input.build();
+    if (built.kind !== "keyframe" || built.frames.length === 0) return null;
+    return {
+      from: built.frames[0]?.style ?? {},
+      to: built.frames[built.frames.length - 1]?.style ?? {},
+      frames: built.frames.map((f) => ({
+        at: f.at,
+        style: f.style,
+        easing: f.easing ? resolveNativeEasing(f.easing) : undefined,
+      })),
+      duration: built.duration,
+      delay: built.delay,
+      easing: "linear" as const,
+    };
+  }
+  const resolved = resolveEntryExitAnimation(input as EntryExitAnimationLike);
+  if (!resolved) return null;
+  return {
+    from: resolved.from ?? {},
+    to: resolved.to ?? {},
+    duration: resolved.duration ?? 300,
+    delay: resolved.delay ?? 0,
+    easing: resolveNativeEasing(resolved.easing),
+  };
+};
+
 export const View: ParentComponent<ViewProps> = (props) => {
   const [local] = splitProps(props, [
     "style",
@@ -121,7 +153,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
 
   let cancelJsAnimation: (() => void) | null = null;
   let activeAnimationId: number | null = null;
-  let didStartEnter = initialVisible;
+  let didStartEnter = false;
 
   // ─── Style resolution ──────────────────────────────────────────────────────
   const resolvedBase = createStyle(() => {
@@ -148,6 +180,12 @@ export const View: ParentComponent<ViewProps> = (props) => {
   const resolvedLayout = createMemo(() =>
     resolveLayoutTransition(local.layout ?? null) ?? undefined,
   );
+  const resolvedHostExit = createMemo<
+    Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase"> | null
+  >(() => {
+    if (local.visible !== undefined) return null;
+    return resolveNativeTransitionConfig(local.exiting);
+  });
 
   // ─── Animated style mapper ─────────────────────────────────────────────────
   // Zero cost when `local.style` carries no `__zynthAnimatedStyle` metadata.
@@ -244,37 +282,6 @@ export const View: ParentComponent<ViewProps> = (props) => {
   };
 
   // ─── Native transition helpers ─────────────────────────────────────────────
-  const resolveNativeTransitionConfig = (
-    input?: EntryExitAnimationLike | Keyframe,
-  ) => {
-    if (!input) return null;
-    if (input instanceof Keyframe) {
-      const built = input.build();
-      if (built.kind !== "keyframe" || built.frames.length === 0) return null;
-      return {
-        from: built.frames[0]?.style ?? {},
-        to: built.frames[built.frames.length - 1]?.style ?? {},
-        frames: built.frames.map((f) => ({
-          at: f.at,
-          style: f.style,
-          easing: f.easing ? resolveNativeEasing(f.easing) : undefined,
-        })),
-        duration: built.duration,
-        delay: built.delay,
-        easing: "linear" as const,
-      };
-    }
-    const resolved = resolveEntryExitAnimation(input as EntryExitAnimationLike);
-    if (!resolved) return null;
-    return {
-      from: resolved.from ?? {},
-      to: resolved.to ?? {},
-      duration: resolved.duration ?? 300,
-      delay: resolved.delay ?? 0,
-      easing: resolveNativeEasing(resolved.easing),
-    };
-  };
-
   const startNativePhase = (phase: "enter" | "exit"): void => {
     const nodeId = hostNode()?.id;
     if (!nodeId) return;
@@ -428,6 +435,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
           (hasStyleAccessor() ? undefined : (resolvedStyle() as JSX.Element)) as JSX.Element
         }
         layout={resolvedLayout() as JSX.Element}
+        __zynthExiting={resolvedHostExit() ?? undefined}
         onLayout={local.onLayout}
         onPress={appliedOnPress()}
         accessibilityLabel={local.accessibilityLabel}
