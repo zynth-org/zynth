@@ -1,21 +1,26 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@zynth/bottom-sheet": ["../zynth-bottom-sheet/dist/types/index.d.ts"],
-      "@zynth/bottom-sheet/*": ["../zynth-bottom-sheet/dist/types/*"]
-    },
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "rootDir": "src",
     "outDir": "dist/esm",
+    "noEmit": false,
     "declaration": false,
     "emitDeclarationOnly": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "solid-js",
     "strict": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "solid-js"
+    "baseUrl": "../../",
+    "types": ["zynth-jsx"],
+    "typeRoots": ["../../types", "../../node_modules/@types"],
+    "paths": {
+      "@zynth/components": ["packages/zynth-components/dist/types/zynth-components/src/index.d.ts"],
+      "@zynth/core": ["packages/zynth-core/dist/types/index.d.ts"],
+      "@zynth/core/*": ["packages/zynth-core/dist/types/*"],
+      "@zynth/apis": ["packages/zynth-apis/dist/types/zynth-apis/src/index.d.ts"]
+    }
   },
   "include": [
     "src"

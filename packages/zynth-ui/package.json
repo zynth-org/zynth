@@ -22,8 +22,8 @@
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
-    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json && cp -R src/themes dist/esm/themes",
-    "build:types": "tsc --project tsconfig.types.json",
+    "build:js": "rm -rf dist/esm && esbuild src/*.ts src/*.tsx src/**/*.ts src/**/*.tsx --outdir=dist/esm --format=esm --jsx=automatic --jsx-import-source=solid-js --loader:.ts=ts --loader:.tsx=tsx && cp -R src/themes dist/esm/themes",
+    "build:types": "tsc --project tsconfig.types.json && mv dist/types/packages/zynth-ui/src/* dist/types/ && rm -rf dist/types/packages",
     "clean": "rm -rf dist"
   },
   "keywords": [

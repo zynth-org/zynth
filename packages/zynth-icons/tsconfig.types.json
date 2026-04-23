@@ -2,15 +2,30 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
-    "strict": true,
-    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "rootDir": "../../",
+    "outDir": "dist/types",
+    "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "outDir": "dist/types",
     "jsx": "preserve",
-    "jsxImportSource": "solid-js"
+    "jsxImportSource": "solid-js",
+    "strict": true,
+    "skipLibCheck": true,
+    "baseUrl": "../../",
+    "types": ["zynth-jsx"],
+    "typeRoots": ["../../types", "../../node_modules/@types"],
+    "paths": {
+      "@zynth/components": ["packages/zynth-components/dist/types/zynth-components/src/index.d.ts"],
+      "@zynth/core": ["packages/zynth-core/dist/types/index.d.ts"],
+      "@zynth/core/*": ["packages/zynth-core/dist/types/*"],
+      "@zynth/apis": ["packages/zynth-apis/dist/types/zynth-apis/src/index.d.ts"]
+    }
   },
-  "include": ["src"],
-  "exclude": ["src/index.web.ts"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/index.web.ts"
+  ]
 }

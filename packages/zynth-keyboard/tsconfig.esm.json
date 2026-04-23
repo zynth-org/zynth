@@ -2,15 +2,19 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
-    "rootDir": "src",
+    "moduleResolution": "bundler",
+    "rootDir": "../../",
     "outDir": "dist/esm",
+    "noEmit": false,
     "declaration": false,
     "emitDeclarationOnly": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "solid-js",
     "strict": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "solid-js"
+    "baseUrl": "../../",
+    "types": ["zynth-jsx"],
+    "typeRoots": ["../../types", "../../node_modules/@types"]
   },
   "include": [
     "src"

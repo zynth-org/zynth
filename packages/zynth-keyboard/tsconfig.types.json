@@ -2,14 +2,21 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
-    "strict": true,
-    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "rootDir": "../../",
+    "outDir": "dist/types",
+    "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "outDir": "dist/types",
     "jsx": "preserve",
-    "jsxImportSource": "solid-js"
+    "jsxImportSource": "solid-js",
+    "strict": true,
+    "skipLibCheck": true,
+    "baseUrl": "../../",
+    "types": ["zynth-jsx"],
+    "typeRoots": ["../../types", "../../node_modules/@types"]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

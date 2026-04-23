@@ -51,7 +51,7 @@
   },
   "scripts": {
     "build": "yarn build:js && yarn build:types",
-    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
-    "build:types": "tsc --project tsconfig.types.json"
+    "build:js": "rm -rf dist/esm && esbuild src/*.ts src/*.tsx src/**/*.ts src/**/*.tsx --outdir=dist/esm --format=esm --jsx=automatic --jsx-import-source=solid-js --loader:.ts=ts --loader:.tsx=tsx",
+    "build:types": "tsc --project tsconfig.types.json && mv dist/types/packages/zynth-router/src/* dist/types/ && rm -rf dist/types/packages"
   }
 }
