@@ -120,28 +120,8 @@ async function createNewApp(argv) {
   // Copy app templates
   fs.cpSync(appTemplateDir, appPath, { recursive: true });
 
-  // Create src folder and files
-  const srcDir = path.join(appPath, "src");
-  fs.mkdirSync(srcDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(srcDir, "index.tsx"),
-    `import { start } from "@zynth/core";
-import App from "./App";
+  // Note: src/index.tsx and src/App.tsx are now copied from the template
 
-start(App);`
-  );
-  fs.writeFileSync(
-    path.join(srcDir, "App.tsx"),
-    `import { View, Text } from "@zynth/components";
-
-export default function App() {
-  return (
-    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <Text>Welcome to Zynth</Text>
-    </View>
-  );
-}`
-  );
 
   // Update app.json
   const appJsonPath = path.join(appPath, "app.json");
