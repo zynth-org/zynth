@@ -6,11 +6,11 @@ By utilizing optimized icon fonts and the native `Text` primitive, `Icons` ensur
 
 ## Basic usage
 
-Icons are categorized into sets and should be imported from their respective subpaths (e.g., `@zynth/icons/bs`) for optimal tree-shaking and performance. Since they are based on the `Text` primitive, they are styled using standard typography properties.
+Icons are categorized into sets and should be imported from their respective subpaths (e.g., `@zynthjs/icons/bs`) for optimal tree-shaking and performance. Since they are based on the `Text` primitive, they are styled using standard typography properties.
 
 ```tsx
-import { View } from "@zynth/components";
-import { BsArchive, BsBellFill } from "@zynth/icons/bs";
+import { View } from "@zynthjs/components";
+import { BsArchive, BsBellFill } from "@zynthjs/icons/bs";
 
 const App = () => {
   return (
@@ -30,8 +30,8 @@ const App = () => {
 Icons are frequently used within other Zynth primitives like `Button` or `Menu` to provide visual context.
 
 ```tsx
-import { Menu, View } from "@zynth/components";
-import { BsArchive } from "@zynth/icons/bs";
+import { Menu, View } from "@zynthjs/components";
+import { BsArchive } from "@zynthjs/icons/bs";
 
 const ActionItem = () => {
   return (
@@ -50,7 +50,7 @@ Because icons utilize the underlying typography system, their appearance can be 
 
 ```tsx
 import { createSignal } from "solid-js";
-import { HiHeart } from "@zynth/icons/hi";
+import { HiHeart } from "@zynthjs/icons/hi";
 
 const ToggleHeart = () => {
   const [isActive, setIsActive] = createSignal(false);
@@ -80,13 +80,13 @@ const ToggleHeart = () => {
 
 Import icons from the appropriate set to keep your bundle size small:
 
-- `@zynth/icons/ai` — Ant Design
-- `@zynth/icons/bs` — Bootstrap Icons
-- `@zynth/icons/fa` — Font Awesome
-- `@zynth/icons/hi` — Heroicons
-- `@zynth/icons/io` — Ionicons
-- `@zynth/icons/ri` — Remix Icon
-- `@zynth/icons/tb` — Tabler Icons
+- `@zynthjs/icons/ai` — Ant Design
+- `@zynthjs/icons/bs` — Bootstrap Icons
+- `@zynthjs/icons/fa` — Font Awesome
+- `@zynthjs/icons/hi` — Heroicons
+- `@zynthjs/icons/io` — Ionicons
+- `@zynthjs/icons/ri` — Remix Icon
+- `@zynthjs/icons/tb` — Tabler Icons
 - (See `src/` for the full list of sets including `bi`, `cg`, `fi`, `im`, `oc`, `si`, `ti`, `vs`, `wi`)
 
 **Props**

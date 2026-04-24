@@ -10,8 +10,8 @@
     "esModuleInterop": true,
     "baseUrl": "./",
     "paths": {
-      "@zynth/core": ["../zynth-core/src"],
-      "@zynth/apis": ["../zynth-apis/src"]
+      "@zynthjs/core": ["../zynth-core/src"],
+      "@zynthjs/apis": ["../zynth-apis/src"]
     }
   },
   "include": ["src"]

@@ -7,7 +7,7 @@ It is written for the current Zynth monorepo shape:
 
 - The repo is a Yarn 1 workspace monorepo.
 - The root package is private.
-- The main initial public packages are `@zynth/core`, `@zynth/apis`, and `@zynth/components`.
+- The main initial public packages are `@zynthjs/core`, `@zynthjs/apis`, and `@zynthjs/components`.
 - The CLI should be published as `zynth` if that package name is available.
 - The first public release cycle should use alpha releases for early feedback.
 
@@ -17,7 +17,7 @@ The goal is to make publishing safe, repeatable, and maintainable for a solo mai
 
 - [x] Release roadmap created.
 - [x] CLI package name decision recorded: publish the CLI as `zynth`.
-- [x] Initial public framework package set recorded: `@zynth/core`, `@zynth/apis`, and `@zynth/components`.
+- [x] Initial public framework package set recorded: `@zynthjs/core`, `@zynthjs/apis`, and `@zynthjs/components`.
 - [x] Package release manifest created at `docs/package-release-manifest.json`.
 - [x] Changesets configured.
 - [x] Initial public package metadata hardened.
@@ -41,16 +41,16 @@ The goal is to make publishing safe, repeatable, and maintainable for a solo mai
 ### Public package names
 
 - CLI: `zynth`
-- Core runtime: `@zynth/core`
-- Platform APIs: `@zynth/apis`
-- Initial component set: `@zynth/components`
+- Core runtime: `@zynthjs/core`
+- Platform APIs: `@zynthjs/apis`
+- Initial component set: `@zynthjs/components`
 
 ### Why this naming is recommended
 
 - `zynth` is the best package name for the CLI because it is the command developers will type most often.
-- `@zynth/core` should remain the runtime and renderer package because it is not the same thing as the CLI.
+- `@zynthjs/core` should remain the runtime and renderer package because it is not the same thing as the CLI.
 - Using the unscoped `zynth` package for the runtime would make the product shape less clear and would create confusion later if the CLI also needs that name.
-- Keeping the framework libraries scoped under `@zynth/*` gives you a clean namespace for future packages.
+- Keeping the framework libraries scoped under `@zynthjs/*` gives you a clean namespace for future packages.
 
 ### Ready when
 
@@ -61,7 +61,7 @@ The goal is to make publishing safe, repeatable, and maintainable for a solo mai
 ### Validation
 
 - Confirm the CLI package metadata points to the final publish name.
-- Confirm user-facing docs refer to `npm install -g zynth` or `npx zynth`, not `@zynth/cli`.
+- Confirm user-facing docs refer to `npm install -g zynth` or `npx zynth`, not `@zynthjs/cli`.
 - Confirm the root `package.json` remains private.
 
 ## What Should Be Published First
@@ -70,9 +70,9 @@ The first release should be intentionally narrow.
 
 ### Tier 1: initial framework packages
 
-- `@zynth/core`
-- `@zynth/apis`
-- `@zynth/components`
+- `@zynthjs/core`
+- `@zynthjs/apis`
+- `@zynthjs/components`
 
 These should be the only packages treated as required for the first public alpha unless an additional package is truly required for installation or app bootstrap.
 
@@ -80,14 +80,14 @@ These should be the only packages treated as required for the first public alpha
 
 These are good candidates for later alpha waves after the install story is proven:
 
-- `@zynth/router`
-- `@zynth/screens`
-- `@zynth/skia`
-- `@zynth/icons`
-- `@zynth/safe-area`
+- `@zynthjs/router`
+- `@zynthjs/screens`
+- `@zynthjs/skia`
+- `@zynthjs/icons`
+- `@zynthjs/safe-area`
 
 Motion and gesture are part of the core alpha surface through
-`@zynth/core/motion`, `@zynth/core/gesture`, and `@zynth/components`, not
+`@zynthjs/core/motion`, `@zynthjs/core/gesture`, and `@zynthjs/components`, not
 separate release-track packages.
 
 ### Tier 3: extras and specialized modules
@@ -118,8 +118,8 @@ This means the answer is not "everything must be precompiled." The correct rule 
 
 ### Recommended Zynth policy
 
-- `@zynth/core`, `@zynth/apis`, `@zynth/components`: ship built JS plus native source.
-- Heavy packages like `@zynth/skia`: support managed binary synchronization or vendored artifacts where needed.
+- `@zynthjs/core`, `@zynthjs/apis`, `@zynthjs/components`: ship built JS plus native source.
+- Heavy packages like `@zynthjs/skia`: support managed binary synchronization or vendored artifacts where needed.
 - Web support packages: ship built JS and any required static/native support assets.
 - The CLI should help users avoid manual binary setup whenever possible.
 
@@ -158,9 +158,9 @@ That means the main public framework packages move together with the same versio
 
 Example:
 
-- `@zynth/core@0.1.0-alpha.1`
-- `@zynth/apis@0.1.0-alpha.1`
-- `@zynth/components@0.1.0-alpha.1`
+- `@zynthjs/core@0.1.0-alpha.1`
+- `@zynthjs/apis@0.1.0-alpha.1`
+- `@zynthjs/components@0.1.0-alpha.1`
 
 This is strongly recommended for the first stage because:
 
@@ -345,7 +345,7 @@ Add one or more fixture apps used only to validate the install experience from p
 
 Suggested fixtures:
 
-- minimal iOS/Android app using `@zynth/core`, `@zynth/apis`, `@zynth/components`
+- minimal iOS/Android app using `@zynthjs/core`, `@zynthjs/apis`, `@zynthjs/components`
 - optional web fixture for partial web support
 
 These fixtures should prove:
@@ -427,7 +427,7 @@ Goal:
 TODO:
 
 - [x] confirm `zynth` is the CLI package
-- [x] confirm initial public packages are `@zynth/core`, `@zynth/apis`, `@zynth/components`
+- [x] confirm initial public packages are `@zynthjs/core`, `@zynthjs/apis`, `@zynthjs/components`
 - [x] classify all remaining packages as later public or internal
 - [x] decide that framework packages are lockstep during alpha
 - [x] decide that CLI is independent
@@ -620,7 +620,7 @@ These issues should be addressed as part of release preparation:
 - The repo currently uses Yarn 1 workspaces, but some internal guidance still references `pnpm run lint` and `pnpm run build`. The release docs and automation should be aligned to the actual package manager and commands in this repository.
 - The root package is named `zynth` but is private. That is fine for the workspace root, but it should not be confused with the publishable CLI package metadata.
 - Some packages appear ready for native source distribution already, but they still need pack validation to confirm the tarballs include exactly what consumers need.
-- Binary-heavy packages like `@zynth/skia` deserve stricter release checks than ordinary JS-first packages.
+- Binary-heavy packages like `@zynthjs/skia` deserve stricter release checks than ordinary JS-first packages.
 
 ## Recommended First Implementation Order
 

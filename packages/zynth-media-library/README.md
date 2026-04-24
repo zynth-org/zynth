@@ -2,7 +2,7 @@
 
 Providing secure, cross-platform access to save images and videos into the system's native Photos or Gallery applications.
 
-The `@zynth/media-library` package offers a high-level API for exporting media assets from your application's sandbox to the user's permanent media storage. It leverages modern platform APIs—`PHPhotoLibrary` with add-only support on iOS and scoped `MediaStore` on Android—to ensure that your app only requests the minimum necessary permissions.
+The `@zynthjs/media-library` package offers a high-level API for exporting media assets from your application's sandbox to the user's permanent media storage. It leverages modern platform APIs—`PHPhotoLibrary` with add-only support on iOS and scoped `MediaStore` on Android—to ensure that your app only requests the minimum necessary permissions.
 
 Before using any Media Library features, you must declare the required permissions and usage descriptions in your `app.json` configuration file.
 
@@ -30,8 +30,8 @@ Before using any Media Library features, you must declare the required permissio
 ### Saving an Image
 
 ```tsx
-import { MediaLibrary } from "@zynth/media-library";
-import { View, Button, Text } from "@zynth/components";
+import { MediaLibrary } from "@zynthjs/media-library";
+import { View, Button, Text } from "@zynthjs/components";
 
 const SaveButton = (props: { imageUri: string }) => {
   const handleSave = async () => {
@@ -81,7 +81,7 @@ await MediaLibrary.saveVideoAsync({
 ## Special cases and notes
 
 - **Permissions (iOS)**: If you only need to save media (and not read the user's library), use `NSPhotoLibraryAddUsageDescription`. This triggers a more restricted permission prompt that users are more likely to accept.
-- **URI Restrictions**: For security reasons, the API only accepts local file URIs (e.g., `file:///...`). To save a remote image, you must first download it to the temporary directory using `@zynth/filesystem`.
+- **URI Restrictions**: For security reasons, the API only accepts local file URIs (e.g., `file:///...`). To save a remote image, you must first download it to the temporary directory using `@zynthjs/filesystem`.
 - **Sandbox Security**: The native implementation strictly enforces sandbox checks. Any attempt to save files from outside the application's authorized directories or the temporary cache will be rejected.
 - **MIME Type Detection**: Android uses the file extension to automatically derive the correct MIME type for the `MediaStore` entry. Ensure your input URIs have correct extensions (`.jpg`, `.png`, `.mp4`).
 
@@ -109,4 +109,4 @@ await MediaLibrary.saveVideoAsync({
 
 ---
 
-This package focuses on exporting media. For capturing new photos or selecting existing ones for use within your app, see `@zynth/image-picker`.
+This package focuses on exporting media. For capturing new photos or selecting existing ones for use within your app, see `@zynthjs/image-picker`.

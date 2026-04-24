@@ -5,7 +5,7 @@ import android.util.Log
 import com.zynth.kit.runtime.ZynthRuntime
 
 /**
- * Canonical package bootstrap entrypoint for @zynth/ui native modules.
+ * Canonical package bootstrap entrypoint for @zynthjs/ui native modules.
  */
 object ZynthUIBootstrap {
     private var moduleInstance: ZynthAppearanceModule? = null

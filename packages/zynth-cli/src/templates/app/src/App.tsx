@@ -4,11 +4,11 @@ import {
   Pressable,
   Image,
   LayoutChangeEvent,
-} from "@zynth/components";
+} from "@zynthjs/components";
 import {
   createEntryExitAnimation,
   LinearTransition,
-} from "@zynth/core/motion";
+} from "@zynthjs/core/motion";
 import { createSignal, For } from "solid-js";
 import logo from "./assets/zynth-logo.png";
 

@@ -11,7 +11,7 @@ It is intentionally framework-focused:
 
 - What changed in SolidJS 2.0 beta
 - What is likely to affect Zynth packages
-- What appears immediately relevant to `@zynth/core`
+- What appears immediately relevant to `@zynthjs/core`
 - What package owners should validate when they review their own package
 - Where Solid 2.0 may create new opportunities for native-first Zynth APIs
 
@@ -32,11 +32,11 @@ Official SolidJS references used for this roadmap:
 
 ## Executive Summary
 
-SolidJS 2.0 beta looks like a meaningful migration for the Zynth ecosystem, but not an automatic framework rewrite for `@zynth/core`.
+SolidJS 2.0 beta looks like a meaningful migration for the Zynth ecosystem, but not an automatic framework rewrite for `@zynthjs/core`.
 
 Current assessment:
 
-- `@zynth/core` likely needs a focused compatibility pass, not a major architectural rewrite.
+- `@zynthjs/core` likely needs a focused compatibility pass, not a major architectural rewrite.
 - The highest-risk areas are renderer/runtime contracts, scheduler semantics, and import/export changes.
 - The highest migration volume across the monorepo will likely be outside `zynth-core`, especially in packages that use `createEffect`, `createResource`, `splitProps`, stores, or web DOM helpers.
 - Native iOS/Android packages may benefit from Solid 2.0's scheduler and derived primitive model once parity is established.
@@ -55,7 +55,7 @@ Implications for Zynth:
 
 Why this matters for Zynth:
 
-- `@zynth/core` already exposes `flush()` and native hosts already coordinate explicit UI flushes.
+- `@zynthjs/core` already exposes `flush()` and native hosts already coordinate explicit UI flushes.
 - This is promising for native runtimes, but it must be validated carefully because Zynth has host-level batching on top of Solid's batching.
 
 ### 2. Effects are split into compute and apply phases
@@ -73,7 +73,7 @@ Implications for Zynth:
 
 Why this matters for Zynth:
 
-- This is not a large direct risk for `@zynth/core` today.
+- This is not a large direct risk for `@zynthjs/core` today.
 - It is likely a major review topic for UI, API, and helper packages.
 
 ### 3. `onMount` is replaced by `onSettled`
@@ -188,13 +188,13 @@ Implications for Zynth:
 
 Why this matters for Zynth:
 
-- This is especially relevant to `@zynth/core` web support and any package with web-only compatibility layers.
+- This is especially relevant to `@zynthjs/core` web support and any package with web-only compatibility layers.
 
-## Current `@zynth/core` Assessment
+## Current `@zynthjs/core` Assessment
 
 ## Summary
 
-`@zynth/core` appears less exposed than many userland packages because it currently does not rely heavily on the highest-churn 2.0 APIs such as:
+`@zynthjs/core` appears less exposed than many userland packages because it currently does not rely heavily on the highest-churn 2.0 APIs such as:
 
 - `createEffect`
 - `onMount`
@@ -213,7 +213,7 @@ However, it is still highly sensitive because it owns:
 
 ### Import and package boundary changes
 
-`@zynth/core` currently exposes or imports Solid APIs using 1.x paths and names.
+`@zynthjs/core` currently exposes or imports Solid APIs using 1.x paths and names.
 
 Examples to revisit:
 
@@ -241,7 +241,7 @@ Expected work:
 
 ### Scheduler and flush semantics
 
-`@zynth/core` already exposes a host flush path.
+`@zynthjs/core` already exposes a host flush path.
 
 Expected work:
 
@@ -278,7 +278,7 @@ Expected work:
 
 ### Start/runtime bootstrap
 
-Boot and rerender flows in `@zynth/core` should be reviewed under the new scheduler, but no immediate architectural rewrite is indicated.
+Boot and rerender flows in `@zynthjs/core` should be reviewed under the new scheduler, but no immediate architectural rewrite is indicated.
 
 ## Migration Risk By Package Type
 
@@ -390,7 +390,7 @@ The new warnings around top-level reads and writes in reactive scopes may help p
 ### Phase 1: Framework compatibility spike
 
 Goal:
-Establish the exact Solid 2.0 beta breakage surface for `@zynth/core`.
+Establish the exact Solid 2.0 beta breakage surface for `@zynthjs/core`.
 
 Tasks:
 
@@ -408,7 +408,7 @@ Tasks:
 
 - isolate renamed helper APIs where practical
 - normalize import path transitions
-- keep `@zynth/core` public integration points stable if possible
+- keep `@zynthjs/core` public integration points stable if possible
 - add migration notes for downstream package authors
 
 ### Phase 3: Package-by-package reviews
@@ -436,10 +436,10 @@ Tasks:
 ## Initial Conclusions
 
 - SolidJS 2.0 beta is important enough that Zynth should track it centrally now.
-- `@zynth/core` does not currently look like a rewrite candidate, but it is a high-sensitivity compatibility package.
+- `@zynthjs/core` does not currently look like a rewrite candidate, but it is a high-sensitivity compatibility package.
 - The largest total migration surface is likely outside `zynth-core`, especially in package-level Solid APIs and stores.
 - Zynth's existing native/runtime architecture still fits Solid 2.0 well.
-- The best strategy is to stabilize `@zynth/core` first, then fan out package reviews with this document as the shared baseline.
+- The best strategy is to stabilize `@zynthjs/core` first, then fan out package reviews with this document as the shared baseline.
 
 ## Follow-up
 

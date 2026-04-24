@@ -2,7 +2,7 @@ import {
   callNative as coreCallNative,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 const MODULE_NAME = "MediaLibrary";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
@@ -15,7 +15,7 @@ function getPlatform(): string | null {
 
 function createMissingModuleError(): Error {
   return new Error(
-    `[${MODULE_NAME}] Native module not found. Ensure @zynth/media-library is installed and native projects were regenerated.`
+    `[${MODULE_NAME}] Native module not found. Ensure @zynthjs/media-library is installed and native projects were regenerated.`
   );
 }
 

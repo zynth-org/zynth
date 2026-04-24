@@ -1,13 +1,13 @@
 # Skia
 
-`@zynth/skia` provides a declarative canvas API, an imperative surface API, resource loaders for images, SVG, animations, and fonts, and a small set of reactive helpers for draw-time values.
+`@zynthjs/skia` provides a declarative canvas API, an imperative surface API, resource loaders for images, SVG, animations, and fonts, and a small set of reactive helpers for draw-time values.
 
 The native renderer is available on iOS and Android. Web support is partial: utility APIs such as shader evaluation, font measurement helpers, and resource preparation can be used in browser environments, but the package does not expose a dedicated web canvas renderer.
 
 ## Basic usage
 
 ```tsx
-import { Canvas, Circle, Group, Path, Rect } from "@zynth/skia";
+import { Canvas, Circle, Group, Path, Rect } from "@zynthjs/skia";
 
 export function BasicScene() {
   return (
@@ -32,7 +32,7 @@ export function BasicScene() {
 ### Paint inheritance
 
 ```tsx
-import { Canvas, Paint, Rect, Circle } from "@zynth/skia";
+import { Canvas, Paint, Rect, Circle } from "@zynthjs/skia";
 
 export function PaintInheritance() {
   return (
@@ -52,7 +52,7 @@ export function PaintInheritance() {
 ### Transforming a subtree
 
 ```tsx
-import { Canvas, Group, Rect, Circle } from "@zynth/skia";
+import { Canvas, Group, Rect, Circle } from "@zynthjs/skia";
 
 export function TransformedGroup() {
   return (
@@ -69,7 +69,7 @@ export function TransformedGroup() {
 ### Switching to the imperative surface
 
 ```tsx
-import { SkiaView } from "@zynth/skia";
+import { SkiaView } from "@zynthjs/skia";
 
 export function SurfaceHost() {
   return (

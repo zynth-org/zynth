@@ -2,7 +2,7 @@
 
 Native document and file selection system for Zynth applications, providing a unified interface for the system's file explorers.
 
-`@zynth/document-picker` leverages **UIDocumentPickerViewController** on iOS and the **Storage Access Framework (SAF)** on Android to allow users to select files from their device, iCloud, or Google Drive.
+`@zynthjs/document-picker` leverages **UIDocumentPickerViewController** on iOS and the **Storage Access Framework (SAF)** on Android to allow users to select files from their device, iCloud, or Google Drive.
 
 ## Basic usage
 
@@ -11,7 +11,7 @@ Native document and file selection system for Zynth applications, providing a un
 The `getDocumentAsync` method opens the system's document picker. It resolves with a result object containing the selected file's metadata or a cancelled state.
 
 ```tsx
-import { DocumentPicker } from "@zynth/document-picker";
+import { DocumentPicker } from "@zynthjs/document-picker";
 
 const pickFile = async () => {
   const result = await DocumentPicker.getDocumentAsync({

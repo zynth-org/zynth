@@ -88,8 +88,8 @@ async function buildArtifacts() {
       continue;
     }
 
-    const folderName = pkgName.startsWith("@zynth/")
-      ? pkgName.replace("@zynth/", "zynth-")
+    const folderName = pkgName.startsWith("@zynthjs/")
+      ? pkgName.replace("@zynthjs/", "zynth-")
       : entry.name;
     const targetDir = join(outputDir, folderName);
 
@@ -147,8 +147,8 @@ function rewriteInternalDeps(pkgJson: PackageJson, folderMap: Record<string, str
     const rewritten: Record<string, string> = { ...deps };
 
     for (const depName of Object.keys(rewritten)) {
-      if (!depName.startsWith("@zynth/")) continue;
-      const folderName = folderMap[depName] ?? depName.replace("@zynth/", "zynth-");
+      if (!depName.startsWith("@zynthjs/")) continue;
+      const folderName = folderMap[depName] ?? depName.replace("@zynthjs/", "zynth-");
       rewritten[depName] = `file:../${folderName}`;
     }
 

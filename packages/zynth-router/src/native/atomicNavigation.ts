@@ -1,5 +1,5 @@
-import { platform } from "@zynth/apis";
-import { withHostBatch } from "@zynth/core";
+import { platform } from "@zynthjs/apis";
+import { withHostBatch } from "@zynthjs/core";
 
 const isAndroid = platform.current === "android";
 

@@ -1,5 +1,5 @@
-import { View } from "@zynth/components";
-import type { Style } from "@zynth/core";
+import { View } from "@zynthjs/components";
+import type { Style } from "@zynthjs/core";
 import {
   createEffect,
   createMemo,

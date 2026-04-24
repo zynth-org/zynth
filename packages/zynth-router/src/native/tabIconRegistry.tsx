@@ -4,8 +4,8 @@ import {
   getActiveSurface,
   setActiveSurface,
   type HostNode,
-} from "@zynth/core";
-import { platform } from "@zynth/apis";
+} from "@zynthjs/core";
+import { platform } from "@zynthjs/apis";
 import { runWithOwner, type Owner, createSignal } from "solid-js";
 import type { TabIconFactory } from "../types";
 
@@ -64,7 +64,7 @@ function createSurfaceContainer(rootId: number): HostNode {
   return { id: rootId, type: "root" };
 }
 
-import { View } from "@zynth/components";
+import { View } from "@zynthjs/components";
 
 function mountIcon(
   surfaceId: number,

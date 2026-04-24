@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 /**
  * Animation types for screen transitions

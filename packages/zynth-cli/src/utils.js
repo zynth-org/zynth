@@ -343,7 +343,7 @@ function runCommandFilteredAndroid(command, args, options = {}) {
       /^\s*e:/i.test(line) ||
       line.includes("* What went wrong:") ||
       line.includes("* Try:") ||
-      (line.startsWith("> ") && !line.startsWith("> Task") && !line.startsWith("> @zynth/") && !line.startsWith("> node ")) ||
+      (line.startsWith("> ") && !line.startsWith("> Task") && !line.startsWith("> @zynthjs/") && !line.startsWith("> node ")) ||
       /\berror:/i.test(line) ||
       /\bCaused by:/i.test(line) ||
       /\bCould not find\b/i.test(line) ||
@@ -435,7 +435,7 @@ function resolvePackageJsonFromApp(depName, appDir) {
 }
 
 function getZynthRuntimeVersion(appDir) {
-  const runtimePkgPath = resolvePackageJsonFromApp("@zynth/core", appDir);
+  const runtimePkgPath = resolvePackageJsonFromApp("@zynthjs/core", appDir);
   if (runtimePkgPath && fs.existsSync(runtimePkgPath)) {
     try {
       const pkg = readJSON(runtimePkgPath);
@@ -575,7 +575,7 @@ function getZynthPackageCount(root, platform) {
     function enqueueDependencyNames(source) {
       if (!source || typeof source !== "object") return;
       for (const name of Object.keys(source)) {
-        if (name.startsWith("@zynth/")) {
+        if (name.startsWith("@zynthjs/")) {
           queue.push(name);
         }
       }
@@ -1193,7 +1193,7 @@ function analyzeRsbuildConfigFeatureUsage(filePath, source) {
       const importRecord = importedNames.get(identifierName);
       return (
         importRecord &&
-        importRecord.moduleName === "@zynth/rsbuild-plugin" &&
+        importRecord.moduleName === "@zynthjs/rsbuild-plugin" &&
         importRecord.imported === expectedImportedName
       );
     };
@@ -1211,7 +1211,7 @@ function analyzeRsbuildConfigFeatureUsage(filePath, source) {
         ) {
           const ns = expr.expression.text;
           const moduleName = namespaceImports.get(ns);
-          if (moduleName === "@zynth/rsbuild-plugin") {
+          if (moduleName === "@zynthjs/rsbuild-plugin") {
             if (expr.name.text === "defineZynthConfig") {
               hasDefineZynthConfig = true;
             }

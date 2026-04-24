@@ -11,6 +11,8 @@ type ManifestPackage = {
   name: string;
   path: string;
   readiness: ReadinessState;
+  publishName?: string;
+  bin?: string;
 };
 type ReleaseManifest = {
   schemaVersion: number;
@@ -33,7 +35,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
 const manifestPath = join(repoRoot, "docs", "package-release-manifest.json");
 const npmCacheDir = join(repoRoot, ".tmp", "npm-cache");
-const requiredFixturePackages = ["@zynth/core", "@zynth/apis", "@zynth/components", "@zynth/rsbuild-plugin", "zynth"];
+const requiredFixturePackages = ["@zynthjs/core", "@zynthjs/apis", "@zynthjs/components", "@zynthjs/rsbuild-plugin", "zynth"];
 
 function log(message: string) {
   process.stdout.write(`${message}\n`);
@@ -215,7 +217,7 @@ async function main() {
     const patchDependencies = (deps: Record<string, string> | undefined) => {
       if (!deps) return;
       for (const name of Object.keys(deps)) {
-        if (name === "zynth" || name.startsWith("@zynth/")) {
+        if (name === "zynth" || name.startsWith("@zynthjs/")) {
           const tarball = tarballsByPackage.get(name);
           if (tarball) {
             deps[name] = `file:${tarball}`;

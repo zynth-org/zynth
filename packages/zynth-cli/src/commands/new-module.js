@@ -11,8 +11,8 @@ function resolveModuleTemplateDir() {
 function normalizeModuleName(input) {
   if (!input) return "";
   let name = String(input).trim();
-  if (name.startsWith("@zynth/")) {
-    name = name.slice("@zynth/".length);
+  if (name.startsWith("@zynthjs/")) {
+    name = name.slice("@zynthjs/".length);
   }
   if (name.startsWith("zynth-")) {
     name = name.slice("zynth-".length);

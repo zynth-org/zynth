@@ -1,13 +1,13 @@
 # TypeScript
 
-`@zynth/router` is designed around typed route maps. Route names, params, screen registration, and navigation helper methods are inferred from the same `ParamList` type, which keeps route declarations and screen usage aligned across the application.
+`@zynthjs/router` is designed around typed route maps. Route names, params, screen registration, and navigation helper methods are inferred from the same `ParamList` type, which keeps route declarations and screen usage aligned across the application.
 
 The package exports generic navigator factories and public types so screens, helpers, and reusable abstractions can stay strongly typed without duplicating route definitions.
 
 ## Basic usage
 
 ```tsx
-import { createStackNavigator, createTabNavigator } from "@zynth/router";
+import { createStackNavigator, createTabNavigator } from "@zynthjs/router";
 
 type RootStackParams = {
   Home: undefined;
@@ -23,8 +23,8 @@ const Stack = createStackNavigator<RootStackParams>();
 ### Typed navigation and route access
 
 ```tsx
-import { useNavigation, useRoute } from "@zynth/router";
-import { Text } from "@zynth/components";
+import { useNavigation, useRoute } from "@zynthjs/router";
+import { Text } from "@zynthjs/components";
 
 function ProfileScreen() {
   const navigation = useNavigation<RootStackParams>();
@@ -41,8 +41,8 @@ function ProfileScreen() {
 ### Typed screen props
 
 ```tsx
-import type { ScreenComponentProps } from "@zynth/router";
-import { Text } from "@zynth/components";
+import type { ScreenComponentProps } from "@zynthjs/router";
+import { Text } from "@zynthjs/components";
 
 type ProfileProps = ScreenComponentProps<RootStackParams, "Profile">;
 
@@ -56,8 +56,8 @@ function ProfileScreen(props: ProfileProps) {
 ### Reusable screen component typing
 
 ```tsx
-import type { ScreenComponent } from "@zynth/router";
-import { Text } from "@zynth/components";
+import type { ScreenComponent } from "@zynthjs/router";
+import { Text } from "@zynthjs/components";
 
 const SettingsScreen: ScreenComponent<RootStackParams, "Settings"> = (
   props,
@@ -70,7 +70,7 @@ const SettingsScreen: ScreenComponent<RootStackParams, "Settings"> = (
 ### Typed screen options
 
 ```tsx
-import type { ScreenOptions } from "@zynth/router";
+import type { ScreenOptions } from "@zynthjs/router";
 
 const detailsOptions: ScreenOptions = {
   title: "Details",

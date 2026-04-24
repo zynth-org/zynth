@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/sensors",
+  "name": "@zynthjs/sensors",
   "version": "0.0.1",
   "description": "Device sensor APIs for Zynth",
   "type": "module",

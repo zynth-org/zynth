@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 export const StatusBar = () => {
   return <div style="display: none" aria-hidden="true" />;

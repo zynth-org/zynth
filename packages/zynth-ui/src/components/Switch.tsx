@@ -1,7 +1,7 @@
-import { Switch as NativeSwitch, View, Text } from "@zynth/components";
+import { Switch as NativeSwitch, View, Text } from "@zynthjs/components";
 import { splitProps, type Component } from "solid-js";
 import { useUITheme } from "../hooks";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 export interface SwitchProps {
   label?: string;

@@ -202,7 +202,7 @@ function createWebBabelPlugin(babelOptions: DefineZynthConfigOptions["babel"] | 
             "babel-preset-solid",
             {
               generate: "universal",
-              moduleName: "@zynth/core/universal",
+              moduleName: "@zynthjs/core/universal",
             },
           ],
         ],

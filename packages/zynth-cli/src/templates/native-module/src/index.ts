@@ -3,7 +3,7 @@ import {
   callNativeSync,
   getNativeModule,
   unwrapNativeResult
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 const MODULE_NAME = "{{MODULE_NAME_PASCAL}}";
 

@@ -7,7 +7,7 @@ On iOS, it uses a native blur-backed view. On the web, it maps to CSS backdrop b
 ## Basic Usage
 
 ```tsx
-import { BlurView, Text, View } from "@zynth/components";
+import { BlurView, Text, View } from "@zynthjs/components";
 
 function BlurCard() {
   return (

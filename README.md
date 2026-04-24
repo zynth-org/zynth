@@ -11,7 +11,7 @@ Zynth brings fine-grained reactivity to native mobile development. By combining 
 - **Native Signals:** `createSharedSignal` exposes Solid-style signals backed by native shared storage so the UI thread can read values without async hops.
 - **True Native Navigation:** Screens and transitions are backed by native controllers (`UINavigationController` / Fragments), ensuring 100% authentic feel and gesture support.
 - **Shared Value Animations:** Physics-based animations run on the UI thread, driven by a native loop, keeping interactions buttery smooth even if the JS thread is busy.
-- **Modular Architecture:** Everything is a package. Core logic, UI components, and native APIs are split into small, tree-shakeable modules (`@zynth/core`, `@zynth/components`, `@zynth/animate`).
+- **Modular Architecture:** Everything is a package. Core logic, UI components, and native APIs are split into small, tree-shakeable modules (`@zynthjs/core`, `@zynthjs/components`, `@zynthjs/animate`).
 - **AI-Native Development:** Built-in support for **Skyhook**, an AI backend that can generate and update apps on the fly from natural language prompts.
 
 ## Usage
@@ -70,7 +70,7 @@ yarn build:android
 
 Zynth is designed to be lean and modular.
 
-### 1. The Reactive Core (`@zynth/core`)
+### 1. The Reactive Core (`@zynthjs/core`)
 
 The heart of the framework. It implements a SolidJS Universal Renderer that translates reactive updates into a stream of instructions (`createNode`, `setProp`, `insertChild`) for the native host.
 
@@ -80,10 +80,10 @@ A C++ core (shared between iOS and Android) that implements the JSI bridge. It u
 
 ### 3. The Ecosystem
 
-- **`@zynth/components`**: Core primitives (`View`, `Text`, `Image`, `FlatList`).
-- **`@zynth/animate`**: High-performance, interruptible animations (`createSharedValue`, `withSpring`).
-- **`@zynth/router`**: A stack-based router designed for multi-app environments.
-- **`@zynth/hypervisor`**: Run isolated "Guest" Zynth apps within a "Host" app.
+- **`@zynthjs/components`**: Core primitives (`View`, `Text`, `Image`, `FlatList`).
+- **`@zynthjs/animate`**: High-performance, interruptible animations (`createSharedValue`, `withSpring`).
+- **`@zynthjs/router`**: A stack-based router designed for multi-app environments.
+- **`@zynthjs/hypervisor`**: Run isolated "Guest" Zynth apps within a "Host" app.
 
 _For a deep dive into the internals, read the [Architecture Documentation](docs/architecture.md)._
 
@@ -93,7 +93,7 @@ _For a deep dive into the internals, read the [Architecture Documentation](docs/
 
 ```tsx
 import { createSignal } from "solid-js";
-import { View, Text, Button } from "@zynth/components";
+import { View, Text, Button } from "@zynthjs/components";
 
 export function Counter() {
   const [count, setCount] = createSignal(0);
@@ -115,7 +115,7 @@ import {
   createSharedValue,
   useAnimatedStyle,
   withSpring,
-} from "@zynth/animate";
+} from "@zynthjs/animate";
 
 export function BouncingBox() {
   const offset = createSharedValue(0);

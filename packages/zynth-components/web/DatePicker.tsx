@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createSignal, createEffect, For, Show, createMemo, onCleanup } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",

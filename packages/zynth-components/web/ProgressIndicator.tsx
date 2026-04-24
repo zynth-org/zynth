@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 export const ProgressIndicator = (props: any) => {
   const size = () => (props.size === "large" ? "36px" : "20px");

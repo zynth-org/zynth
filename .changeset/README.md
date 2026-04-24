@@ -4,9 +4,9 @@ Zynth uses Changesets for public package versioning and changelog generation.
 
 ## Release Tracks
 
-- `@zynth/core`, `@zynth/apis`, and `@zynth/components` are fixed together during the alpha period.
+- `@zynthjs/core`, `@zynthjs/apis`, and `@zynthjs/components` are fixed together during the alpha period.
 - The CLI package is published as `zynth` and exposes the `zynth` binary.
-- `@zynth/skills` and `@zynth/skyhook` are private and ignored by Changesets.
+- `@zynthjs/skills` and `@zynthjs/skyhook` are private and ignored by Changesets.
 - Later-alpha packages are available to Changesets, but should not be published until the release manifest marks them ready.
 
 ## Common Commands

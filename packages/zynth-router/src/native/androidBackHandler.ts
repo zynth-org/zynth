@@ -1,5 +1,5 @@
-import { platform } from "@zynth/apis";
-import { NativeEventEmitter } from "@zynth/core";
+import { platform } from "@zynthjs/apis";
+import { NativeEventEmitter } from "@zynthjs/core";
 import { createEffect, onCleanup, untrack, type Accessor } from "solid-js";
 
 type ModulesBridge = {

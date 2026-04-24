@@ -4,7 +4,7 @@ import type {
   InterpolatedScalarRef,
   SharedScalarRef,
   Style,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 export type SkiaColorValue = string;
 export type SkiaTileMode = "clamp" | "repeat" | "mirror" | "decal";

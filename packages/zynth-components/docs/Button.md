@@ -7,7 +7,7 @@
 The component supports a simplified label prop or standard children. By default, it uses the `primary` tone and `solid` variant.
 
 ```tsx
-import { Button, View, SystemIcon } from "@zynth/components";
+import { Button, View, SystemIcon } from "@zynthjs/components";
 
 function ActionButtons() {
   const handlePress = () => {

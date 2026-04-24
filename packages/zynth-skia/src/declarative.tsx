@@ -4,7 +4,7 @@ import {
   captureSharedSignals,
   type InterpolatedScalarRef,
   type SharedScalarRef,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import { assertSkiaFeature } from "./native";
 import { resolvePathCommands } from "./path";
 import {

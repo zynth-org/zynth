@@ -58,7 +58,7 @@ function isModuleNotFound(error: ErrorResult): boolean {
 function createMissingModuleError(): Error {
   return new Error(
     `[${MODULE_NAME}] Native module not found. ` +
-      `Ensure @zynth/network is installed, linked, and your native project has been regenerated for this platform.`
+      `Ensure @zynthjs/network is installed, linked, and your native project has been regenerated for this platform.`
   );
 }
 

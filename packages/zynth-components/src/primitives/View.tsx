@@ -9,8 +9,8 @@ import {
   splitProps,
 } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { HostNode, Style, StyleProp } from "@zynth/core";
-import { setProperty, sharedNativeEventEmitter } from "@zynth/core";
+import type { HostNode, Style, StyleProp } from "@zynthjs/core";
+import { setProperty, sharedNativeEventEmitter } from "@zynthjs/core";
 import {
   isNativePlatform,
   resolveEntryExitAnimation,
@@ -24,8 +24,8 @@ import {
   type EntryExitAnimationLike,
   type ResolvedStyleAnimation,
   type LayoutTransitionLike,
-} from "@zynth/core/motion";
-import type { NativeTransitionConfig } from "@zynth/core/motion";
+} from "@zynthjs/core/motion";
+import type { NativeTransitionConfig } from "@zynthjs/core/motion";
 import { createStyle } from "../hooks/createStyle";
 import { useAnimatedStyleMapper } from "../hooks/useAnimatedStyleMapper";
 
@@ -51,7 +51,7 @@ export interface ViewProps {
    *
    * @example
    * ```tsx
-   * import { FadeIn } from "@zynth/core/motion";
+   * import { FadeIn } from "@zynthjs/core/motion";
    * <View entering={FadeIn} />
    * ```
    */

@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/core",
+  "name": "@zynthjs/core",
   "version": "0.0.1-alpha.0",
   "description": "Zynth native runtime, SolidJS renderer, JSI host interface, and flex layout core.",
   "type": "module",

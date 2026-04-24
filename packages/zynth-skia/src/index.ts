@@ -3,7 +3,7 @@ export { SkottieView } from "./SkottieView";
 export type { SkottieViewProps } from "./SkottieView";
 export { createSkiaSurface } from "./createSkiaSurface";
 export type { SkiaSurfaceController } from "./createSkiaSurface";
-export { interpolateShared, toSharedScalar } from "@zynth/core";
+export { interpolateShared, toSharedScalar } from "@zynthjs/core";
 export {
   Canvas,
   Circle,
@@ -76,7 +76,7 @@ export type {
   SharedScalarRef,
   SharedSignalAccessor,
   SharedScalarValue,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 export type {
   LayoutRectangle,

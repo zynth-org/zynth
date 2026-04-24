@@ -5,7 +5,7 @@ Legacy Bluetooth Classic functionality for Zynth applications, providing RFCOMM 
 > [!WARNING]
 > **Android Only**: Bluetooth Classic is currently only supported on the Android runtime. Calling these methods on iOS will result in an "Unsupported" result or an error.
 
-The `@zynth/bluetooth/Classic` system allows your Zynth application to discover nearby classic devices and establish a raw serial connection using the most commonly used RFCOMM profile (00001101-0000-1000-8000-00805F9B34FB).
+The `@zynthjs/bluetooth/Classic` system allows your Zynth application to discover nearby classic devices and establish a raw serial connection using the most commonly used RFCOMM profile (00001101-0000-1000-8000-00805F9B34FB).
 
 ## Basic usage
 
@@ -14,7 +14,7 @@ The `@zynth/bluetooth/Classic` system allows your Zynth application to discover 
 Discovery in Bluetooth Classic works differently from BLE; it is a full scan for all nearby discoverable devices.
 
 ```tsx
-import { BluetoothClassic } from "@zynth/bluetooth";
+import { BluetoothClassic } from "@zynthjs/bluetooth";
 
 const setup = async () => {
   // 1. Listen for results

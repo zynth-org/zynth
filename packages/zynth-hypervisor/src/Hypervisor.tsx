@@ -1,5 +1,5 @@
 import { createSignal, mergeProps, JSX } from "solid-js";
-import type { HostNode } from "@zynth/core";
+import type { HostNode } from "@zynthjs/core";
 
 export interface HypervisorRef extends HostNode {
   reload: () => void;

@@ -1,4 +1,4 @@
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,9 +54,9 @@ function loadZynthAliases() {
       "universal.ts"
     );
     if (existsSync(coreUniversalSrc)) {
-      aliases["@zynth/core/universal"] = coreUniversalSrc;
+      aliases["@zynthjs/core/universal"] = coreUniversalSrc;
     } else if (existsSync(coreUniversalSource)) {
-      aliases["@zynth/core/universal"] = coreUniversalSource;
+      aliases["@zynthjs/core/universal"] = coreUniversalSource;
     }
   } catch {
     // Missing manifest; fall back to empty aliases.

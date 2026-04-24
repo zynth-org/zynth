@@ -7,7 +7,7 @@
 The standard `ScrollView` provides vertical scrolling by default. It can be switched to horizontal mode by setting the `horizontal` prop.
 
 ```tsx
-import { ScrollView, View, Text } from "@zynth/components";
+import { ScrollView, View, Text } from "@zynthjs/components";
 
 function List() {
   return (

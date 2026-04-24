@@ -1,7 +1,7 @@
 import { children as resolveChildren, splitProps } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { Style } from "@zynth/core";
-import { platform } from "@zynth/apis";
+import type { Style } from "@zynthjs/core";
+import { platform } from "@zynthjs/apis";
 
 export interface GlassContainerProps {
   style?: Style;

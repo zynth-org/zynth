@@ -7,7 +7,7 @@ The imperative API exposes the same renderer through direct command submission. 
 ## Basic usage
 
 ```tsx
-import { SkiaView } from "@zynth/skia";
+import { SkiaView } from "@zynthjs/skia";
 
 export function StaticSurface() {
   return (
@@ -36,7 +36,7 @@ export function StaticSurface() {
 ### Binding a controller
 
 ```tsx
-import { SkiaView, createSkiaSurface } from "@zynth/skia";
+import { SkiaView, createSkiaSurface } from "@zynthjs/skia";
 
 const surface = createSkiaSurface();
 
@@ -68,7 +68,7 @@ surface.submit([
 ### Submitting a frame object
 
 ```tsx
-import { createSkiaSurface } from "@zynth/skia";
+import { createSkiaSurface } from "@zynthjs/skia";
 
 const surface = createSkiaSurface();
 
@@ -93,7 +93,7 @@ surface.submitFrame({
 
 ```tsx
 import { createSignal, createEffect, onCleanup } from "solid-js";
-import { SkiaView, createSkiaSurface } from "@zynth/skia";
+import { SkiaView, createSkiaSurface } from "@zynthjs/skia";
 
 const surface = createSkiaSurface();
 

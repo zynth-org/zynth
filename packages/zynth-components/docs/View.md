@@ -7,7 +7,7 @@
 `View` behaves like a standard container with flexbox layout support powered by Yoga.
 
 ```tsx
-import { View, Text } from "@zynth/components";
+import { View, Text } from "@zynthjs/components";
 
 function Layout() {
   return (
@@ -23,8 +23,8 @@ function Layout() {
 One of the most powerful features of `View` is its native support for entry, exit, and layout animations without requiring extra wrappers.
 
 ```tsx
-import { View } from "@zynth/components";
-import { FadeIn, FadeOut, LinearTransition } from "@zynth/core/motion";
+import { View } from "@zynthjs/components";
+import { FadeIn, FadeOut, LinearTransition } from "@zynthjs/core/motion";
 
 function AnimatedList({ items }) {
   return (
@@ -51,8 +51,8 @@ function AnimatedList({ items }) {
 Gestures can be attached directly to a `View` using the `gesture` prop. This wires native recognizers to the view's host node on the UI thread.
 
 ```tsx
-import { View } from "@zynth/components";
-import { createPanGesture } from "@zynth/core/gesture";
+import { View } from "@zynthjs/components";
+import { createPanGesture } from "@zynthjs/core/gesture";
 
 function Draggable() {
   const pan = createPanGesture({

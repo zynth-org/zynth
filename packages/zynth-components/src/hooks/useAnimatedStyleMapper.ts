@@ -1,5 +1,5 @@
 import { createEffect, onCleanup } from "solid-js";
-import type { HostNode, StyleProp } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynthjs/core";
 import {
   isNativePlatform,
   hasNativeAnimate,
@@ -7,7 +7,7 @@ import {
   updateNativeStyleMapper,
   removeNativeStyleMapper,
   type NativeStyleMapperConfig,
-} from "@zynth/core/motion";
+} from "@zynthjs/core/motion";
 
 /**
  * Metadata attached to an animated style accessor created by `createAnimatedStyle`.

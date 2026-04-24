@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import type { HostNode, StyleProp } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynthjs/core";
 
 export interface WebViewNavigationState {
   url: string;

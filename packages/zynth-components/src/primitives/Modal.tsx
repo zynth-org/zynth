@@ -7,9 +7,9 @@ import {
   type ParentComponent,
   type JSX,
 } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
-import { setProperty } from "@zynth/core";
-import { viewport } from "@zynth/apis";
+import type { HostNode, Style } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
+import { viewport } from "@zynthjs/apis";
 import { View } from "./View";
 
 export type ModalAnimation = "fade" | "slide" | "zoom" | "none";

@@ -48,7 +48,7 @@ export async function main(options: any = {}): Promise<void> {
     };
     if (!quiet) {
       console.log(
-        `◆ @zynth/webserver native TLS: ${webServerTlsEnabled ? "enabled" : "disabled"}`
+        `◆ @zynthjs/webserver native TLS: ${webServerTlsEnabled ? "enabled" : "disabled"}`
       );
     }
     if (webServerTlsEnabled) {
@@ -62,7 +62,7 @@ export async function main(options: any = {}): Promise<void> {
     
     // Patch hermesvm.xcframework to remove faulty dSYM references for Xcode 16+
     try {
-      const zynthCorePkgPath = require.resolve("@zynth/core/package.json", { paths: [appDir] });
+      const zynthCorePkgPath = require.resolve("@zynthjs/core/package.json", { paths: [appDir] });
       const zynthCoreDir = path.dirname(zynthCorePkgPath);
       const hermesXcframeworkPlist = path.join(zynthCoreDir, "ios/hermes-engine/destroot/Library/Frameworks/universal/hermesvm.xcframework/Info.plist");
       
@@ -76,7 +76,7 @@ export async function main(options: any = {}): Promise<void> {
         execSync(`/usr/libexec/PlistBuddy -c "Delete :AvailableLibraries:1:DebugSymbolsPath" "${hermesXcframeworkPlist}" 2>/dev/null || true`, { stdio: "ignore" });
       }
     } catch (e) {
-      // Ignore errors if @zynth/core or plist is not found
+      // Ignore errors if @zynthjs/core or plist is not found
     }
 
     console.log("✔ iOS bootstrap completed successfully!");
@@ -103,7 +103,7 @@ function parseBoolean(value: unknown): boolean | null {
 }
 
 function resolveWebServerNativeTls(appDir: string): boolean {
-  const packageConfig = getZynthPackageConfig(appDir, "@zynth/webserver");
+  const packageConfig = getZynthPackageConfig(appDir, "@zynthjs/webserver");
   const candidates = [
     packageConfig.nativeTls,
     packageConfig.tlsNative,
@@ -122,13 +122,13 @@ function resolveWebServerNativeTls(appDir: string): boolean {
 
 function resolveWebServerNativeRoot(): string {
   try {
-    const webServerPkgPath = require.resolve("@zynth/webserver/package.json", {
+    const webServerPkgPath = require.resolve("@zynthjs/webserver/package.json", {
       paths: [process.cwd()],
     });
     return path.join(path.dirname(webServerPkgPath), "native");
   } catch (_error) {
     throw new Error(
-      "Could not resolve @zynth/webserver native directory from the current app."
+      "Could not resolve @zynthjs/webserver native directory from the current app."
     );
   }
 }
@@ -153,7 +153,7 @@ function ensureWebServerTlsSources(params: { quiet: boolean }): void {
 
   try {
     if (!quiet) {
-      console.log("◆ Fetching @zynth/webserver TLS sources (mbedTLS + CivetWeb)...");
+      console.log("◆ Fetching @zynthjs/webserver TLS sources (mbedTLS + CivetWeb)...");
     }
 
     execSync(

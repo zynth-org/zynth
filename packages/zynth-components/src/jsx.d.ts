@@ -1,4 +1,4 @@
-import type { Style, StyleRef } from "@zynth/core";
+import type { Style, StyleRef } from "@zynthjs/core";
 import type { JSX } from "solid-js";
 import type { ImageElementProps } from "./primitives/Image";
 import type { TextInputProps } from "./primitives/TextInput";
@@ -15,7 +15,7 @@ import type {
   PinchGestureEvent,
   RotationGestureEvent,
   TapGestureEvent,
-} from "@zynth/core/gesture";
+} from "@zynthjs/core/gesture";
 
 type ZynthChildren = JSX.Element | JSX.Element[] | null | undefined;
 type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;

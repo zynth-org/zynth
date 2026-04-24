@@ -5,7 +5,7 @@
       {
         "generate": "universal",
         "hydratable": false,
-        "moduleName": "@zynth/renderer"
+        "moduleName": "@zynthjs/renderer"
       }
     ],
     ["@babel/preset-typescript", { "allowDeclareFields": true }]

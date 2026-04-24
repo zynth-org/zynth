@@ -11,7 +11,7 @@ It abstracts the underlying environment variables and provides a stable, type-sa
 The simplest way to check the current platform is through `platform.current`.
 
 ```tsx
-import { platform } from "@zynth/apis";
+import { platform } from "@zynthjs/apis";
 
 if (platform.current === "ios") {
   // iPhone/iPad specific logic
@@ -25,7 +25,7 @@ if (platform.current === "ios") {
 The `platform.choose()` method is a declarative utility that returns the matching value for the current platform.
 
 ```tsx
-import { platform } from "@zynth/apis";
+import { platform } from "@zynthjs/apis";
 
 const containerStyle = {
   flex: 1,
@@ -45,7 +45,7 @@ const containerStyle = {
 Zynth provides a native-only utility to debug framework performance overhead. This is currently supported only on the Android platform.
 
 ```ts
-import { platform } from "@zynth/apis";
+import { platform } from "@zynthjs/apis";
 
 // Log native frame timings and operation queue sizes
 platform.logPerformanceStats();

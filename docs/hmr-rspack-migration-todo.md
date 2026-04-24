@@ -4,7 +4,7 @@ This tracks the migration from Zynth's custom native hot-update apply engine to 
 
 ## Phase 1: Bootstrap
 
-- [x] Add public `WebSocket` facade in `@zynth/core`.
+- [x] Add public `WebSocket` facade in `@zynthjs/core`.
 - [x] Add native WebSocket module on Android using OkHttp.
 - [x] Add native WebSocket module on iOS using `URLSessionWebSocketTask`.
 - [x] Install WebSocket globally when missing.

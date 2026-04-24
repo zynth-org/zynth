@@ -2,7 +2,7 @@ import {
   callNative,
   getGlobalObject,
   sharedNativeEventEmitter,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import type {
   KeyboardState,
   KeyboardChangeListener,

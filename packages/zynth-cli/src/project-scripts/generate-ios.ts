@@ -311,7 +311,7 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
 
   output = output.replace(
     /\{\{ZYNTH_IOS_RUNTIME_PACKAGE\}\}/g,
-    extras.iosRuntimePackage ?? "@zynth/core"
+    extras.iosRuntimePackage ?? "@zynthjs/core"
   );
 
   output = output.replace(
@@ -433,7 +433,7 @@ function removeDirectoryWithRetries(targetDir: string, retries = 5): void {
 
 export async function generateIOSProject(appDir: string, options: any = {}) {
   const { dev = true, quiet = false, glyphMap } = options; // Default to dev mode for backward compatibility
-  const iosRuntimePackage = "@zynth/core";
+  const iosRuntimePackage = "@zynthjs/core";
   const iosRuntimeDir = "zynth-core";
   const iosHermesDir = "zynth-core/ios";
   const runtimeImports = '#import "ZynthKit-Swift.h"';

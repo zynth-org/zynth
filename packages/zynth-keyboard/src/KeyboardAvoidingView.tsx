@@ -1,7 +1,7 @@
 import { createMemo, type JSX, type ParentComponent } from "solid-js";
-import { platform } from "@zynth/apis";
-import { View } from "@zynth/components";
-import type { Style } from "@zynth/core";
+import { platform } from "@zynthjs/apis";
+import { View } from "@zynthjs/components";
+import type { Style } from "@zynthjs/core";
 import { useKeyboard } from "./hooks";
 
 export type KeyboardAvoidingBehavior = "padding" | "position" | "height";

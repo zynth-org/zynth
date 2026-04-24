@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/markdown",
+  "name": "@zynthjs/markdown",
   "version": "0.0.1",
   "description": "Native markdown parser for Zynth apps",
   "type": "module",

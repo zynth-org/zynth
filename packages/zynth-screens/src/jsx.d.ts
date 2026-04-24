@@ -1,4 +1,4 @@
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 import type { JSX } from "solid-js";
 
 declare module "solid-js" {

@@ -11,7 +11,7 @@ import type {
  *
  * @example
  * ```tsx
- * import { KeyboardController } from '@zynth/keyboard';
+ * import { KeyboardController } from '@zynthjs/keyboard';
  *
  * // Dismiss keyboard
  * KeyboardController.dismiss();

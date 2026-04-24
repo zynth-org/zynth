@@ -1,4 +1,4 @@
-# @zynth/skia
+# @zynthjs/skia
 
 Skia rendering for Zynth, with declarative drawing nodes, imperative surface submission, resource loading helpers, runtime shaders, and reactive path utilities.
 

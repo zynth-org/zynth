@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/rsbuild-plugin",
+  "name": "@zynthjs/rsbuild-plugin",
   "version": "0.0.1",
   "description": "Zynth opinionated Rsbuild integration with Hermes-safe defaults and HMR token artifacts",
   "type": "module",

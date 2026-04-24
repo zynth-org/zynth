@@ -9,8 +9,8 @@ An enhanced ScrollView that automatically calculates and maintains focus visibil
 Wrap your form content with `KeyboardAwareScrollView` to enable automatic scrolling to focused inputs.
 
 ```tsx
-import { KeyboardAwareScrollView } from "@zynth/keyboard";
-import { TextInput, View } from "@zynth/components";
+import { KeyboardAwareScrollView } from "@zynthjs/keyboard";
+import { TextInput, View } from "@zynthjs/components";
 
 function FeedbackForm() {
   return (

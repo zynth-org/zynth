@@ -1,4 +1,4 @@
-import { Button as NativeButton, type ButtonProps as NativeButtonProps } from "@zynth/components";
+import { Button as NativeButton, type ButtonProps as NativeButtonProps } from "@zynthjs/components";
 import { type ParentComponent, splitProps } from "solid-js";
 import { useUITheme } from "../hooks";
 

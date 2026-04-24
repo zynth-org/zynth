@@ -45,8 +45,8 @@ function findWorkspaceRoot(startDir: string): string {
 function normalizeModuleName(input: string | null | undefined): string {
   if (!input) return "";
   let name = String(input).trim();
-  if (name.startsWith("@zynth/")) {
-    name = name.slice("@zynth/".length);
+  if (name.startsWith("@zynthjs/")) {
+    name = name.slice("@zynthjs/".length);
   }
   if (name.startsWith("zynth-")) {
     name = name.slice("zynth-".length);
@@ -204,9 +204,9 @@ function updateTsconfigPaths(rootDir: string, moduleName: string): void {
   if (!tsconfig.compilerOptions.paths) tsconfig.compilerOptions.paths = {};
 
   const paths = tsconfig.compilerOptions.paths as Record<string, string[]>;
-  const baseKey = `@zynth/${moduleName}`;
+  const baseKey = `@zynthjs/${moduleName}`;
   const baseValue = [`packages/zynth-${moduleName}/src/index.ts`];
-  const globKey = `@zynth/${moduleName}/*`;
+  const globKey = `@zynthjs/${moduleName}/*`;
   const globValue = [`packages/zynth-${moduleName}/src/*`];
 
   let changed = false;
@@ -258,7 +258,7 @@ async function main(): Promise<void> {
     const response = await prompts({
       type: "text",
       name: "moduleName",
-      message: "Package name (kebab-case, without @zynth/ or zynth-):",
+      message: "Package name (kebab-case, without @zynthjs/ or zynth-):",
       validate: (value: string) => {
         const normalized = normalizeModuleName(value);
         if (!normalized) return "Package name is required";

@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/skills",
+  "name": "@zynthjs/skills",
   "version": "1.0.0",
   "description": "Zynth Framework Agent Skills",
   "private": true,

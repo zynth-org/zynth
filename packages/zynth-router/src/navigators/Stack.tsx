@@ -11,14 +11,14 @@ import {
   type JSX,
   type Accessor,
 } from "solid-js";
-import { View, Text, Button, Pressable, SystemGlyph } from "@zynth/components";
-import { createSafeAreaInsets, platform } from "@zynth/apis";
+import { View, Text, Button, Pressable, SystemGlyph } from "@zynthjs/components";
+import { createSafeAreaInsets, platform } from "@zynthjs/apis";
 import {
   ScreenContainer,
   Screen as ScreenPrimitive,
   type ScreenAnimationType,
   type ScreenHeaderOptions,
-} from "@zynth/screens";
+} from "@zynthjs/screens";
 import {
   NavigationContext,
   type NavigationContextValue,
@@ -405,7 +405,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     };
   }
 
-  // Map animation type to @zynth/screens animation
+  // Map animation type to @zynthjs/screens animation
   function mapAnimation(animation?: string): ScreenAnimationType {
     switch (animation) {
       case "push":

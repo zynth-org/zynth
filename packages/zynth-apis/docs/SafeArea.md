@@ -11,7 +11,7 @@ Zynth provides a full suite of safe area primitives, including a context provide
 You must wrap your application root with the `SafeAreaProvider`. This component tracks the system insets and broadcasts them to the rest of the tree.
 
 ```tsx
-import { SafeAreaProvider } from "@zynth/apis";
+import { SafeAreaProvider } from "@zynthjs/apis";
 
 function Root() {
   return (
@@ -27,7 +27,7 @@ function Root() {
 The most convenient way to handle insets is using the `SafeAreaView` component. It automatically adds padding or margins to its container to stay clear of system UI.
 
 ```tsx
-import { SafeAreaView } from "@zynth/apis";
+import { SafeAreaView } from "@zynthjs/apis";
 
 function Header() {
   return (
@@ -47,7 +47,7 @@ function Header() {
 For complex custom layouts where a simple view is not enough, use `createSafeAreaInsets()` to receive a reactive inset binding.
 
 ```tsx
-import { createSafeAreaInsets } from "@zynth/apis";
+import { createSafeAreaInsets } from "@zynthjs/apis";
 
 function CustomNav() {
   const insets = createSafeAreaInsets();

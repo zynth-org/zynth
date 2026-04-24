@@ -7,7 +7,7 @@
 The component consists of three main parts: the `Menu` root, `Menu.Trigger`, and one or more `Menu.Item` components.
 
 ```tsx
-import { Menu, View, Text, SystemIcon } from "@zynth/components";
+import { Menu, View, Text, SystemIcon } from "@zynthjs/components";
 
 function ActionMenu() {
   const onProfilePress = () => console.log("Profile Tapped");

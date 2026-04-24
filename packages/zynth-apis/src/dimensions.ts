@@ -3,7 +3,7 @@ import {
   callNativeSync,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import { createSignal } from "solid-js";
 
 const DIMENSIONS_EVENT = "zynth.dimensions.change";

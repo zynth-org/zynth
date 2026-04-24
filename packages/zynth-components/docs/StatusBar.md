@@ -7,7 +7,7 @@
 The component is non-visual in the traditional UI tree but provides instructions to the system interface.
 
 ```tsx
-import { StatusBar, View, Text } from "@zynth/components";
+import { StatusBar, View, Text } from "@zynthjs/components";
 
 function Screen() {
   return (

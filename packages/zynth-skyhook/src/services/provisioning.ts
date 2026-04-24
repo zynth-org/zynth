@@ -30,7 +30,7 @@ export async function createProjectWorkspace(
 
   await writeFile(
     join(srcDir, "index.tsx"),
-    `import { start } from "@zynth/core";
+    `import { start } from "@zynthjs/core";
 import App from "./App";
 
 start(App);`
@@ -38,7 +38,7 @@ start(App);`
 
   await writeFile(
     join(srcDir, "App.tsx"),
-    `import { View, Text } from "@zynth/components";
+    `import { View, Text } from "@zynthjs/components";
 
 export default function App() {
   return (

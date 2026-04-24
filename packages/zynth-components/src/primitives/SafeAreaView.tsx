@@ -1,5 +1,5 @@
 import { View } from "./View";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 import {
   createEffect,
   createMemo,
@@ -7,7 +7,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { createSafeAreaInsets } from "@zynth/apis";
+import { createSafeAreaInsets } from "@zynthjs/apis";
 
 export type SafeAreaEdge = "top" | "right" | "bottom" | "left";
 export type SafeAreaMode = "padding" | "margin";

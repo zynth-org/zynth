@@ -14,7 +14,7 @@ Zynth's keyboard management is built on three pillars:
 To enable reactive keyboard features, you must wrap your component tree with the `KeyboardProvider`. This is typically done at the root level of your application.
 
 ```tsx
-import { KeyboardProvider } from "@zynth/keyboard";
+import { KeyboardProvider } from "@zynthjs/keyboard";
 
 function App() {
   return (
@@ -30,7 +30,7 @@ function App() {
 For non-component logic or simple actions, use the `Keyboard` (aliased from `KeyboardController`) controller.
 
 ```ts
-import { Keyboard } from "@zynth/keyboard";
+import { Keyboard } from "@zynthjs/keyboard";
 
 // Hide the keyboard regardless of current focus
 Keyboard.dismiss();
@@ -48,7 +48,7 @@ if (Keyboard.isVisible()) {
 While hooks are preferred for UI reactivity, you can subscribe to keyboard events globally using the controller. This is useful for analytics or low-level layout engine modifications.
 
 ```ts
-import { Keyboard } from "@zynth/keyboard";
+import { Keyboard } from "@zynthjs/keyboard";
 
 const unsubscribe = Keyboard.addListener((state) => {
   if (state.isVisible) {

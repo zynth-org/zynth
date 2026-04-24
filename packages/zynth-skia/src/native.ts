@@ -4,7 +4,7 @@ import {
   unwrapNativeResult,
   type InterpolatedScalarRef,
   type SharedScalarRef,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import {
   type SkiaLinearGradient,
   type SkiaCapabilities,

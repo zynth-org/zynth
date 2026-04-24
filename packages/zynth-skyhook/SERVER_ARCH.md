@@ -14,7 +14,7 @@ Skyhook exposes the following primary API endpoints for managing Zynth applicati
         1.  Receives a `prompt` (and optionally an `appId` if re-attempting a specific ID).
         2.  Records a new `generation_request` and `agent_run` in the database.
         3.  Resolves an `appId` (either provided or a new UUID).
-        4.  Provisions a temporary workspace: creates a directory, copies base app templates, and links shared Zynth artifacts (`@zynth/core`, etc.).
+        4.  Provisions a temporary workspace: creates a directory, copies base app templates, and links shared Zynth artifacts (`@zynthjs/core`, etc.).
         5.  Provisions a Docker sandbox environment.
         6.  Executes the **Goose Agent** within the sandbox, providing the user prompt.
         7.  Upon successful completion of the agent run:

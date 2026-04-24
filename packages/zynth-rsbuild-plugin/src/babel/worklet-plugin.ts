@@ -62,7 +62,7 @@ export function createWorkletBabelPlugin() {
             const localNames = new Set<string>();
             for (const statement of path.node.body) {
               if (!t.isImportDeclaration(statement)) continue;
-              if (statement.source.value !== "@zynth/core") continue;
+              if (statement.source.value !== "@zynthjs/core") continue;
               for (const specifier of statement.specifiers) {
                 if (!t.isImportSpecifier(specifier)) continue;
                 if (!t.isIdentifier(specifier.imported, { name: "createInputHandler" })) {

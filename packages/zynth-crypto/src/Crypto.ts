@@ -1,4 +1,4 @@
-import { getGlobalObject } from "@zynth/core";
+import { getGlobalObject } from "@zynthjs/core";
 import { callNativeSync, isNativeAvailable } from "./native";
 import type {
   AesGcmParams,

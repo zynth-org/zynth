@@ -4,9 +4,9 @@ import {
   type ImageErrorEvent,
   type ImageSource,
   type ViewProps,
-} from "@zynth/components";
+} from "@zynthjs/components";
 import { createEffect, createMemo, createSignal, For, type JSX, type ParentComponent } from "solid-js";
-import type { StyleProp } from "@zynth/core";
+import type { StyleProp } from "@zynthjs/core";
 import { generateQRCodeMatrix, type QRErrorCorrectionLevel } from "./qr";
 import { generateNativeQRCodeSync, isNativeAvailable } from "../native";
 

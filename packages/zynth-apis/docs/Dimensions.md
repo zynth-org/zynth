@@ -11,7 +11,7 @@ It ensures that your application layout remains responsive to screen rotations, 
 You can read the current viewport metrics at any time from `viewport.window` and `viewport.screen`.
 
 ```tsx
-import { viewport } from "@zynth/apis";
+import { viewport } from "@zynthjs/apis";
 
 const width = viewport.window.width;
 const height = viewport.window.height;
@@ -24,7 +24,7 @@ console.log(`Current window resolution: ${width}x${height}`);
 To respond to layout changes (such as device rotation), subscribe to updates using `viewport.subscribe()`.
 
 ```tsx
-import { viewport } from "@zynth/apis";
+import { viewport } from "@zynthjs/apis";
 
 const unsubscribe = viewport.subscribe((snapshot, meta) => {
   console.log("New window width:", snapshot.window.width);
@@ -59,7 +59,7 @@ await viewport.refresh();
 If you want an explicit local binding inside a Solid component, use `createViewport()`.
 
 ```tsx
-import { createViewport } from "@zynth/apis";
+import { createViewport } from "@zynthjs/apis";
 
 function Hero() {
   const viewport = createViewport();

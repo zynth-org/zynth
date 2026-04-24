@@ -2,7 +2,7 @@ import {
   createSharedSignal,
   type InterpolatedScalarRef,
   type SharedScalarRef,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import { createSignal } from "solid-js";
 import {
   createFontFromStyle,

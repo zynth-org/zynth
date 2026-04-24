@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/framework",
+  "name": "@zynthjs/framework",
   "private": true,
   "workspaces": [
     "packages/*",

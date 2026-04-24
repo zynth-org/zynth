@@ -63,7 +63,7 @@ export function createZynthRsbuildPlugin(
   } = options;
 
   return {
-    name: "@zynth/rsbuild-plugin",
+    name: "@zynthjs/rsbuild-plugin",
     async setup(api) {
       const isDev = api.context.action === "dev";
       const repoRoot = workspaceRoot
@@ -122,15 +122,15 @@ export function createZynthRsbuildPlugin(
         }
       }
 
-      // Special handling for @zynth/core in Web
+      // Special handling for @zynthjs/core in Web
       if (isWeb) {
         const coreWebEntry = await pickFirstExisting([
           path.join(repoRoot, "packages/zynth-core/src/index.web.ts"),
           path.join(repoRoot, "packages/zynth-core/src/index.web.tsx"),
         ]);
         if (coreWebEntry) {
-          mergedAliases["@zynth/core$"] = coreWebEntry;
-          mergedAliases["@zynth/core"] = path.join(
+          mergedAliases["@zynthjs/core$"] = coreWebEntry;
+          mergedAliases["@zynthjs/core"] = path.join(
             repoRoot,
             "packages/zynth-core/src",
           );
@@ -291,8 +291,8 @@ async function resolveNativeHmrCompatEntry(
 ): Promise<string> {
   const appRequire = createRequire(path.join(appRoot, "package.json"));
   const packageJsonPath =
-    safeResolve(appRequire, "@zynth/core/package.json") ??
-    safeResolve(require, "@zynth/core/package.json");
+    safeResolve(appRequire, "@zynthjs/core/package.json") ??
+    safeResolve(require, "@zynthjs/core/package.json");
 
   if (packageJsonPath) {
     const packageDir = path.dirname(packageJsonPath);
@@ -471,7 +471,7 @@ function ensureAliases(
   if (extraAliases) {
     for (const [key, value] of Object.entries(extraAliases)) {
       if (
-        key.startsWith("@zynth/") &&
+        key.startsWith("@zynthjs/") &&
         discoveredAliases &&
         (discoveredAliases[key] !== undefined ||
           discoveredAliases[`${key}$`] !== undefined)
@@ -503,7 +503,7 @@ async function discoverZynthPackageAliases(
       try {
         const raw = await fs.readFile(packageJsonPath, "utf8");
         const pkg = JSON.parse(raw) as { name?: string };
-        if (pkg.name?.startsWith("@zynth/")) {
+        if (pkg.name?.startsWith("@zynthjs/")) {
           const srcDir = path.join(packageDir, "src");
           const candidates = [
             ...(isWeb ? ["index.web.ts", "index.web.tsx"] : []),
@@ -519,10 +519,10 @@ async function discoverZynthPackageAliases(
             // Subpath match (points to src directory)
             aliases[pkg.name] = srcDir;
 
-            if (pkg.name === "@zynth/core") {
+            if (pkg.name === "@zynthjs/core") {
               const universalPath = path.join(packageDir, "src/universal.ts");
               if (await exists(universalPath)) {
-                aliases["@zynth/core/universal"] = universalPath;
+                aliases["@zynthjs/core/universal"] = universalPath;
               }
             }
           }
@@ -551,7 +551,7 @@ async function discoverInstalledZynthPackageAliases(
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const packageName = `@zynth/${entry.name}`;
+    const packageName = `@zynthjs/${entry.name}`;
     try {
       const packageDir = path.join(scopedDir, entry.name);
       const packageJsonPath = path.join(packageDir, "package.json");
@@ -583,17 +583,17 @@ async function discoverInstalledZynthPackageAliases(
         }
       }
 
-      if (packageName === "@zynth/core") {
+      if (packageName === "@zynthjs/core") {
         const universalSrcPath = path.join(srcDir, "universal.ts");
         if (await exists(universalSrcPath)) {
-          aliases["@zynth/core/universal"] = universalSrcPath;
+          aliases["@zynthjs/core/universal"] = universalSrcPath;
         } else {
           const universalExport = resolveImportExport(
             packageJson.exports,
             "./universal",
           );
           if (universalExport) {
-            aliases["@zynth/core/universal"] = path.resolve(
+            aliases["@zynthjs/core/universal"] = path.resolve(
               packageDir,
               universalExport,
             );
@@ -601,14 +601,14 @@ async function discoverInstalledZynthPackageAliases(
         }
       }
 
-      if (isWeb && packageName === "@zynth/core") {
+      if (isWeb && packageName === "@zynthjs/core") {
         const webEntry = await pickFirstExisting([
           path.join(srcDir, "index.web.ts"),
           path.join(srcDir, "index.web.tsx"),
         ]);
         if (webEntry) {
-          aliases["@zynth/core$"] = webEntry;
-          aliases["@zynth/core"] = path.dirname(webEntry);
+          aliases["@zynthjs/core$"] = webEntry;
+          aliases["@zynthjs/core"] = path.dirname(webEntry);
         }
       }
     } catch {

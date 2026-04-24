@@ -52,7 +52,7 @@ if (ZYNTH_WEBSERVER_ENABLE_TLS)
       ${ZYNTH_MBEDTLS_DIR}/library
     )
   else()
-    message(WARNING "TLS requested but mbedTLS sources were not found. Building @zynth/webserver without TLS (NO_SSL).")
+    message(WARNING "TLS requested but mbedTLS sources were not found. Building @zynthjs/webserver without TLS (NO_SSL).")
     target_compile_definitions(zynthwebserver PRIVATE NO_SSL)
   endif()
 else()

@@ -3,8 +3,8 @@
   "type": "module",
   "version": "0.0.1",
   "dependencies": {
-    "@zynth/components": "^0.0.1",
-    "@zynth/core": "^0.0.1",
+    "@zynthjs/components": "^0.0.1",
+    "@zynthjs/core": "^0.0.1",
     "solid-js": "^1.9.9"
   },
   "devDependencies": {

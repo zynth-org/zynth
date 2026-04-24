@@ -2,7 +2,7 @@
 
 System-level file integration for Zynth applications, enabling "Open In", "Share", and "Export to System" capabilities.
 
-`@zynth/file-intents` allows your application to interact with other apps on the device by passing file references via native intents. It leverages the **Activity View Controller** on iOS and **Intents with FileProvider** on Android.
+`@zynthjs/file-intents` allows your application to interact with other apps on the device by passing file references via native intents. It leverages the **Activity View Controller** on iOS and **Intents with FileProvider** on Android.
 
 ## Basic usage
 
@@ -11,7 +11,7 @@ System-level file integration for Zynth applications, enabling "Open In", "Share
 The `openAsync` method triggers the system's "Open In" menu, allowing the user to choose an external application to view or edit the file.
 
 ```tsx
-import { FileIntents } from "@zynth/file-intents";
+import { FileIntents } from "@zynthjs/file-intents";
 
 const viewPdf = async (uri: string) => {
   await FileIntents.openAsync({
@@ -62,7 +62,7 @@ const saveDocument = async (tempUri: string) => {
 - **Native Implementation**:
   - On **iOS**, successful sharing and opening use `UIActivityViewController` and `UIDocumentInteractionController`. Exporting uses the `UIDocumentPickerViewController` with `.forExporting`.
   - On **Android**, the library uses a built-in `FileProvider` to safely grant temporary URI access to the receiving application. No manual `AndroidManifest` or `app.json` configuration is required for `FileIntents` to function.
-- **URI Schemes**: Only `file://` and `content://` (Android) URIs are supported. Passing `http://` or `https://` URLs to these methods will result in an error; use `@zynth/network` or `@zynth/webview` for remote URLs.
+- **URI Schemes**: Only `file://` and `content://` (Android) URIs are supported. Passing `http://` or `https://` URLs to these methods will result in an error; use `@zynthjs/network` or `@zynthjs/webview` for remote URLs.
 
 ## API Reference
 

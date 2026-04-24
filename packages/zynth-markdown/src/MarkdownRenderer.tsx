@@ -1,6 +1,6 @@
 import type { Component, JSX } from "solid-js";
 import { For, createMemo } from "solid-js";
-import { Text, View } from "@zynth/components";
+import { Text, View } from "@zynthjs/components";
 import { parseMarkdown } from "./Markdown";
 import type { MarkdownNode, MarkdownParseOptions } from "./types";
 

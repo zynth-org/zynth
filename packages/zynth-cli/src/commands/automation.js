@@ -120,7 +120,7 @@ function readSnapshot(socket, targetRuntime, options, timeoutMs) {
     const requestId = randomId("read");
     const timeout = setTimeout(() => {
       socket.off("message", onMessage);
-      reject(new Error("Timed out waiting for automation response. Ensure @zynth/automation is imported in the app."));
+      reject(new Error("Timed out waiting for automation response. Ensure @zynthjs/automation is imported in the app."));
     }, timeoutMs);
 
     const onMessage = (buffer) => {
@@ -291,7 +291,7 @@ module.exports = {
               }
               if (runtimes.length === 0) {
                 console.log("No automation runtimes found.");
-                console.log("Ensure @zynth/automation is installed and imported by the target app.");
+                console.log("Ensure @zynthjs/automation is installed and imported by the target app.");
                 return;
               }
               console.log(`Found ${runtimes.length} automation runtime(s):`);
@@ -403,7 +403,7 @@ module.exports = {
               const runtimes = await collectReadyRuntimes(socket, argv.discoverTimeout);
               if (runtimes.length === 0) {
                 throw new Error(
-                  "No automation runtimes discovered. Ensure @zynth/automation is installed and imported in the app."
+                  "No automation runtimes discovered. Ensure @zynthjs/automation is installed and imported in the app."
                 );
               }
               const candidates = selectRuntime(runtimes, argv);

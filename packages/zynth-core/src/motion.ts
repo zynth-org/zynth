@@ -1,5 +1,5 @@
 /**
- * @zynth/core/motion
+ * @zynthjs/core/motion
  *
  * Public motion runtime entry point.
  *
@@ -8,7 +8,7 @@
  *
  * @example
  * ```tsx
- * import { createSharedValue, createAnimatedStyle, withSpring } from "@zynth/core/motion";
+ * import { createSharedValue, createAnimatedStyle, withSpring } from "@zynthjs/core/motion";
  *
  * const scale = createSharedValue(1);
  * const style = createAnimatedStyle(() => ({

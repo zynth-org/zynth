@@ -1,4 +1,4 @@
-declare module "@zynth/router/fs-routes" {
+declare module "@zynthjs/router/fs-routes" {
   import type { FileSystemRouterManifest } from "./types";
 
   export const fileSystemRouterManifest: FileSystemRouterManifest;

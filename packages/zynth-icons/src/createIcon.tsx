@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup, createComponent } from "solid-js";
-import { Text, TextProps, createStyle } from "@zynth/components";
-import { Font, platform } from "@zynth/apis";
+import { Text, TextProps, createStyle } from "@zynthjs/components";
+import { Font, platform } from "@zynthjs/apis";
 
 // Track font loading state globally
 const fontLoadState = new Map<string, "loading" | "loaded" | "error">();

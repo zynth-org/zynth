@@ -1,4 +1,4 @@
-# @zynth/safe-area
+# @zynthjs/safe-area
 
 Safe area handling for Zynth applications.
 
@@ -17,7 +17,7 @@ This package helps you handle safe area insets (notches, home indicators, status
 Wrap your application root with the provider.
 
 ```tsx
-import { SafeAreaProvider } from "@zynth/safe-area";
+import { SafeAreaProvider } from "@zynthjs/safe-area";
 
 function App() {
   return (
@@ -31,7 +31,7 @@ function App() {
 ### Hook
 
 ```tsx
-import { createSafeAreaInsets } from "@zynth/safe-area";
+import { createSafeAreaInsets } from "@zynthjs/safe-area";
 
 function Header() {
   const insets = createSafeAreaInsets();
@@ -47,7 +47,7 @@ function Header() {
 ### Component
 
 ```tsx
-import { SafeAreaView } from "@zynth/safe-area";
+import { SafeAreaView } from "@zynthjs/safe-area";
 
 function Screen() {
   return (

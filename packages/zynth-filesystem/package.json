@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/filesystem",
+  "name": "@zynthjs/filesystem",
   "version": "0.0.1",
   "description": "File system utilities for Zynth",
   "type": "module",

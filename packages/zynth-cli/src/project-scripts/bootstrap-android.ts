@@ -81,7 +81,7 @@ export function main(options: any = {}): void {
     );
     if (!quiet) {
       console.log(
-        `◆ @zynth/webserver native TLS: ${webServerTlsEnabled ? "enabled" : "disabled"}`
+        `◆ @zynthjs/webserver native TLS: ${webServerTlsEnabled ? "enabled" : "disabled"}`
       );
     }
     const bundleSrc = path.join(appDir, "dist", "main.js");
@@ -187,7 +187,7 @@ function parseBoolean(value: unknown): boolean | null {
 }
 
 function resolveWebServerNativeTls(appDir: string): boolean {
-  const packageConfig = getZynthPackageConfig(appDir, "@zynth/webserver");
+  const packageConfig = getZynthPackageConfig(appDir, "@zynthjs/webserver");
   const candidates = [
     packageConfig.nativeTls,
     packageConfig.tlsNative,
@@ -235,13 +235,13 @@ function upsertGradleProperty(
 
 function resolveWebServerNativeRoot(): string {
   try {
-    const webServerPkgPath = require.resolve("@zynth/webserver/package.json", {
+    const webServerPkgPath = require.resolve("@zynthjs/webserver/package.json", {
       paths: [process.cwd()],
     });
     return path.join(path.dirname(webServerPkgPath), "native");
   } catch (_error) {
     throw new Error(
-      "Could not resolve @zynth/webserver native directory from the current app."
+      "Could not resolve @zynthjs/webserver native directory from the current app."
     );
   }
 }
@@ -266,7 +266,7 @@ function ensureWebServerTlsSources(params: { quiet: boolean }): void {
 
   try {
     if (!quiet) {
-      console.log("◆ Fetching @zynth/webserver TLS sources (mbedTLS + CivetWeb)...");
+      console.log("◆ Fetching @zynthjs/webserver TLS sources (mbedTLS + CivetWeb)...");
     }
 
     execSync(

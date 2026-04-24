@@ -7,7 +7,7 @@
 The component requires `data`, `renderItem`, and `keyExtractor`. It is recommended to provide an `estimatedItemSize` to assist the initial layout calculation.
 
 ```tsx
-import { FlatList, Text, View } from "@zynth/components";
+import { FlatList, Text, View } from "@zynthjs/components";
 
 const DATA = Array.from({ length: 1000 }, (_, i) => ({ id: `${i}`, title: `Item ${i}` }));
 

@@ -1,4 +1,4 @@
-import { start } from "@zynth/core";
+import { start } from "@zynthjs/core";
 import App from "./App";
 
 start(App);

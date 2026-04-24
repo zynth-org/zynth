@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/network",
+  "name": "@zynthjs/network",
   "version": "0.0.1",
   "description": "Network state and local peer discovery for Zynth",
   "type": "module",

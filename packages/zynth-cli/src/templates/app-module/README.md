@@ -134,7 +134,7 @@ app-module/
 Example subscription:
 
 ```ts
-import { sharedNativeEventEmitter } from "@zynth/core";
+import { sharedNativeEventEmitter } from "@zynthjs/core";
 
 const initial = (globalThis as any).NativeConstants?.{{MODULE_NAME_PASCAL}};
 const subscription = sharedNativeEventEmitter.addListener(

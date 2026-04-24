@@ -7,7 +7,7 @@
 The standard `BottomSheet` employs `snapPoints` to define fixed or relative positions where the sheet can rest. It can be initialized with a default state or controlled via a Solid accessor.
 
 ```tsx
-import { BottomSheet, View, Text } from "@zynth/components";
+import { BottomSheet, View, Text } from "@zynthjs/components";
 
 function ActionSheet() {
   return (

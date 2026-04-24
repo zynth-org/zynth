@@ -9,9 +9,9 @@
     "initialFrameworkTrack": "framework-lockstep",
     "cliTrack": "cli-independent",
     "initialFrameworkPackages": [
-      "@zynth/core",
-      "@zynth/apis",
-      "@zynth/components"
+      "@zynthjs/core",
+      "@zynthjs/apis",
+      "@zynthjs/components"
     ],
     "initialCliPackage": {
       "workspaceName": "zynth",
@@ -38,19 +38,19 @@
   },
   "packages": [
     {
-      "name": "@zynth/core",
+      "name": "@zynthjs/core",
       "path": "packages/zynth-core",
-      "publishName": "@zynth/core",
+      "publishName": "@zynthjs/core",
       "releaseTier": "initial-framework-alpha",
       "versionTrack": "framework-lockstep",
       "distribution": "native-source",
       "readiness": "ready-for-alpha-preflight",
-      "notes": "Core runtime and renderer. Ships built JS plus iOS, Android, native, Yoga, and podspec payloads. Animation runtime (@zynth/core/motion) and gesture definitions (@zynth/core/gesture) now included as subpath exports."
+      "notes": "Core runtime and renderer. Ships built JS plus iOS, Android, native, Yoga, and podspec payloads. Animation runtime (@zynthjs/core/motion) and gesture definitions (@zynthjs/core/gesture) now included as subpath exports."
     },
     {
-      "name": "@zynth/apis",
+      "name": "@zynthjs/apis",
       "path": "packages/zynth-apis",
-      "publishName": "@zynth/apis",
+      "publishName": "@zynthjs/apis",
       "releaseTier": "initial-framework-alpha",
       "versionTrack": "framework-lockstep",
       "distribution": "native-source",
@@ -58,9 +58,9 @@
       "notes": "Platform API surface required by the initial framework release."
     },
     {
-      "name": "@zynth/components",
+      "name": "@zynthjs/components",
       "path": "packages/zynth-components",
-      "publishName": "@zynth/components",
+      "publishName": "@zynthjs/components",
       "releaseTier": "initial-framework-alpha",
       "versionTrack": "framework-lockstep",
       "distribution": "native-source",
@@ -78,9 +78,9 @@
       "notes": "Public CLI package exposing the zynth binary."
     },
     {
-      "name": "@zynth/ui",
+      "name": "@zynthjs/ui",
       "path": "packages/zynth-ui",
-      "publishName": "@zynth/ui",
+      "publishName": "@zynthjs/ui",
       "releaseTier": "later-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -88,9 +88,9 @@
       "notes": "Primitive UI package. Revisit once initial component public surface is confirmed."
     },
     {
-      "name": "@zynth/router",
+      "name": "@zynthjs/router",
       "path": "packages/zynth-router",
-      "publishName": "@zynth/router",
+      "publishName": "@zynthjs/router",
       "releaseTier": "later-alpha",
       "versionTrack": "later-alpha",
       "distribution": "js-built",
@@ -98,9 +98,9 @@
       "notes": "Navigation package staged for a later alpha wave."
     },
     {
-      "name": "@zynth/screens",
+      "name": "@zynthjs/screens",
       "path": "packages/zynth-screens",
-      "publishName": "@zynth/screens",
+      "publishName": "@zynthjs/screens",
       "releaseTier": "later-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -108,9 +108,9 @@
       "notes": "Native screens package staged for later alpha."
     },
     {
-      "name": "@zynth/skia",
+      "name": "@zynthjs/skia",
       "path": "packages/zynth-skia",
-      "publishName": "@zynth/skia",
+      "publishName": "@zynthjs/skia",
       "releaseTier": "later-alpha",
       "versionTrack": "later-alpha",
       "distribution": "managed-binaries",
@@ -118,9 +118,9 @@
       "notes": "Binary-heavy package. Requires strict binary sync, release prep, and pack validation."
     },
     {
-      "name": "@zynth/icons",
+      "name": "@zynthjs/icons",
       "path": "packages/zynth-icons",
-      "publishName": "@zynth/icons",
+      "publishName": "@zynthjs/icons",
       "releaseTier": "later-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -128,9 +128,9 @@
       "notes": "Icon package staged for later alpha."
     },
     {
-      "name": "@zynth/safe-area",
+      "name": "@zynthjs/safe-area",
       "path": "packages/zynth-safe-area",
-      "publishName": "@zynth/safe-area",
+      "publishName": "@zynthjs/safe-area",
       "releaseTier": "later-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -138,9 +138,9 @@
       "notes": "Safe area package staged for later alpha."
     },
     {
-      "name": "@zynth/rsbuild-plugin",
+      "name": "@zynthjs/rsbuild-plugin",
       "path": "packages/zynth-rsbuild-plugin",
-      "publishName": "@zynth/rsbuild-plugin",
+      "publishName": "@zynthjs/rsbuild-plugin",
       "releaseTier": "later-alpha",
       "versionTrack": "later-alpha",
       "distribution": "js-built",
@@ -148,9 +148,9 @@
       "notes": "Build integration package staged until CLI and template flow are validated."
     },
     {
-      "name": "@zynth/async-storage",
+      "name": "@zynthjs/async-storage",
       "path": "packages/zynth-async-storage",
-      "publishName": "@zynth/async-storage",
+      "publishName": "@zynthjs/async-storage",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -158,9 +158,9 @@
       "notes": "Optional storage module."
     },
     {
-      "name": "@zynth/auth-session",
+      "name": "@zynthjs/auth-session",
       "path": "packages/zynth-auth-session",
-      "publishName": "@zynth/auth-session",
+      "publishName": "@zynthjs/auth-session",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -168,9 +168,9 @@
       "notes": "Optional authentication/session module."
     },
     {
-      "name": "@zynth/automation",
+      "name": "@zynthjs/automation",
       "path": "packages/zynth-automation",
-      "publishName": "@zynth/automation",
+      "publishName": "@zynthjs/automation",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -178,9 +178,9 @@
       "notes": "Optional automation module."
     },
     {
-      "name": "@zynth/bluetooth",
+      "name": "@zynthjs/bluetooth",
       "path": "packages/zynth-bluetooth",
-      "publishName": "@zynth/bluetooth",
+      "publishName": "@zynthjs/bluetooth",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -188,9 +188,9 @@
       "notes": "Optional Bluetooth module with higher native permission and platform validation burden."
     },
     {
-      "name": "@zynth/crypto",
+      "name": "@zynthjs/crypto",
       "path": "packages/zynth-crypto",
-      "publishName": "@zynth/crypto",
+      "publishName": "@zynthjs/crypto",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -198,9 +198,9 @@
       "notes": "Optional crypto module."
     },
     {
-      "name": "@zynth/document-picker",
+      "name": "@zynthjs/document-picker",
       "path": "packages/zynth-document-picker",
-      "publishName": "@zynth/document-picker",
+      "publishName": "@zynthjs/document-picker",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -208,9 +208,9 @@
       "notes": "Optional document picker module."
     },
     {
-      "name": "@zynth/file-intents",
+      "name": "@zynthjs/file-intents",
       "path": "packages/zynth-file-intents",
-      "publishName": "@zynth/file-intents",
+      "publishName": "@zynthjs/file-intents",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -218,9 +218,9 @@
       "notes": "Optional file intents module."
     },
     {
-      "name": "@zynth/filesystem",
+      "name": "@zynthjs/filesystem",
       "path": "packages/zynth-filesystem",
-      "publishName": "@zynth/filesystem",
+      "publishName": "@zynthjs/filesystem",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -228,9 +228,9 @@
       "notes": "Optional filesystem module."
     },
     {
-      "name": "@zynth/haptics",
+      "name": "@zynthjs/haptics",
       "path": "packages/zynth-haptics",
-      "publishName": "@zynth/haptics",
+      "publishName": "@zynthjs/haptics",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -238,9 +238,9 @@
       "notes": "Optional haptics module."
     },
     {
-      "name": "@zynth/hypervisor",
+      "name": "@zynthjs/hypervisor",
       "path": "packages/zynth-hypervisor",
-      "publishName": "@zynth/hypervisor",
+      "publishName": "@zynthjs/hypervisor",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -248,9 +248,9 @@
       "notes": "Advanced runtime composition module. Stage until core release is stable."
     },
     {
-      "name": "@zynth/image-picker",
+      "name": "@zynthjs/image-picker",
       "path": "packages/zynth-image-picker",
-      "publishName": "@zynth/image-picker",
+      "publishName": "@zynthjs/image-picker",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -258,9 +258,9 @@
       "notes": "Optional image picker module."
     },
     {
-      "name": "@zynth/keyboard",
+      "name": "@zynthjs/keyboard",
       "path": "packages/zynth-keyboard",
-      "publishName": "@zynth/keyboard",
+      "publishName": "@zynthjs/keyboard",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -268,9 +268,9 @@
       "notes": "Optional keyboard module."
     },
     {
-      "name": "@zynth/markdown",
+      "name": "@zynthjs/markdown",
       "path": "packages/zynth-markdown",
-      "publishName": "@zynth/markdown",
+      "publishName": "@zynthjs/markdown",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -278,9 +278,9 @@
       "notes": "Optional markdown module."
     },
     {
-      "name": "@zynth/media-library",
+      "name": "@zynthjs/media-library",
       "path": "packages/zynth-media-library",
-      "publishName": "@zynth/media-library",
+      "publishName": "@zynthjs/media-library",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -288,9 +288,9 @@
       "notes": "Optional media library module."
     },
     {
-      "name": "@zynth/network",
+      "name": "@zynthjs/network",
       "path": "packages/zynth-network",
-      "publishName": "@zynth/network",
+      "publishName": "@zynthjs/network",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -298,9 +298,9 @@
       "notes": "Optional network module."
     },
     {
-      "name": "@zynth/secure-store",
+      "name": "@zynthjs/secure-store",
       "path": "packages/zynth-secure-store",
-      "publishName": "@zynth/secure-store",
+      "publishName": "@zynthjs/secure-store",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -308,9 +308,9 @@
       "notes": "Optional secure storage module with stricter native validation requirements."
     },
     {
-      "name": "@zynth/sensors",
+      "name": "@zynthjs/sensors",
       "path": "packages/zynth-sensors",
-      "publishName": "@zynth/sensors",
+      "publishName": "@zynthjs/sensors",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -318,9 +318,9 @@
       "notes": "Optional sensors module."
     },
     {
-      "name": "@zynth/splash-screen",
+      "name": "@zynthjs/splash-screen",
       "path": "packages/zynth-splash-screen",
-      "publishName": "@zynth/splash-screen",
+      "publishName": "@zynthjs/splash-screen",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -328,9 +328,9 @@
       "notes": "Optional splash screen module."
     },
     {
-      "name": "@zynth/web-browser",
+      "name": "@zynthjs/web-browser",
       "path": "packages/zynth-web-browser",
-      "publishName": "@zynth/web-browser",
+      "publishName": "@zynthjs/web-browser",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -338,9 +338,9 @@
       "notes": "Optional web browser module."
     },
     {
-      "name": "@zynth/webserver",
+      "name": "@zynthjs/webserver",
       "path": "packages/zynth-webserver",
-      "publishName": "@zynth/webserver",
+      "publishName": "@zynthjs/webserver",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -348,9 +348,9 @@
       "notes": "Optional embedded webserver module. Validate native vendored sources carefully before publish."
     },
     {
-      "name": "@zynth/webview",
+      "name": "@zynthjs/webview",
       "path": "packages/zynth-webview",
-      "publishName": "@zynth/webview",
+      "publishName": "@zynthjs/webview",
       "releaseTier": "extras-alpha",
       "versionTrack": "later-alpha",
       "distribution": "native-source",
@@ -358,9 +358,9 @@
       "notes": "Optional webview module."
     },
     {
-      "name": "@zynth/skills",
+      "name": "@zynthjs/skills",
       "path": "packages/zynth-skills",
-      "publishName": "@zynth/skills",
+      "publishName": "@zynthjs/skills",
       "releaseTier": "internal",
       "versionTrack": "internal",
       "distribution": "internal",
@@ -368,9 +368,9 @@
       "notes": "Already marked private. Exclude from release scripts."
     },
     {
-      "name": "@zynth/skyhook",
+      "name": "@zynthjs/skyhook",
       "path": "packages/zynth-skyhook",
-      "publishName": "@zynth/skyhook",
+      "publishName": "@zynthjs/skyhook",
       "releaseTier": "internal",
       "versionTrack": "internal",
       "distribution": "internal",

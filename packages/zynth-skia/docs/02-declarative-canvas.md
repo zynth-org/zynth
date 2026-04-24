@@ -1,13 +1,13 @@
 # Declarative Canvas
 
-The declarative API is the main entry point for drawing with `@zynth/skia`. A `Canvas` hosts a tree of drawing nodes such as `Rect`, `Circle`, `Path`, `Text`, `Image`, and `Skottie`, while structural nodes such as `Group`, `Paint`, `Shader`, `LinearGradient`, and `Mask` configure how descendants are rendered.
+The declarative API is the main entry point for drawing with `@zynthjs/skia`. A `Canvas` hosts a tree of drawing nodes such as `Rect`, `Circle`, `Path`, `Text`, `Image`, and `Skottie`, while structural nodes such as `Group`, `Paint`, `Shader`, `LinearGradient`, and `Mask` configure how descendants are rendered.
 
 This model works naturally with SolidJS composition. Shapes can be nested, inherited paint can be overridden locally, and many scalar props accept shared or interpolated values.
 
 ## Basic usage
 
 ```tsx
-import { Canvas, Circle, Rect, Text, createFontFromStyle } from "@zynth/skia";
+import { Canvas, Circle, Rect, Text, createFontFromStyle } from "@zynthjs/skia";
 
 const labelFont = createFontFromStyle({
   fontFamily: "System",
@@ -31,7 +31,7 @@ export function StatusCard() {
 ### Paint and gradient composition
 
 ```tsx
-import { Canvas, LinearGradient, Paint, Rect, vec } from "@zynth/skia";
+import { Canvas, LinearGradient, Paint, Rect, vec } from "@zynthjs/skia";
 
 export function GradientCard() {
   return (
@@ -52,7 +52,7 @@ export function GradientCard() {
 ### Masking a subtree
 
 ```tsx
-import { Canvas, Mask, Circle, Rect } from "@zynth/skia";
+import { Canvas, Mask, Circle, Rect } from "@zynthjs/skia";
 
 export function AvatarMask() {
   return (
@@ -85,7 +85,7 @@ import {
   createImage,
   createSVG,
   createSkottie,
-} from "@zynth/skia";
+} from "@zynthjs/skia";
 
 const image = createImage({ uri: "https://example.com/banner.png" });
 const svg = createSVG({ uri: "https://example.com/icon.svg" });

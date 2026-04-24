@@ -3,10 +3,10 @@ import {
   type TextInputProps as NativeTextInputProps,
   View,
   Text,
-} from "@zynth/components";
+} from "@zynthjs/components";
 import { type ParentComponent, splitProps, createSignal } from "solid-js";
 import { useUITheme } from "../hooks";
-import type { StyleProp } from "@zynth/core";
+import type { StyleProp } from "@zynthjs/core";
 
 export interface TextInputProps extends NativeTextInputProps {
   label?: string;

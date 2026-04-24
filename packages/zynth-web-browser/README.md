@@ -2,15 +2,15 @@
 
 The `WebBrowser` module provides a unified API for opening secure, in-app web browser sessions across iOS, Android, and Web platforms. By utilizing `SFSafariViewController` on iOS and `CustomTabs` on Android, it ensures that web content is rendering within a secure context that shares cookies and session data with the system browser when appropriate.
 
-This module is designed with security as a primary focus and is the recommended underlying primitive for authentication workflows, securely interfacing with OAuth providers when used alongside `@zynth/auth-session`.
+This module is designed with security as a primary focus and is the recommended underlying primitive for authentication workflows, securely interfacing with OAuth providers when used alongside `@zynthjs/auth-session`.
 
 ## Basic usage
 
 The most common use case is opening a URL in an in-app browser. The module handles platform-specific capabilities automatically.
 
 ```tsx
-import { WebBrowser } from "@zynth/web-browser";
-import { Button } from "@zynth/ui";
+import { WebBrowser } from "@zynthjs/web-browser";
+import { Button } from "@zynthjs/ui";
 
 export function ExternalLink() {
   const handlePress = async () => {
@@ -29,7 +29,7 @@ export function ExternalLink() {
 
 ## Advanced usage and authentication
 
-When implementing secure authentication flows, such as OAuth, `WebBrowser` can be integrated directly. However, for robust session management, it is recommended to pair it with `@zynth/auth-session`.
+When implementing secure authentication flows, such as OAuth, `WebBrowser` can be integrated directly. However, for robust session management, it is recommended to pair it with `@zynthjs/auth-session`.
 
 ### Browser warming (Android)
 
@@ -37,7 +37,7 @@ To reduce the initiation time of opening a Custom Tab on Android, you can warm u
 
 ```tsx
 import { onMount, onCleanup } from "solid-js";
-import { WebBrowser } from "@zynth/web-browser";
+import { WebBrowser } from "@zynthjs/web-browser";
 
 export function BrowserPreloader() {
   onMount(() => {
@@ -57,7 +57,7 @@ export function BrowserPreloader() {
 In authentication flows, you might need to dismiss the browser programmatically after capturing a redirect URI within your app's event listeners.
 
 ```tsx
-import { WebBrowser } from "@zynth/web-browser";
+import { WebBrowser } from "@zynthjs/web-browser";
 
 async function completeAuthFlow() {
   const result = await WebBrowser.dismissBrowser();

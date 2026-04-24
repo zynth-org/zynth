@@ -7,7 +7,7 @@ import {
   onCleanup,
   untrack,
 } from "solid-js";
-import type { HostNode, Style, StyleProp } from "@zynth/core";
+import type { HostNode, Style, StyleProp } from "@zynthjs/core";
 
 import {
   ScrollEvent,

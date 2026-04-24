@@ -9,8 +9,8 @@ By utilizing platform-native engines—the Taptic Engine on iOS and the `Vibrato
 Trigger tactile feedback by calling one of the asynchronous feedback functions. These functions are safe to call on all platforms and will gracefully degrade if haptics are unsupported or unavailable.
 
 ```tsx
-import { View } from "@zynth/components";
-import { impactAsync, ImpactFeedbackStyle } from "@zynth/haptics";
+import { View } from "@zynthjs/components";
+import { impactAsync, ImpactFeedbackStyle } from "@zynthjs/haptics";
 
 const Button = (props) => {
   const handlePress = async () => {
@@ -34,7 +34,7 @@ const Button = (props) => {
 Use notification haptics to provide tactile confirmation for the outcome of an operation. This is particularly effective for background tasks or form submissions.
 
 ```tsx
-import { notificationAsync, NotificationFeedbackType } from "@zynth/haptics";
+import { notificationAsync, NotificationFeedbackType } from "@zynthjs/haptics";
 
 const submitForm = async () => {
   try {
@@ -51,7 +51,7 @@ const submitForm = async () => {
 For Android-specific applications requiring precise system interaction, `performAndroidHapticsAsync` provides access to the full range of `HapticFeedbackConstants`.
 
 ```tsx
-import { performAndroidHapticsAsync, AndroidHaptics } from "@zynth/haptics";
+import { performAndroidHapticsAsync, AndroidHaptics } from "@zynthjs/haptics";
 
 const onLongPress = () => {
   // Use the native Android long-press pattern
@@ -64,7 +64,7 @@ const onLongPress = () => {
 Selection haptics are designed for use during continuous interactions, such as scrolling through a list or adjusting a slider.
 
 ```tsx
-import { selectionAsync } from "@zynth/haptics";
+import { selectionAsync } from "@zynthjs/haptics";
 
 const onValueChange = () => {
   // Provides a light 'tick' sensation frequently used in pickers
@@ -114,4 +114,4 @@ Provides mapping to native `HapticFeedbackConstants`, including:
 
 This package provides essential physical feedback for interactive applications.
 For gestures that trigger haptics, it is often used within callbacks built with
-`@zynth/core/gesture`.
+`@zynthjs/core/gesture`.

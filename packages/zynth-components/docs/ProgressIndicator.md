@@ -7,7 +7,7 @@
 The component is at its simplest as a small, animated spinner.
 
 ```tsx
-import { ProgressIndicator, View } from "@zynth/components";
+import { ProgressIndicator, View } from "@zynthjs/components";
 
 function LoadingView() {
   return (

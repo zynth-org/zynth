@@ -7,7 +7,7 @@
 The component acts as a controlled or uncontrolled input, where `value` and `onChange` handle the synchronization of selected timestamps.
 
 ```tsx
-import { DatePicker, View, Text } from "@zynth/components";
+import { DatePicker, View, Text } from "@zynthjs/components";
 
 function Picker() {
   const [date, setDate] = createSignal(Date.now());

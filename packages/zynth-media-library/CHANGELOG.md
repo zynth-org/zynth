@@ -1,8 +1,8 @@
-# @zynth/media-library
+# @zynthjs/media-library
 
 ## 0.0.1-alpha.0
 
 ### Patch Changes
 
 - Updated dependencies
-  - @zynth/core@0.0.1-alpha.0
+  - @zynthjs/core@0.0.1-alpha.0

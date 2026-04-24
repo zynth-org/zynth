@@ -1,4 +1,4 @@
-import { callNative, callNativeSync } from "@zynth/core";
+import { callNative, callNativeSync } from "@zynthjs/core";
 
 async function callBridge(
   method: "preventAutoHide" | "hide"

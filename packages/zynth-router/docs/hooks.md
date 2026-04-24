@@ -7,8 +7,8 @@ Most hooks return accessors or tuples that fit directly into SolidJS reactive co
 ## Basic usage
 
 ```tsx
-import { useNavigation, useRoute } from "@zynth/router";
-import { Button, Text, View } from "@zynth/components";
+import { useNavigation, useRoute } from "@zynthjs/router";
+import { Button, Text, View } from "@zynthjs/components";
 
 type StackParams = {
   Home: undefined;
@@ -43,8 +43,8 @@ function DetailsScreen() {
 ### Reading and updating params with `useParams`
 
 ```tsx
-import { useParams } from "@zynth/router";
-import { Button, Text, View } from "@zynth/components";
+import { useParams } from "@zynthjs/router";
+import { Button, Text, View } from "@zynthjs/components";
 
 type DetailsParams = {
   Details: { id: string; mode?: "summary" | "full" };
@@ -68,7 +68,7 @@ function DetailsScreen() {
 
 ```tsx
 import { createEffect, createSignal } from "solid-js";
-import { useScreenOptions } from "@zynth/router";
+import { useScreenOptions } from "@zynthjs/router";
 
 function EditableTitleScreen() {
   const [title, setTitle] = createSignal("Draft");
@@ -85,7 +85,7 @@ function EditableTitleScreen() {
 ### Focus-aware work
 
 ```tsx
-import { createFocusEffect, useIsFocused } from "@zynth/router";
+import { createFocusEffect, useIsFocused } from "@zynthjs/router";
 import { createEffect } from "solid-js";
 
 function FeedScreen() {
@@ -108,8 +108,8 @@ function FeedScreen() {
 ### Layout metrics for headers and tab bars
 
 ```tsx
-import { useHeaderMetrics, useTabBarMetrics } from "@zynth/router";
-import { View } from "@zynth/components";
+import { useHeaderMetrics, useTabBarMetrics } from "@zynthjs/router";
+import { View } from "@zynthjs/components";
 
 function ScreenLayout() {
   const header = useHeaderMetrics();

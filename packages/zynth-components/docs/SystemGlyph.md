@@ -7,7 +7,7 @@
 The component is at its simplest as a graphic element with specific `size` and `color`.
 
 ```tsx
-import { SystemGlyph, View, Text } from "@zynth/components";
+import { SystemGlyph, View, Text } from "@zynthjs/components";
 
 function IconRow() {
   return (

@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/auth-session",
+  "name": "@zynthjs/auth-session",
   "version": "0.0.1-alpha.0",
   "description": "Secure auth session primitives for Zynth",
   "type": "module",
@@ -27,8 +27,8 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@zynth/core": "0.0.1-alpha.0",
-    "@zynth/crypto": "0.0.1-alpha.0"
+    "@zynthjs/core": "0.0.1-alpha.0",
+    "@zynthjs/crypto": "0.0.1-alpha.0"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

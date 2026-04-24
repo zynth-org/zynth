@@ -7,10 +7,10 @@ import {
   splitProps,
   untrack,
 } from "solid-js";
-import { platform } from "@zynth/apis";
+import { platform } from "@zynthjs/apis";
 import type { ParentComponent } from "solid-js";
-import type { HostNode, Style, StyleProp } from "@zynth/core";
-import { scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynth/core";
+import type { HostNode, Style, StyleProp } from "@zynthjs/core";
+import { scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynthjs/core";
 import { View } from "./View";
 import type { LayoutChangeEvent } from "./View";
 

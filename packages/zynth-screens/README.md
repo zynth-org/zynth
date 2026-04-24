@@ -1,17 +1,17 @@
 # Screens
 
-`@zynth/screens` provides the low-level screen primitives used to render navigation stacks, tab content, and sheet-style flows in Zynth applications.
+`@zynthjs/screens` provides the low-level screen primitives used to render navigation stacks, tab content, and sheet-style flows in Zynth applications.
 
-On iOS and Android, these primitives bridge to native containers and transition handling. `@zynth/router` uses them to render stack and tab navigators while keeping navigation state in JavaScript. On Web, the package provides a partial adapter built from DOM containers and CSS-based transitions.
+On iOS and Android, these primitives bridge to native containers and transition handling. `@zynthjs/router` uses them to render stack and tab navigators while keeping navigation state in JavaScript. On Web, the package provides a partial adapter built from DOM containers and CSS-based transitions.
 
-Most applications use this package through `@zynth/router`, but the primitives are also available for custom navigation systems that need direct control over active screens, transition styles, and native lifecycle events.
+Most applications use this package through `@zynthjs/router`, but the primitives are also available for custom navigation systems that need direct control over active screens, transition styles, and native lifecycle events.
 
 ## Basic usage
 
 ### Stack-style container
 
 ```tsx
-import { Screen, ScreenContainer } from "@zynth/screens";
+import { Screen, ScreenContainer } from "@zynthjs/screens";
 
 export function App(props: { route: "home" | "details" }) {
   return (
@@ -34,10 +34,10 @@ export function App(props: { route: "home" | "details" }) {
 
 ### Router integration
 
-`@zynth/router` renders stack screens through `ScreenContainer` and `Screen`, and tab content through `ScreenTabsContainer`.
+`@zynthjs/router` renders stack screens through `ScreenContainer` and `Screen`, and tab content through `ScreenTabsContainer`.
 
 ```tsx
-import { NavigationContainer, createStackNavigator } from "@zynth/router";
+import { NavigationContainer, createStackNavigator } from "@zynthjs/router";
 
 type RootStackParams = {
   Home: undefined;
@@ -73,7 +73,7 @@ export default function App() {
 `Screen` exposes native lifecycle callbacks for appearance and disappearance. These are useful when the screen primitive is used directly.
 
 ```tsx
-import { Screen, ScreenContainer } from "@zynth/screens";
+import { Screen, ScreenContainer } from "@zynthjs/screens";
 
 export function Flow(props: { active: "feed" | "profile" }) {
   return (
@@ -109,7 +109,7 @@ export function Flow(props: { active: "feed" | "profile" }) {
 Use `covered` when a screen remains visible underneath a modal-style transition.
 
 ```tsx
-import { Screen, ScreenContainer } from "@zynth/screens";
+import { Screen, ScreenContainer } from "@zynthjs/screens";
 
 export function ModalFlow(props: { step: "list" | "compose" }) {
   const showingCompose = () => props.step === "compose";
@@ -133,7 +133,7 @@ export function ModalFlow(props: { step: "list" | "compose" }) {
 }
 ```
 
-### Native header integration with `@zynth/router`
+### Native header integration with `@zynthjs/router`
 
 In stack navigation, router screen options are mapped to `Screen` header props. On iOS this drives the native navigation bar. On Android and Web, the router currently renders the stack header in JavaScript.
 
@@ -161,10 +161,10 @@ In stack navigation, router screen options are mapped to `Screen` header props. 
 
 ### Native tab containers
 
-`ScreenTabsContainer` manages the content area for tab navigation. `@zynth/router` uses it to preserve tab content and switch the selected tab index.
+`ScreenTabsContainer` manages the content area for tab navigation. `@zynthjs/router` uses it to preserve tab content and switch the selected tab index.
 
 ```tsx
-import { ScreenTabsContainer } from "@zynth/screens";
+import { ScreenTabsContainer } from "@zynthjs/screens";
 import { createSignal } from "solid-js";
 
 export function TabsExample() {
@@ -204,12 +204,12 @@ export function TabsExample() {
 
 ### Sheet-style navigation
 
-`ScreenSheetContainer` is the container used by `@zynth/router` for iOS bottom-sheet flows. The router’s bottom-sheet navigator builds on this primitive together with `@zynth/components` bottom sheet presentation.
+`ScreenSheetContainer` is the container used by `@zynthjs/router` for iOS bottom-sheet flows. The router’s bottom-sheet navigator builds on this primitive together with `@zynthjs/components` bottom sheet presentation.
 
 BottomSheet navigation is currently experimental and unstable.
 
 ```tsx
-import { Screen, ScreenSheetContainer } from "@zynth/screens";
+import { Screen, ScreenSheetContainer } from "@zynthjs/screens";
 
 export function SheetStack(props: { route: "filters" | "sort" }) {
   return (

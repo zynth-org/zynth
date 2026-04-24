@@ -1,5 +1,5 @@
 import { createSignal, createEffect, onMount, type JSX } from "solid-js";
-import { SafeAreaProvider, getInitialWindowMetrics } from "@zynth/apis";
+import { SafeAreaProvider, getInitialWindowMetrics } from "@zynthjs/apis";
 import type {
   NavigationContainerProps,
   NavigationState,

@@ -7,14 +7,14 @@ import {
   type JSX,
   type ParentComponent,
 } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
+import type { HostNode, Style } from "@zynthjs/core";
 import {
   getActiveSurface,
   render,
   setActiveSurface,
   setProperty,
-} from "@zynth/core";
-import { platform, viewport } from "@zynth/apis";
+} from "@zynthjs/core";
+import { platform, viewport } from "@zynthjs/apis";
 import { View } from "./View";
 
 export type SnapPoint = number | `${number}%`;

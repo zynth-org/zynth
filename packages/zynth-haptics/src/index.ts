@@ -2,7 +2,7 @@ import {
   callNative,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 type VibratePattern = number | number[];
 

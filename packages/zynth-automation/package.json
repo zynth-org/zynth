@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/automation",
+  "name": "@zynthjs/automation",
   "version": "0.0.1-alpha.0",
   "description": "Native screen automation primitives for Zynth (inspection + execution)",
   "type": "module",
@@ -29,7 +29,7 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1-alpha.0",
+    "@zynthjs/core": ">=0.0.1-alpha.0",
     "solid-js": ">=1.8.0"
   },
   "devDependencies": {

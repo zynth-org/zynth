@@ -17,7 +17,7 @@ references/
   controls.md            Native components: Button, Switch, Slider, DatePicker, TextField, Menu
   bottom-sheet.md        BottomSheet: snap points, controllers, and background interaction
   gradients.md           CSS-style linear-gradient backgrounds via 'background' prop
-  icons.md               Zynth Icons (@zynth/icons) and native SF Symbols/Material Icons (SystemIcon)
+  icons.md               Zynth Icons (@zynthjs/icons) and native SF Symbols/Material Icons (SystemIcon)
   media.md               Camera, assets, and file system interactions
   navigation.md          Zynth Memory Router: Stack, Tabs, BottomSheet navigators, and hooks
   route-structure.md     FileSystemRouter: convention-based routing and manifest generation
@@ -46,7 +46,7 @@ Zynth generates temporary `/ios` and `/android` directories. **NEVER** modify fi
 
 ## Routes & Navigation
 
-Zynth uses `@zynth/router` for application-level navigation.
+Zynth uses `@zynthjs/router` for application-level navigation.
 
 - **Navigation Container**: Wrap your root component in `<NavigationContainer />`.
 - **Navigators**: Use `createStackNavigator`, `createTabNavigator`, or `createBottomSheetNavigator`.
@@ -56,11 +56,11 @@ Zynth uses `@zynth/router` for application-level navigation.
 
 ## Library Preferences
 
-- **Internal First**: Always prefer `@zynth/*` packages for core functionality (Animate, Icons, APIs, Screens).
-- **Icons**: Use `@zynth/icons` for component-based icons or `<SystemIcon />` for platform-native symbols (SF Symbols on iOS).
-- **Styling**: Use `createStyle` and `mergeStyles` from `@zynth/components` for reactive styling.
+- **Internal First**: Always prefer `@zynthjs/*` packages for core functionality (Animate, Icons, APIs, Screens).
+- **Icons**: Use `@zynthjs/icons` for component-based icons or `<SystemIcon />` for platform-native symbols (SF Symbols on iOS).
+- **Styling**: Use `createStyle` and `mergeStyles` from `@zynthjs/components` for reactive styling.
 - **Reactivity**: `React.useContext` is **NOT** available; use `createContext` from `solid-js`.
-- **Safe Areas**: Use `createSafeAreaInsets()` from `@zynth/apis` or `contentInsetAdjustmentBehavior="automatic"` on scrollable views.
+- **Safe Areas**: Use `createSafeAreaInsets()` from `@zynthjs/apis` or `contentInsetAdjustmentBehavior="automatic"` on scrollable views.
 
 ## Responsiveness & Layout
 
@@ -72,7 +72,7 @@ Zynth uses `@zynth/router` for application-level navigation.
 ## Behavior & Feedback
 
 - **Tactile Feedback**: Use `<Pressable enableGlassIOS />` for interactive surfaces; it provides automatic scale and tilt feedback.
-- **Haptics**: Use `@zynth/haptics` to add subtle vibrations for important actions (success, warning, error).
+- **Haptics**: Use `@zynthjs/haptics` to add subtle vibrations for important actions (success, warning, error).
 - **Touch Targets**: Use `<Pressable />` for all interactive elements. It supports complex hit slops and state-based styling (pressed, hovered, focused).
 - **Batched Updates**: Use `batch(() => { ... })` from `solid-js` when updating multiple signals to minimize bridge traffic.
 
@@ -90,7 +90,7 @@ Zynth styles follow a hybrid approach props and CSS-like capabilities.
 
 - **Tabular Numbers**: Use `{ fontVariant: ['tabular-nums'] }` for aligned counters or timers.
 - **Selectable**: Add the `selectable` prop to `<Text />` for data that users might need to copy.
-- **Nesting**: Icons from `@zynth/icons` can be nested directly inside `<Text />` elements and will inherit text styling.
+- **Nesting**: Icons from `@zynthjs/icons` can be nested directly inside `<Text />` elements and will inherit text styling.
 
 ## Navigation Patterns
 
@@ -142,4 +142,4 @@ Use `<BottomSheet />` for high-performance, native-backed modal sheets:
 
 - **Shared Values**: Use `createSharedValue` and `createAnimatedStyle` for 60fps/120fps animations that run on the native UI thread.
 - **Glass Effects**: Use `<GlassContainer />` to wrap content with dynamic blurring and transparency.
-- **Skia**: For custom drawing or complex shaders, use `@zynth/skia`. It integrates seamlessly with Zynth signals for real-time performance.
+- **Skia**: For custom drawing or complex shaders, use `@zynthjs/skia`. It integrates seamlessly with Zynth signals for real-time performance.

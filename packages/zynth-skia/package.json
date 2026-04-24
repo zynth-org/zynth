@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/skia",
+  "name": "@zynthjs/skia",
   "version": "0.0.1-alpha.0",
   "description": "Declarative Skia renderer for Zynth",
   "type": "module",
@@ -42,8 +42,8 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1-alpha.0",
-    "@zynth/components": ">=0.0.1-alpha.0",
+    "@zynthjs/core": ">=0.0.1-alpha.0",
+    "@zynthjs/components": ">=0.0.1-alpha.0",
     "solid-js": ">=1.8.0"
   },
   "devDependencies": {

@@ -14,7 +14,7 @@ These hooks provide a SolidJS-friendly interface to the keyboard subsystem. They
 The `useKeyboard` hook returns a reactive accessor to the complete keyboard state.
 
 ```tsx
-import { useKeyboard } from "@zynth/keyboard";
+import { useKeyboard } from "@zynthjs/keyboard";
 
 function KeyboardMonitor() {
   const keyboard = useKeyboard();
@@ -35,7 +35,7 @@ function KeyboardMonitor() {
 For better performance, use specialized hooks if you only need a specific property. This prevents unnecessary re-renders when other keyboard properties change (e.g., watching `isVisible` won't trigger re-renders just because the `height` is still calculating during an animation).
 
 ```tsx
-import { useKeyboardVisible, useKeyboardHeight } from "@zynth/keyboard";
+import { useKeyboardVisible, useKeyboardHeight } from "@zynthjs/keyboard";
 
 function VisibilityToggle() {
   const isVisible = useKeyboardVisible();
@@ -53,7 +53,7 @@ function VisibilityToggle() {
 Use `useKeyboardAnimating` to pause heavy UI transitions or expensive calculations while the keyboard is in motion.
 
 ```tsx
-import { useKeyboardAnimating } from "@zynth/keyboard";
+import { useKeyboardAnimating } from "@zynthjs/keyboard";
 
 function PerformanceAwareComponent() {
   const isAnimating = useKeyboardAnimating();

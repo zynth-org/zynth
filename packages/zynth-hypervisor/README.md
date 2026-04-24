@@ -13,7 +13,7 @@ The Hypervisor component provides the primitive for embedding a full Zynth envir
 Embed a remote Zynth bundle by URI. The `Hypervisor` component handles the viewport and lifecycle of the underlying Guest runtime.
 
 ```tsx
-import { Hypervisor } from "@zynth/hypervisor";
+import { Hypervisor } from "@zynthjs/hypervisor";
 
 function PluginContainer() {
   const handleLoad = () => {
@@ -45,7 +45,7 @@ function PluginContainer() {
 Inside the loaded guest bundle, use the `useHost` hook to establish a communication channel back to the host environment.
 
 ```tsx
-import { useHost } from "@zynth/hypervisor";
+import { useHost } from "@zynthjs/hypervisor";
 import { createSignal } from "solid-js";
 
 function GuestApp() {
@@ -79,7 +79,7 @@ function GuestApp() {
 To programmatically control the Guest runtime (e.g., triggering a reload or sending proactive messages), use the `ref` prop to access the `HypervisorRef` API.
 
 ```tsx
-import { Hypervisor, HypervisorRef } from "@zynth/hypervisor";
+import { Hypervisor, HypervisorRef } from "@zynthjs/hypervisor";
 
 function ManagedHypervisor() {
   let hypervisor: HypervisorRef | undefined;
@@ -113,7 +113,7 @@ Instead of a URI, you can pass raw bundle code directly to the Hypervisor for ex
 
 ```tsx
 const code = `
-  import { View, Text } from "@zynth/ui";
+  import { View, Text } from "@zynthjs/ui";
   export default () => <View><Text>Dynamic Payload</Text></View>;
 `;
 

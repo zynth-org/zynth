@@ -1,7 +1,7 @@
 import { createContext, useContext, createSignal, createEffect, splitProps, type Component, JSX } from "solid-js";
-import { Pressable, View, Text } from "@zynth/components";
+import { Pressable, View, Text } from "@zynthjs/components";
 import { useUITheme } from "../hooks";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 type RadioValue = string | number;
 

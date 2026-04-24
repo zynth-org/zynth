@@ -1,4 +1,4 @@
-import { callNative, getGlobalObject } from "@zynth/core";
+import { callNative, getGlobalObject } from "@zynthjs/core";
 import { createSignal, createEffect, createResource, type Accessor, type Resource } from "solid-js";
 
 type WebFontSources = Record<string, string>;

@@ -1,4 +1,4 @@
-import { callNativeSync, getGlobalObject, Platform } from "@zynth/core";
+import { callNativeSync, getGlobalObject, Platform } from "@zynthjs/core";
 import { createSignal } from "solid-js";
 
 const MODULE_NAME = "Device";

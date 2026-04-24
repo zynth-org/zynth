@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
 const packagesDir = join(repoRoot, "packages");
-const orderedPackages = ["@zynth/core", "@zynth/apis", "@zynth/components", "@zynth/screens"];
+const orderedPackages = ["@zynthjs/core", "@zynthjs/apis", "@zynthjs/components", "@zynthjs/screens"];
 const workspaceCommand = "yarn";
 const workspaceBuildScript = "build";
 const depsSyncScript = "binaries:sync";
@@ -82,7 +82,7 @@ async function main() {
   
   // Parse --skip flag
   const skipIndex = args.indexOf("--skip");
-  const skipList = ["@zynth/skyhook"]; // Default skip
+  const skipList = ["@zynthjs/skyhook"]; // Default skip
   if (skipIndex !== -1 && args[skipIndex + 1]) {
     const manualSkips = args[skipIndex + 1].split(",");
     skipList.push(...manualSkips);

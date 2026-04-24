@@ -1,7 +1,7 @@
 ---
-"@zynth/core": patch
-"@zynth/apis": patch
-"@zynth/components": patch
+"@zynthjs/core": patch
+"@zynthjs/apis": patch
+"@zynthjs/components": patch
 "zynth": patch
 ---
 

@@ -6,7 +6,7 @@ A minimalist template for creating Zynth native modules with support for Android
 
 - `android/`: Native Android implementation (Kotlin).
 - `ios/`: Native iOS implementation (Swift).
-- `src/`: TypeScript interface using `@zynth/core` utilities.
+- `src/`: TypeScript interface using `@zynthjs/core` utilities.
 
 ## Native Module API
 
@@ -14,7 +14,7 @@ Zynth Core provides a standardized API for creating modules that work on both pl
 
 ### JavaScript Usage
 
-Instead of accessing globals directly, use the `@zynth/core` helpers.
+Instead of accessing globals directly, use the `@zynthjs/core` helpers.
 
 ```typescript
 import {
@@ -22,7 +22,7 @@ import {
   callNativeSync,
   getNativeModule,
   unwrapNativeResult
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 // 1. Asynchronous Call (via Bridge)
 async function fetchData() {

@@ -4,7 +4,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 export interface MenuProps {
   style?: Style;

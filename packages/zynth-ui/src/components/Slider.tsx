@@ -1,6 +1,6 @@
 import { createEffect, createSignal, Show } from "solid-js";
-import { Slider as PrimitiveSlider, View } from "@zynth/components";
-import type { Style } from "@zynth/core";
+import { Slider as PrimitiveSlider, View } from "@zynthjs/components";
+import type { Style } from "@zynthjs/core";
 import { useUITheme } from "../hooks";
 import { Text } from "./Text";
 

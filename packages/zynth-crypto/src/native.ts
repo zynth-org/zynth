@@ -3,7 +3,7 @@ import {
   callNativeSync as coreCallNativeSync,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 type RandomArgs = { size: number };
 type DigestArgs = { algorithm: string; dataBase64: string };
@@ -86,7 +86,7 @@ function getNativeJSI(): NativeCryptoJSI | null {
 
 function createMissingModuleError(): Error {
   return new Error(
-    `[${MODULE_NAME}] Native module not found. Ensure @zynth/crypto is installed and native projects are regenerated.`
+    `[${MODULE_NAME}] Native module not found. Ensure @zynthjs/crypto is installed and native projects are regenerated.`
   );
 }
 

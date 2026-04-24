@@ -22,7 +22,7 @@ A Shared Signal behaves like a standard SolidJS signal in JavaScript, but its va
 Creates a reactive signal that is synchronized with the native runtime.
 
 ```tsx
-import { createSharedSignal } from "@zynth/core";
+import { createSharedSignal } from "@zynthjs/core";
 
 const [offset, setOffset] = createSharedSignal(0);
 
@@ -45,7 +45,7 @@ When a `SharedSignal` is created with a `number` value:
 Capture contexts allow the framework to automatically detect dependencies on shared signals without explicit subscription.
 
 ```ts
-import { captureSharedSignals } from "@zynth/core";
+import { captureSharedSignals } from "@zynthjs/core";
 
 const { result, tokens } = captureSharedSignals(() => {
   return { opacity: opacitySignal() };
@@ -62,4 +62,4 @@ Shared Signals are most effective when used for properties that update frequentl
 ---
 
 > [!TIP]
-> For most animation use cases, you should use the higher-level `createSharedValue` API from `@zynth/core/motion`, which provides additional animation drivers like `withSpring` and `withTiming`.
+> For most animation use cases, you should use the higher-level `createSharedValue` API from `@zynthjs/core/motion`, which provides additional animation drivers like `withSpring` and `withTiming`.

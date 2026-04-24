@@ -11,7 +11,7 @@ It enables loading custom Typeface files (.ttf, .otf) at runtime and provides So
 To load a single font family, use `Font.loadAsync`. This registers the font with the OS and makes it available to the Zynth style system immediately.
 
 ```ts
-import { Font } from "@zynth/apis";
+import { Font } from "@zynthjs/apis";
 
 async function setupFonts() {
   await Font.loadAsync("MyCustomFont", "path/to/font.ttf");
@@ -23,7 +23,7 @@ async function setupFonts() {
 Use `createFontLoader` to create a reactive resource. This works natively with SolidJS's `<Suspense>`, allowing you to show a loading state while fonts are being registered.
 
 ```tsx
-import { createFontLoader } from "@zynth/apis";
+import { createFontLoader } from "@zynthjs/apis";
 import { Suspense } from "solid-js";
 
 const fontsReady = createFontLoader({

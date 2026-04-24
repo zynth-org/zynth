@@ -2,7 +2,7 @@
 
 An asynchronous, unencrypted, persistent, key-value storage system for Zynth applications.
 
-`@zynth/async-storage` provides a simple way to persist data across application restarts. It leverages the native key-value storage systems of each platform: **UserDefaults** on iOS and **SharedPreferences** on Android.
+`@zynthjs/async-storage` provides a simple way to persist data across application restarts. It leverages the native key-value storage systems of each platform: **UserDefaults** on iOS and **SharedPreferences** on Android.
 
 ## Basic usage
 
@@ -11,7 +11,7 @@ An asynchronous, unencrypted, persistent, key-value storage system for Zynth app
 All operations in `AsyncStorage` are asynchronous and return a `Promise`. While callbacks are supported for legacy compatibility, using `async/await` is recommended.
 
 ```tsx
-import { AsyncStorage } from "@zynth/async-storage";
+import { AsyncStorage } from "@zynthjs/async-storage";
 
 // Storing data
 const storeData = async (value: string) => {
@@ -40,7 +40,7 @@ const getData = async () => {
 If you frequently access the same key, you can use `useAsyncStorage` to create a scoped accessor.
 
 ```tsx
-import { useAsyncStorage } from "@zynth/async-storage";
+import { useAsyncStorage } from "@zynthjs/async-storage";
 
 const { getItem, setItem } = useAsyncStorage("settings_theme");
 
@@ -57,7 +57,7 @@ const toggleTheme = async () => {
 Zynth integrates `AsyncStorage` directly with SolidJS reactivity via `createAsyncStorageSignal`. This automatically synchronizes a signal's value with a persistent storage key.
 
 ```tsx
-import { createAsyncStorageSignal } from "@zynth/async-storage";
+import { createAsyncStorageSignal } from "@zynthjs/async-storage";
 
 function Settings() {
   const storage = createAsyncStorageSignal("app_theme", {

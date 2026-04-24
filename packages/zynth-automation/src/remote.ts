@@ -1,4 +1,4 @@
-import { addDevtoolsListener, emitDevtoolsEvent } from "@zynth/core";
+import { addDevtoolsListener, emitDevtoolsEvent } from "@zynthjs/core";
 import { Automation } from "./automation";
 import type { AutomationReadOptions } from "./types";
 

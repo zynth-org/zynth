@@ -7,7 +7,7 @@ The tab navigator is commonly used for top-level application sections such as fe
 ## Basic usage
 
 ```tsx
-import { createTabNavigator } from "@zynth/router";
+import { createTabNavigator } from "@zynthjs/router";
 
 type TabParams = {
   Home: undefined;
@@ -71,7 +71,7 @@ function AppTabs() {
 ### Using icon factories
 
 ```tsx
-import { Text } from "@zynth/components";
+import { Text } from "@zynthjs/components";
 
 const SearchIcon = (props: { active: boolean; color: string }) => (
   <Text
@@ -102,8 +102,8 @@ const SearchIcon = (props: { active: boolean; color: string }) => (
 ### Custom tab bar component
 
 ```tsx
-import type { TabBarProps } from "@zynth/router";
-import { Button, Text, View } from "@zynth/components";
+import type { TabBarProps } from "@zynthjs/router";
+import { Button, Text, View } from "@zynthjs/components";
 
 function CustomTabBar(props: TabBarProps) {
   return (

@@ -3,7 +3,7 @@ import {
   callNativeSync as coreCallNativeSync,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import type { SecureStoreOptions } from "./types";
 
 type NativeSecureStoreJSI = {
@@ -36,7 +36,7 @@ function getNativeJSI(): NativeSecureStoreJSI | null {
 function createMissingModuleError(): Error {
   return new Error(
     `[ZynthSecureStore] Native module not found. ` +
-      `Ensure @zynth/secure-store is installed, linked, and your native project has been regenerated for this platform.`
+      `Ensure @zynthjs/secure-store is installed, linked, and your native project has been regenerated for this platform.`
   );
 }
 

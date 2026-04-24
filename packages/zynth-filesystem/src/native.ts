@@ -3,7 +3,7 @@ import {
   callNativeSync as coreCallNativeSync,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 type DevtoolsBridge = {
   emit(event: { topic: string; level?: string; tag?: string; data?: unknown }): void;

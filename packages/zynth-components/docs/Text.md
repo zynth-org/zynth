@@ -7,7 +7,7 @@
 Text components can render string children or a `text` prop. Nesting `Text` components allows for complex inline styling where the child inherits and overrides properties from its parent.
 
 ```tsx
-import { Text, View } from "@zynth/components";
+import { Text, View } from "@zynthjs/components";
 
 function Typography() {
   return (

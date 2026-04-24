@@ -24,7 +24,7 @@ if(EXISTS "${ZYNTH_CORE_CPP_DIR_MONOREPO}/ZynthJSIPluginRegistry.h")
 elseif(EXISTS "${ZYNTH_CORE_CPP_DIR_PACKAGE}/ZynthJSIPluginRegistry.h")
   set(ZYNTH_CORE_CPP_DIR ${ZYNTH_CORE_CPP_DIR_PACKAGE})
 else()
-  message(FATAL_ERROR "Unable to locate @zynth/core Android headers. Checked ${ZYNTH_CORE_CPP_DIR_MONOREPO} and ${ZYNTH_CORE_CPP_DIR_PACKAGE}")
+  message(FATAL_ERROR "Unable to locate @zynthjs/core Android headers. Checked ${ZYNTH_CORE_CPP_DIR_MONOREPO} and ${ZYNTH_CORE_CPP_DIR_PACKAGE}")
 endif()
 
 file(GLOB SKIA_STATIC_LIBS "${SKIA_ANDROID_LIB_DIR}/*.a")

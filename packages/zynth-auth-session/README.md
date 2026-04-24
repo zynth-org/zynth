@@ -24,7 +24,7 @@ To receive authentication redirects, you must configure your application's schem
 }
 ```
 
-`@zynth/auth-session` manages the lifecycle of authentication requests by leveraging native browser components (**ASWebAuthenticationSession** on iOS and **Custom Tabs** on Android). This ensures that credentials remain isolated from the application and that redirects are captured securely by the native OS.
+`@zynthjs/auth-session` manages the lifecycle of authentication requests by leveraging native browser components (**ASWebAuthenticationSession** on iOS and **Custom Tabs** on Android). This ensures that credentials remain isolated from the application and that redirects are captured securely by the native OS.
 
 ## Basic usage
 
@@ -33,7 +33,7 @@ To receive authentication redirects, you must configure your application's schem
 The `startAsync` method opens a secure browser window to the specified `authUrl`. It resolves when the user completes the flow via the `redirectUri` or cancels the session.
 
 ```tsx
-import { AuthSession } from "@zynth/auth-session";
+import { AuthSession } from "@zynthjs/auth-session";
 
 const authenticate = async () => {
   const result = await AuthSession.startAsync({
@@ -68,10 +68,10 @@ const redirectUri = AuthSession.makeRedirectUri({
 For secure OAuth2 flows, Zynth provides built-in helpers for producing PKCE (Proof Key for Code Exchange) values and random state strings.
 
 > [!IMPORTANT]
-> These helpers require a native installation of `@zynth/crypto`.
+> These helpers require a native installation of `@zynthjs/crypto`.
 
 ```tsx
-import { AuthSession } from "@zynth/auth-session";
+import { AuthSession } from "@zynthjs/auth-session";
 
 const login = async () => {
   // 1. Generate security values

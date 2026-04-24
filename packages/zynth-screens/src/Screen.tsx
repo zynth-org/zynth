@@ -1,7 +1,7 @@
 import { splitProps, children as resolveChildren, mergeProps } from "solid-js";
 import type { ParentComponent } from "solid-js";
 import type { ScreenProps } from "./types";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 /**
  * Individual screen primitive with built-in animations.

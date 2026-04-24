@@ -9,7 +9,7 @@ It aggregates information from native property managers to provide unique identi
 Access the frozen `DeviceInfo` object directly through `device.current`. No asynchronous call is required for the initial read because information is synchronized during app bootstrap.
 
 ```tsx
-import { device } from "@zynth/apis";
+import { device } from "@zynthjs/apis";
 
 const info = device.current;
 

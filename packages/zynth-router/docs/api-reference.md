@@ -1,6 +1,6 @@
 # API Reference
 
-This document lists the public exports from `@zynth/router` and the main types used to configure navigation trees, route state, screen options, and filesystem routing.
+This document lists the public exports from `@zynthjs/router` and the main types used to configure navigation trees, route state, screen options, and filesystem routing.
 
 The package surface is split across containers, navigator factories, navigator components, hooks, contexts, metrics helpers, and public type exports.
 
@@ -11,7 +11,7 @@ import {
   NavigationContainer,
   createStackNavigator,
   useNavigation,
-} from "@zynth/router";
+} from "@zynthjs/router";
 ```
 
 ## Advanced examples
@@ -19,7 +19,7 @@ import {
 ### Direct navigator exports
 
 ```tsx
-import { NavigationContainer, Stack } from "@zynth/router";
+import { NavigationContainer, Stack } from "@zynthjs/router";
 
 function App() {
   return (
@@ -40,7 +40,7 @@ import {
   NavigationContainer,
   createFileSystemRouter,
   type FileSystemRouterManifest,
-} from "@zynth/router";
+} from "@zynthjs/router";
 
 declare const manifest: FileSystemRouterManifest;
 

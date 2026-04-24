@@ -1,11 +1,11 @@
 import { createEffect, createSignal, onCleanup, type Component } from "solid-js";
-import { platform } from "@zynth/apis";
+import { platform } from "@zynthjs/apis";
 import type {
   Style,
   ImageAssetSource as CoreImageAssetSource,
   ImageUriSource as CoreImageUriSource,
   ImageAssetDescriptor,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 

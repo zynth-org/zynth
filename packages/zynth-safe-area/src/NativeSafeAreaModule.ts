@@ -4,7 +4,7 @@ import {
   getModulesBridge,
   getNativeModule,
   callNativeSync,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import type { WindowMetrics } from "./types";
 
 /**

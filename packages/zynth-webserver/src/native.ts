@@ -3,7 +3,7 @@ import {
   callNativeSync as coreCallNativeSync,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 const MODULE_NAME = "ZynthWebServer";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";

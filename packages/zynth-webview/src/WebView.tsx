@@ -1,7 +1,7 @@
 import { createEffect, createSignal, mergeProps, onCleanup, splitProps } from "solid-js";
 import type { ParentComponent } from "solid-js";
-import type { HostNode } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import type { HostNode } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
 import type { WebViewCommand, WebViewProps, WebViewRef } from "./types";
 
 const noopRef = () => {};
@@ -93,7 +93,7 @@ export const WebView: ParentComponent<WebViewProps> = (props) => {
     const timer = setTimeout(() => {
       if (!nativeReady()) {
         console.warn(
-          "[@zynth/webview] Native component 'zynth-webview' registration check timed out (5000ms). " +
+          "[@zynthjs/webview] Native component 'zynth-webview' registration check timed out (5000ms). " +
             "This might be a false positive on slow devices, or the module is truly missing."
         );
         // We warn instead of throwing to prevent crashing if it's just slow.

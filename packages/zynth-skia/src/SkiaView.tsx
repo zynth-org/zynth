@@ -1,6 +1,6 @@
 import { createEffect, createSignal, mergeProps, onCleanup, splitProps } from "solid-js";
 import type { ParentComponent } from "solid-js";
-import type { HostNode } from "@zynth/core";
+import type { HostNode } from "@zynthjs/core";
 import { createSkiaSurface } from "./createSkiaSurface";
 import type { SkiaDrawCommand, SkiaViewProps } from "./types";
 

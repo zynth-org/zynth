@@ -6,8 +6,8 @@ import {
   onCleanup,
   type Component,
 } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import type { HostNode, Style } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
 
 export type KeyboardType = "default" | "numeric" | "email" | "phone" | "url";
 export type ReturnKeyType = "done" | "go" | "next" | "search" | "send";

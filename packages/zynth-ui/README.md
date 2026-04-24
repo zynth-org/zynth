@@ -1,6 +1,6 @@
 # UI
 
-The `@zynth/ui` package provides a responsive, robust design system and a suite of smart components built on top of the native primitives from `@zynth/components`. While `@zynth/components` exposes raw, unstyled native views mapping directly to Yoga and platform-level APIs, `@zynth/ui` provides a consistent styling architecture out-of-the-box.
+The `@zynthjs/ui` package provides a responsive, robust design system and a suite of smart components built on top of the native primitives from `@zynthjs/components`. While `@zynthjs/components` exposes raw, unstyled native views mapping directly to Yoga and platform-level APIs, `@zynthjs/ui` provides a consistent styling architecture out-of-the-box.
 
 This package manages your application's theme, colors, typography, spacing, and interaction states, allowing you to build cohesive user interfaces efficiently. It is designed to run synchronously with the underlying framework to guarantee strict performance and precise layout characteristics across iOS, Android, and Web.
 
@@ -9,7 +9,7 @@ This package manages your application's theme, colors, typography, spacing, and 
 The package is split into two primary responsibilities:
 
 1. **Theming Engine**: A reactive token architecture that propagates styling configurations globally. It seamlessly delegates system appearance changes (e.g., toggling between light and dark modes) directly from native OS listeners into your SolidJS reactive graph.
-2. **Component Abstractions**: Intelligent wrappers around `@zynth/components`. Components like `Text`, `Button`, or `Card` inherently implement the global theme context, meaning you rarely have to explicitly style standard components.
+2. **Component Abstractions**: Intelligent wrappers around `@zynthjs/components`. Components like `Text`, `Button`, or `Card` inherently implement the global theme context, meaning you rarely have to explicitly style standard components.
 
 ## Technical Capabilities
 
@@ -20,11 +20,11 @@ The package is split into two primary responsibilities:
 
 ## Quick Overview
 
-Instead of applying disjointed styles across the application, `@zynth/ui` components subscribe to an environment-level provider.
+Instead of applying disjointed styles across the application, `@zynthjs/ui` components subscribe to an environment-level provider.
 
 ```tsx
-import { UIProvider, Card, Text, Button } from "@zynth/ui";
-import { View } from "@zynth/components";
+import { UIProvider, Card, Text, Button } from "@zynthjs/ui";
+import { View } from "@zynthjs/components";
 
 function ApplicationRoot() {
   return (

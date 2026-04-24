@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, splitProps } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 const resolveInputType = (keyboardType?: string, secure?: boolean) => {
   if (secure) return "password";

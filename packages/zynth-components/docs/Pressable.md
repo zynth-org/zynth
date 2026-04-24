@@ -7,7 +7,7 @@
 The component provides a `style` prop that can be a function, allowing you to change the appearance based on the interaction state.
 
 ```tsx
-import { Pressable, Text } from "@zynth/components";
+import { Pressable, Text } from "@zynthjs/components";
 
 function SimpleButton() {
   return (

@@ -1,5 +1,5 @@
 import { createMemo, type Accessor } from "solid-js";
-import type { Style, StyleProp } from "@zynth/core";
+import type { Style, StyleProp } from "@zynthjs/core";
 
 /**
  * Merges an array of styles or a single style into a final Style object.

@@ -7,7 +7,7 @@
 The component uses a sub-component pattern including `Popover.Trigger` and `Popover.Content`.
 
 ```tsx
-import { Popover, View, Text, Button } from "@zynth/components";
+import { Popover, View, Text, Button } from "@zynthjs/components";
 
 function ProfilePopover() {
   return (

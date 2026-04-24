@@ -5,8 +5,8 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@zynth/core": ["../zynth-core/dist/types/index.d.ts"],
-      "@zynth/core/*": ["../zynth-core/dist/types/*"]
+      "@zynthjs/core": ["../zynth-core/dist/types/index.d.ts"],
+      "@zynthjs/core/*": ["../zynth-core/dist/types/*"]
     },
     "rootDir": "src",
     "outDir": "dist/esm",

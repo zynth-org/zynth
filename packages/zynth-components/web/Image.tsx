@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, splitProps } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 import type {
   ImageErrorEvent,
   ImageLoadEvent,
@@ -8,7 +8,7 @@ import type {
   ImageSource,
   ImageDescriptorSource,
 } from "../src/primitives/Image";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 const TRANSPARENT_GIF =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";

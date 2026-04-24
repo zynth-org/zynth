@@ -13,9 +13,9 @@ import {
   children as resolveChildren,
   createEffect,
 } from "solid-js";
-import { View, Text, Button } from "@zynth/components";
-import { ScreenTabsContainer } from "@zynth/screens";
-import { platform } from "@zynth/apis";
+import { View, Text, Button } from "@zynthjs/components";
+import { ScreenTabsContainer } from "@zynthjs/screens";
+import { platform } from "@zynthjs/apis";
 import {
   NavigationContext,
   type NavigationContextValue,
@@ -43,7 +43,7 @@ import {
   renderNativeTabIcon,
 } from "../native/tabIconRegistry";
 import { runAtomicNavigationTransition } from "../native/atomicNavigation";
-import type { ScreenTabBarItemDescriptor } from "@zynth/screens";
+import type { ScreenTabBarItemDescriptor } from "@zynthjs/screens";
 import { registerAndroidBackHandler } from "../native/androidBackHandler";
 import { useTabBarMetrics } from "../integration/insets";
 

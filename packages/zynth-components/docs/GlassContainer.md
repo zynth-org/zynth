@@ -7,7 +7,7 @@
 The component is at its simplest as a wrapper for creating a themed section of the interface using multiple `GlassView` components.
 
 ```tsx
-import { GlassContainer, GlassView, View, Text } from "@zynth/components";
+import { GlassContainer, GlassView, View, Text } from "@zynthjs/components";
 
 function GlassDashboard() {
   return (

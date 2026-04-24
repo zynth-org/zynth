@@ -2,7 +2,7 @@
 
 AI-agentic exploration and manipulation utilities for Zynth applications.
 
-`@zynth/automation` provides the primitives required for AI agents and automated testing tools to perceive and verify the application's state. It enables deep UI tree introspection, including layout bounds, styles, component internal states, and visibility.
+`@zynthjs/automation` provides the primitives required for AI agents and automated testing tools to perceive and verify the application's state. It enables deep UI tree introspection, including layout bounds, styles, component internal states, and visibility.
 
 ## Basic usage
 
@@ -11,7 +11,7 @@ AI-agentic exploration and manipulation utilities for Zynth applications.
 The `read()` method takes a point-in-time snapshot of the entire UI hierarchy across all active surfaces.
 
 ```tsx
-import { Automation } from "@zynth/automation";
+import { Automation } from "@zynthjs/automation";
 
 const explore = async () => {
   const snapshot = await Automation.read({
@@ -33,7 +33,7 @@ const explore = async () => {
 You can compare actual application state against an expected schema using `diffSnapshot`. This is highly useful for verifying that an AI agent's action (like clicking a button) resulted in the correct UI transition.
 
 ```ts
-import { Automation, diffSnapshot, assertSnapshotMatches } from "@zynth/automation";
+import { Automation, diffSnapshot, assertSnapshotMatches } from "@zynthjs/automation";
 
 const verifyUI = async (expected: AutomationExpectedSnapshot) => {
   const actual = await Automation.read();
@@ -56,7 +56,7 @@ The package automatically installs a **Devtools Bridge** upon import. This syste
 
 ```ts
 // Simply importing the package enables the remote bridge
-import "@zynth/automation";
+import "@zynthjs/automation";
 ```
 
 ## Special cases

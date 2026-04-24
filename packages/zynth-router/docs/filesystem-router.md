@@ -1,8 +1,8 @@
 # Filesystem Router
 
-The filesystem router generates a navigation manifest from a `src/screens` directory and lets the app render that manifest with `createFileSystemRouter()`. It is intended for applications that want navigation structure to follow the file tree while still using the same stack, tab, and screen APIs exposed by `@zynth/router`.
+The filesystem router generates a navigation manifest from a `src/screens` directory and lets the app render that manifest with `createFileSystemRouter()`. It is intended for applications that want navigation structure to follow the file tree while still using the same stack, tab, and screen APIs exposed by `@zynthjs/router`.
 
-The generated manifest is enabled through Rsbuild and consumed from `@zynth/router/fs-routes`. The route tree is built from your screens directory, including nested layouts, route groups, and screen-level `options` and `initialParams` exports.
+The generated manifest is enabled through Rsbuild and consumed from `@zynthjs/router/fs-routes`. The route tree is built from your screens directory, including nested layouts, route groups, and screen-level `options` and `initialParams` exports.
 
 ## Basic usage
 
@@ -11,8 +11,8 @@ The generated manifest is enabled through Rsbuild and consumed from `@zynth/rout
 Enable the feature in `rsbuild.config.ts`:
 
 ```ts
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
-import { routerFileSystem } from "@zynth/router/rsbuild";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
+import { routerFileSystem } from "@zynthjs/router/rsbuild";
 
 export default defineZynthConfig(
   {},
@@ -28,13 +28,13 @@ With the default configuration:
 
 - screens are read from `src/screens`
 - the generated file is written to `.zynth/router/screens.generated.ts`
-- the manifest is imported as `@zynth/router/fs-routes`
+- the manifest is imported as `@zynthjs/router/fs-routes`
 
 ### Render the generated routes
 
 ```tsx
-import { NavigationContainer, createFileSystemRouter } from "@zynth/router";
-import fileSystemRouterManifest from "@zynth/router/fs-routes";
+import { NavigationContainer, createFileSystemRouter } from "@zynthjs/router";
+import fileSystemRouterManifest from "@zynthjs/router/fs-routes";
 
 const AppScreens = createFileSystemRouter(fileSystemRouterManifest);
 
@@ -97,7 +97,7 @@ The root directory uses `_layout.stack.ts`, so the app starts with a stack navig
 A layout file controls the navigator for its directory and can export shared configuration:
 
 ```ts
-import type { ScreenOptions } from "@zynth/router";
+import type { ScreenOptions } from "@zynthjs/router";
 
 export const initialRouteName = "index";
 
@@ -112,7 +112,7 @@ export const options: ScreenOptions = {
 For tab layouts, `tabBarOptions` can also be exported:
 
 ```ts
-import type { ScreenOptions, TabBarOptions } from "@zynth/router";
+import type { ScreenOptions, TabBarOptions } from "@zynthjs/router";
 
 export const initialRouteName = "settings";
 
@@ -132,8 +132,8 @@ export const tabBarOptions: TabBarOptions = {
 Each screen file should default-export the screen component. It can also export `options` and `initialParams`:
 
 ```tsx
-import { Button, Text, View } from "@zynth/components";
-import { useNavigation, type ScreenOptions } from "@zynth/router";
+import { Button, Text, View } from "@zynthjs/components";
+import { useNavigation, type ScreenOptions } from "@zynthjs/router";
 
 export const options: ScreenOptions = {
   title: "About",
@@ -178,12 +178,12 @@ Because the `profile` directory is inside a tab layout, the `profile` route is s
 `routerFileSystem()` accepts configuration when the defaults should change:
 
 ```ts
-import { routerFileSystem } from "@zynth/router/rsbuild";
+import { routerFileSystem } from "@zynthjs/router/rsbuild";
 
 routerFileSystem({
   screensDir: "src/app-screens",
   outputPath: ".zynth/router/custom-routes.ts",
-  moduleId: "@zynth/router/custom-routes",
+  moduleId: "@zynthjs/router/custom-routes",
 });
 ```
 

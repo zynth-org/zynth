@@ -16,7 +16,7 @@ declare const process: any;
  * @example
  * ```tsx
  * // In your app entry point (e.g., index.tsx)
- * import { getInitialWindowMetrics, SafeAreaProvider } from "@zynth/safe-area";
+ * import { getInitialWindowMetrics, SafeAreaProvider } from "@zynthjs/safe-area";
  *
  * const initialMetrics = getInitialWindowMetrics();
  *

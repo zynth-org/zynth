@@ -1,6 +1,6 @@
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 import type { JSX } from "solid-js";
-import type { HostNode } from "@zynth/core";
+import type { HostNode } from "@zynthjs/core";
 
 declare module "solid-js" {
   namespace JSX {

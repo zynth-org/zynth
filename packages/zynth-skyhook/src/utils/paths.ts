@@ -38,7 +38,7 @@ export async function getTemplateDir(templateName: "app") {
 
 export async function getPackageDir(packageName: string) {
   const root = await findMonorepoRoot();
-  // Handle scoped names like @zynth/core -> packages/zynth-core
-  const cleanName = packageName.replace("@zynth/", "zynth-");
+  // Handle scoped names like @zynthjs/core -> packages/zynth-core
+  const cleanName = packageName.replace("@zynthjs/", "zynth-");
   return join(root, "packages", cleanName);
 }

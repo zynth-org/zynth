@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createMemo, type JSX, type ParentComponent } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 export const ScreenContainer: ParentComponent<any> = (props) => {
   const style = createMemo<JSX.CSSProperties>(() => ({

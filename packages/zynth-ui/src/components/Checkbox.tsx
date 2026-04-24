@@ -1,7 +1,7 @@
 import { createEffect, createSignal } from "solid-js";
-import { Pressable, View, Text } from "@zynth/components";
+import { Pressable, View, Text } from "@zynthjs/components";
 import { useUITheme } from "../hooks";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 export interface CheckboxProps {
   label?: string;

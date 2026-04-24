@@ -1,5 +1,5 @@
 import { splitProps, type Component } from "solid-js";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 export type ProgressIndicatorSize = "small" | "large";
 

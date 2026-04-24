@@ -1,5 +1,5 @@
 /**
- * @zynth/core/gesture
+ * @zynthjs/core/gesture
  *
  * Public gesture runtime entry point.
  *
@@ -9,8 +9,8 @@
  *
  * @example
  * ```tsx
- * import { createTapGesture, createPanGesture } from "@zynth/core/gesture";
- * import { createSharedValue } from "@zynth/core/motion";
+ * import { createTapGesture, createPanGesture } from "@zynthjs/core/gesture";
+ * import { createSharedValue } from "@zynthjs/core/motion";
  *
  * const pressed = createSharedValue(0);
  *

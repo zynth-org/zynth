@@ -7,7 +7,7 @@
 For lists where every item has a fixed or easily calculable size, `getItemLayout` allows the container to bypass expensive layout measurements and determine scroll positions synchronously.
 
 ```tsx
-import { VirtualList, View, Text } from "@zynth/components";
+import { VirtualList, View, Text } from "@zynthjs/components";
 
 const data = Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Row ${i}` }));
 

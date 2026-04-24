@@ -11,8 +11,8 @@ The `UIProvider` (or `UIThemeProvider`) is the primary entry point for the UI ki
 To start using the UI kit, wrap your main application component with the `UIProvider`.
 
 ```tsx
-import { UIProvider } from "@zynth/ui";
-import { View, Text } from "@zynth/components";
+import { UIProvider } from "@zynthjs/ui";
+import { View, Text } from "@zynthjs/components";
 
 function App() {
   return (
@@ -30,8 +30,8 @@ function App() {
 You can nest multiple providers to create themed sections within your application. Each descendant component will consume the theme from the nearest parent provider.
 
 ```tsx
-import { UIProvider, Button, Text } from "@zynth/ui";
-import { View } from "@zynth/components";
+import { UIProvider, Button, Text } from "@zynthjs/ui";
+import { View } from "@zynthjs/components";
 
 function NestedTheming() {
   return (
@@ -56,8 +56,8 @@ function NestedTheming() {
 The UI kit provides hooks to access the current theme and color scheme reactively within your components.
 
 ```tsx
-import { useUITheme, createUIColorScheme } from "@zynth/ui";
-import { View } from "@zynth/components";
+import { useUITheme, createUIColorScheme } from "@zynthjs/ui";
+import { View } from "@zynthjs/components";
 import { createMemo } from "solid-js";
 
 function CustomComponent() {

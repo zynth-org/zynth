@@ -1,4 +1,4 @@
-import { sharedNativeEventEmitter } from "@zynth/core";
+import { sharedNativeEventEmitter } from "@zynthjs/core";
 import type { ColorScheme } from "./types";
 
 type AppearanceSnapshot = {

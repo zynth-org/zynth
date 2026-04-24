@@ -1,4 +1,4 @@
-import { registerWebComponent } from "@zynth/core";
+import { registerWebComponent } from "@zynthjs/core";
 
 // Inject CSS transitions for screens
 if (typeof document !== "undefined" && !document.getElementById("zynth-screen-animations")) {

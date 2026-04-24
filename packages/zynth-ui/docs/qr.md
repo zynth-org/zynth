@@ -1,4 +1,4 @@
-# @zynth/ui QRCode
+# @zynthjs/ui QRCode
 
 Native-backed, dependency-free QR rendering for Zynth apps.
 
@@ -14,7 +14,7 @@ Native-backed, dependency-free QR rendering for Zynth apps.
 ### Install
 
 ```bash
-npm i @zynth/ui
+npm i @zynthjs/ui
 ```
 
 Regenerate native projects after adding the package.
@@ -22,7 +22,7 @@ Regenerate native projects after adding the package.
 ### Basic usage
 
 ```tsx
-import { QRCode } from "@zynth/ui";
+import { QRCode } from "@zynthjs/ui";
 
 <QRCode value="https://zynthai.com" />;
 ```
@@ -30,7 +30,7 @@ import { QRCode } from "@zynth/ui";
 ### Styled usage
 
 ```tsx
-import { QRCode } from "@zynth/ui";
+import { QRCode } from "@zynthjs/ui";
 
 <QRCode
   value="https://zynthai.com/docs"
@@ -45,7 +45,7 @@ import { QRCode } from "@zynth/ui";
 ### Logo usage
 
 ```tsx
-import { QRCode } from "@zynth/ui";
+import { QRCode } from "@zynthjs/ui";
 import logo from "../assets/logo.png";
 
 <QRCode
@@ -149,7 +149,7 @@ Logo props:
 
 Inherited view props:
 
-- `style`, `onLayout`, `testID`, `accessibility*`, and standard `ViewProps` from `@zynth/components`.
+- `style`, `onLayout`, `testID`, `accessibility*`, and standard `ViewProps` from `@zynthjs/components`.
 
 ## Notes
 

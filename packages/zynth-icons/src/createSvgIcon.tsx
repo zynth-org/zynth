@@ -1,5 +1,5 @@
 import { mergeProps, splitProps, createComponent } from "solid-js";
-import { View } from "@zynth/components";
+import { View } from "@zynthjs/components";
 
 interface IconProps {
   size?: number | string;

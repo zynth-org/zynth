@@ -13,8 +13,8 @@ The Zynth Gesture system provides high-performance gesture recognition primitive
 To handle gestures, create a gesture definition using one of the factory functions and pass it to a component.
 
 ```tsx
-import { View } from "@zynth/components";
-import { createTapGesture, createPanGesture } from "@zynth/core/gesture";
+import { View } from "@zynthjs/components";
+import { createTapGesture, createPanGesture } from "@zynthjs/core/gesture";
 
 const App = () => {
   const tap = createTapGesture({
@@ -62,8 +62,8 @@ Recognizes a sustained press.
 Gestures and animations are both powered by **Shared Signals**. You can update a Shared Value directly from a gesture callback to drive high-performance interactions.
 
 ```tsx
-import { createSharedValue, createAnimatedStyle, withSpring } from "@zynth/core/motion";
-import { createPanGesture } from "@zynth/core/gesture";
+import { createSharedValue, createAnimatedStyle, withSpring } from "@zynthjs/core/motion";
+import { createPanGesture } from "@zynthjs/core/gesture";
 
 const tx = createSharedValue(0);
 const ty = createSharedValue(0);

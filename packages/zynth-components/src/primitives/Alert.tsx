@@ -1,7 +1,7 @@
 import { createEffect, onCleanup, splitProps, createSignal } from "solid-js";
 import type { Component } from "solid-js";
-import type { HostNode } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import type { HostNode } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
 
 /**
  * Represents a button in the alert dialog.

@@ -7,8 +7,8 @@ The `WebView` component provides a native, high-performance web presentation lay
 A fundamental use case is loading remote domains or local html files. You can pass the source property formatted as an object that contains either a `uri` or `html`.
 
 ```tsx
-import { WebView } from "@zynth/webview";
-import { View } from "@zynth/components";
+import { WebView } from "@zynthjs/webview";
+import { View } from "@zynthjs/components";
 
 export function StandardBrowser() {
   return (
@@ -31,9 +31,9 @@ The `WebView` allows deep integration between internal JavaScript and your nativ
 The internal document exposes `window.ZynthWebView.postMessage(string)` to pass events back to the parent React context.
 
 ```tsx
-import { Button, Text, View } from "@zynth/components";
-import { WebView } from "@zynth/webview";
-import type { WebViewRef } from "@zynth/webview";
+import { Button, Text, View } from "@zynthjs/components";
+import { WebView } from "@zynthjs/webview";
+import type { WebViewRef } from "@zynthjs/webview";
 import { createSignal } from "solid-js";
 
 const PAGE_HTML = `

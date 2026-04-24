@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/file-intents",
+  "name": "@zynthjs/file-intents",
   "version": "0.0.1-alpha.0",
   "description": "System open/share/export intents for Zynth",
   "type": "module",
@@ -70,6 +70,6 @@
     }
   },
   "dependencies": {
-    "@zynth/core": "0.0.1-alpha.0"
+    "@zynthjs/core": "0.0.1-alpha.0"
   }
 }

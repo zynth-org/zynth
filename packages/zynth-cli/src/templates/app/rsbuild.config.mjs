@@ -1,3 +1,3 @@
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 
 export default defineZynthConfig();

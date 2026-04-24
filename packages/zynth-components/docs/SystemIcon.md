@@ -7,7 +7,7 @@
 The component is at its simplest as a graphic element with a `name` corresponding to a platform-defined symbol.
 
 ```tsx
-import { SystemIcon, View, Text } from "@zynth/components";
+import { SystemIcon, View, Text } from "@zynthjs/components";
 
 function IconStack() {
   return (

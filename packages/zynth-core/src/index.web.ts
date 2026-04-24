@@ -1,4 +1,4 @@
-console.log("[Zynth Web] @zynth/core index.web.ts loaded");
+console.log("[Zynth Web] @zynthjs/core index.web.ts loaded");
 export * from "./index.base";
 export {
   createWebHost,

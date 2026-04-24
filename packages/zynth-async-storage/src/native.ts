@@ -6,7 +6,7 @@ import {
   getModulesBridge,
   getNativeModule,
   unwrapNativeResult,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 type NativeAsyncStorageJSI = {
   getItem(key: string): string | null;

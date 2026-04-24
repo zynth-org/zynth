@@ -1,6 +1,6 @@
 # Reactive Primitives
 
-The reactive helpers in `@zynth/skia` are designed for time-based drawing and path updates that fit SolidJS signals. They expose clocks, path interpolation, and mutable path generation without requiring imperative render loops in user code.
+The reactive helpers in `@zynthjs/skia` are designed for time-based drawing and path updates that fit SolidJS signals. They expose clocks, path interpolation, and mutable path generation without requiring imperative render loops in user code.
 
 These primitives are especially useful when Skia props should be driven by shared numeric values, animated progress, or procedurally generated geometry.
 
@@ -12,7 +12,7 @@ import {
   Path,
   createClock,
   createPathInterpolation,
-} from "@zynth/skia";
+} from "@zynthjs/skia";
 
 const clock = createClock();
 
@@ -42,7 +42,7 @@ import {
   Shader,
   createClock,
   createRuntimeEffect,
-} from "@zynth/skia";
+} from "@zynthjs/skia";
 
 const clock = createClock({ durationMs: 10_000 });
 const effect = createRuntimeEffect(`
@@ -73,7 +73,7 @@ export function AnimatedShader() {
 ### Procedural path values
 
 ```tsx
-import { Canvas, Path, createClock, createPathValue } from "@zynth/skia";
+import { Canvas, Path, createClock, createPathValue } from "@zynthjs/skia";
 
 const clock = createClock();
 

@@ -1,13 +1,13 @@
 # Fonts
 
-Text rendering in `@zynth/skia` is based on explicit font objects. You can construct fonts synchronously from style information, resolve a best match from a font manager, or load and register font files as Solid resources for use with `Suspense`.
+Text rendering in `@zynthjs/skia` is based on explicit font objects. You can construct fonts synchronously from style information, resolve a best match from a font manager, or load and register font files as Solid resources for use with `Suspense`.
 
 This page covers the public helpers used to build `font` values for the `Text` node and the related font discovery utilities.
 
 ## Basic usage
 
 ```tsx
-import { Canvas, Text, createFontFromStyle } from "@zynth/skia";
+import { Canvas, Text, createFontFromStyle } from "@zynthjs/skia";
 
 const titleFont = createFontFromStyle({
   fontFamily: "System",
@@ -30,7 +30,7 @@ export function FontExample() {
 
 ```tsx
 import { Show, Suspense } from "solid-js";
-import { Canvas, Text, createFont } from "@zynth/skia";
+import { Canvas, Text, createFont } from "@zynthjs/skia";
 import interSemiBold from "./assets/Inter-SemiBold.ttf";
 
 const font = createFont(interSemiBold, 20);
@@ -55,7 +55,7 @@ import {
   Text,
   createFontFromStyle,
   createFontLoader,
-} from "@zynth/skia";
+} from "@zynthjs/skia";
 import headingFontFile from "./assets/Heading-Bold.ttf";
 import bodyFontFile from "./assets/Body-Regular.ttf";
 
@@ -86,7 +86,7 @@ export function PreloadedFonts() {
 ### Matching from a font manager
 
 ```tsx
-import { Canvas, Text, Skia, matchFont } from "@zynth/skia";
+import { Canvas, Text, Skia, matchFont } from "@zynthjs/skia";
 
 const systemFontMgr = Skia.FontMgr.System();
 

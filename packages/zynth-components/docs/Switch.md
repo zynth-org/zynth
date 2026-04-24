@@ -7,7 +7,7 @@
 The component is used as a controlled boolean input with the `value` and `onValueChange` props.
 
 ```tsx
-import { Switch, View, Text } from "@zynth/components";
+import { Switch, View, Text } from "@zynthjs/components";
 
 function SettingsToggle() {
   const [notifications, setNotifications] = createSignal(true);

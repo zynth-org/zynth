@@ -7,7 +7,7 @@ These APIs are especially relevant when porting drawing code, building editors, 
 ## Basic usage
 
 ```tsx
-import { Canvas, Path, createPath } from "@zynth/skia";
+import { Canvas, Path, createPath } from "@zynthjs/skia";
 
 const triangle = createPath()
   .moveTo(40, 24)
@@ -29,7 +29,7 @@ export function PathScene() {
 ### Using SVG path strings
 
 ```tsx
-import { Canvas, Path } from "@zynth/skia";
+import { Canvas, Path } from "@zynthjs/skia";
 
 export function SvgPathScene() {
   return (
@@ -48,7 +48,7 @@ export function SvgPathScene() {
 ### Transforming a path subtree
 
 ```tsx
-import { Canvas, Group, Path } from "@zynth/skia";
+import { Canvas, Group, Path } from "@zynthjs/skia";
 
 export function RotatedPath() {
   return (
@@ -68,7 +68,7 @@ import {
   assertSkiaFeature,
   getSkiaCapabilities,
   supportsSkiaFeature,
-} from "@zynth/skia";
+} from "@zynthjs/skia";
 
 const caps = getSkiaCapabilities();
 const canDrawSVG = supportsSkiaFeature("svg");

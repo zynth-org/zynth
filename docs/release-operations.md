@@ -20,13 +20,13 @@ This is intentional while the framework stabilizes pre-release.
 ## Public package names
 
 - CLI: `zynth`
-- Core runtime: `@zynth/core`
-- APIs: `@zynth/apis`
-- Components: `@zynth/components`
+- Core runtime: `@zynthjs/core`
+- APIs: `@zynthjs/apis`
+- Components: `@zynthjs/components`
 
 ## Version tracks
 
-- `@zynth/core`, `@zynth/apis`, `@zynth/components`: lockstep track during alpha.
+- `@zynthjs/core`, `@zynthjs/apis`, `@zynthjs/components`: lockstep track during alpha.
 - `zynth` CLI: independent track.
 
 ## Dist-tags
@@ -91,10 +91,10 @@ Use this gate to validate Changesets behavior without modifying your current bra
 
 - Command: `yarn release:versioning-drill`
 - The drill runs in an isolated temporary git worktree.
-- It injects a temporary changeset for `@zynth/core`.
+- It injects a temporary changeset for `@zynthjs/core`.
 - It enters alpha prerelease mode and runs `changeset version`.
 - It validates:
-  - framework lockstep packages move together (`@zynth/core`, `@zynth/apis`, `@zynth/components`)
+  - framework lockstep packages move together (`@zynthjs/core`, `@zynthjs/apis`, `@zynthjs/components`)
   - generated versions are alpha prerelease versions
   - CLI package `zynth` remains unchanged for framework-only changes
 - It removes the temporary worktree when done.
@@ -149,9 +149,9 @@ When moving to stable:
 Use this sequence for first external release:
 
 1. Confirm initial package set is still:
-   - `@zynth/core`
-   - `@zynth/apis`
-   - `@zynth/components`
+   - `@zynthjs/core`
+   - `@zynthjs/apis`
+   - `@zynthjs/components`
    - `zynth`
 2. Run all readiness gates.
 3. Create prerelease versions (`alpha`).

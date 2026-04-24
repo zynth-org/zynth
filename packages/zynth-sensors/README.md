@@ -26,8 +26,8 @@ Before utilizing health-related or restricted sensors such as the Pedometer or a
 The most common approach is instantiating a reactive sensor controller using primitives like `createAccelerometer`. The controller provides granular accessors that integrate cleanly into your render tree and automatically disconnect when your component unmounts.
 
 ```tsx
-import { Text, View } from "@zynth/components";
-import { createAccelerometer } from "@zynth/sensors";
+import { Text, View } from "@zynthjs/components";
+import { createAccelerometer } from "@zynthjs/sensors";
 
 export function TiltDisplay() {
   const accelerometer = createAccelerometer({ autoStart: true, sampleIntervalMs: 100 });
@@ -48,8 +48,8 @@ export function TiltDisplay() {
 Certain sensors like the pedometer require explicit user consent before relaying historical or health-related biometric data. You can leverage the controller's built-in capability to request permissions effectively before allocating active tracking instances.
 
 ```tsx
-import { Button, Text, View } from "@zynth/components";
-import { createPedometer } from "@zynth/sensors";
+import { Button, Text, View } from "@zynthjs/components";
+import { createPedometer } from "@zynthjs/sensors";
 
 export function PedometerView() {
   const pedometer = createPedometer({

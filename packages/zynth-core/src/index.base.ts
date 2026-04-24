@@ -64,7 +64,7 @@ export {
   scheduleOnUIAfter,
 } from "./nativeRuntime";
 export type { SignalRuntime, SignalRuntimeKind } from "./nativeRuntime";
-// Re-export select core helpers so Babel can import from @zynth/core when targeting universal
+// Re-export select core helpers so Babel can import from @zynthjs/core when targeting universal
 export { createComponent, mergeProps, untrack } from "solid-js";
 
 // Export image types for use in type declarations

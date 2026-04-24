@@ -7,7 +7,7 @@
 The `source` prop accepts a variety of inputs, including direct strings (interpreted as URIs) or structured objects.
 
 ```tsx
-import { Image, View } from "@zynth/components";
+import { Image, View } from "@zynthjs/components";
 
 function ProfileHeader() {
   return (

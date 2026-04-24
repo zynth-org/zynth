@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createMemo, splitProps } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 const resolvePointerEvents = (value: string | undefined) => {
   if (value === "none") return "none";

@@ -2,7 +2,7 @@
 
 The standard library of Zynth APIs, providing essential infrastructure for platform detection, hardware access, and lifecycle management.
 
-`@zynth/apis` is a suite of reactive, cross-platform interfaces that bridge the gap between native OS capabilities and JavaScript. It provides stable communication patterns for accessing system state through the Zynth JSI bridge.
+`@zynthjs/apis` is a suite of reactive, cross-platform interfaces that bridge the gap between native OS capabilities and JavaScript. It provides stable communication patterns for accessing system state through the Zynth JSI bridge.
 
 The default public surface uses lowercase bindings such as `platform`, `viewport`, `appState`, `connectivity`, and `device`. Legacy namespaces such as `Platform`, `Dimensions`, `AppState`, `Network`, and `Device` remain available for compatibility with existing code patterns and LLM-generated code while the ecosystem learns the newer Zynth style.
 
@@ -31,7 +31,7 @@ Explore the specialized technical guides for the Zynth standard API suite:
 Most APIs in this package provide reactive state out-of-the-box, though some require setup at the root of your application (like `SafeAreaProvider`).
 
 ```tsx
-import { SafeAreaProvider, platform } from "@zynth/apis";
+import { SafeAreaProvider, platform } from "@zynthjs/apis";
 
 // APIs are globally available once the framework is initialized
 const os = platform.current;

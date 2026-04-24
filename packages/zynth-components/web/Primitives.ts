@@ -1,4 +1,4 @@
-import { registerWebComponent } from "@zynth/core";
+import { registerWebComponent } from "@zynthjs/core";
 
 const divComponents = [
   "view",

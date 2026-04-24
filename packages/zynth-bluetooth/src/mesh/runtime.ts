@@ -1,6 +1,6 @@
 import { BluetoothBLE } from "../BluetoothBLE";
 import type { BluetoothBleEvent } from "../types";
-import { emitDevtoolsEvent } from "@zynth/core";
+import { emitDevtoolsEvent } from "@zynthjs/core";
 import { base64ToBytes, bytesToBase64, decodeEnvelope, dedupeKey, encodeEnvelope, normalizeUuid, createEnvelopeBase } from "./protocol";
 import { forwardedEnvelope, getRelayDecision } from "./router";
 import { MeshSecurityEngine } from "./security";

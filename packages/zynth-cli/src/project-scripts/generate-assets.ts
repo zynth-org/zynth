@@ -268,7 +268,7 @@ function normalizeAndroidColor(value: string | undefined): string {
 }
 
 /**
- * Resolves paths for icon fonts from @zynth/icons based on discovery map.
+ * Resolves paths for icon fonts from @zynthjs/icons based on discovery map.
  * This is needed because the fonts are not explicitly in the app's source 
  * and thus not in the fonts-manifest.json.
  */
@@ -277,8 +277,8 @@ function resolveZynthIconFonts(appDir: string, glyphMap?: Record<string, string>
   
   const foundFonts: string[] = [];
   try {
-    // Resolve @zynth/icons main entry point
-    const mainEntry = require.resolve('@zynth/icons', { paths: [appDir] });
+    // Resolve @zynthjs/icons main entry point
+    const mainEntry = require.resolve('@zynthjs/icons', { paths: [appDir] });
     // From dist/esm/index.js, go up 3 levels to reach package root
     const iconsDir = path.dirname(path.dirname(path.dirname(mainEntry)));
     const fontsSourceDir = path.join(iconsDir, 'assets', 'fonts');
@@ -299,13 +299,13 @@ function resolveZynthIconFonts(appDir: string, glyphMap?: Record<string, string>
 }
 
 /**
- * Resolves all available icon fonts from @zynth/icons.
+ * Resolves all available icon fonts from @zynthjs/icons.
  * Used in dev mode to ensure all icons are available.
  */
 function resolveAllZynthIconFonts(appDir: string): string[] {
   const foundFonts: string[] = [];
   try {
-    const mainEntry = require.resolve('@zynth/icons', { paths: [appDir] });
+    const mainEntry = require.resolve('@zynthjs/icons', { paths: [appDir] });
     const iconsDir = path.dirname(path.dirname(path.dirname(mainEntry)));
     const fontsSourceDir = path.join(iconsDir, 'assets', 'fonts');
 

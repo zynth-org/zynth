@@ -1,5 +1,5 @@
 import { createSignal, onCleanup, onMount, type Component } from "solid-js";
-import { Font, Glyphs } from "@zynth/apis";
+import { Font, Glyphs } from "@zynthjs/apis";
 import { Text, type TextProps } from "./Text";
 import { createStyle } from "../hooks/createStyle";
 import "../runtimeGlyphs";

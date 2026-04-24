@@ -3,7 +3,7 @@ import {
   callNativeSync as coreCallNativeSync,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 const MODULE_NAME = "Sensors";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
@@ -15,7 +15,7 @@ function getPlatform(): string | null {
 
 function createMissingModuleError(): Error {
   return new Error(
-    `[${MODULE_NAME}] Native module not found. Ensure @zynth/sensors is installed, linked, and your native project has been regenerated for this platform.`
+    `[${MODULE_NAME}] Native module not found. Ensure @zynthjs/sensors is installed, linked, and your native project has been regenerated for this platform.`
   );
 }
 

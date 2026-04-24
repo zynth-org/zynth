@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/webserver",
+  "name": "@zynthjs/webserver",
   "version": "0.0.1",
   "description": "Embedded web server for Zynth apps",
   "type": "module",

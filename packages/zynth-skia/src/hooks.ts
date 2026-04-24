@@ -1,4 +1,4 @@
-import { captureSharedSignals } from "@zynth/core";
+import { captureSharedSignals } from "@zynthjs/core";
 import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import type { Accessor } from "solid-js";
 import { createPath, resolvePathCommands } from "./path";

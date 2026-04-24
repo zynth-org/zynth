@@ -43,7 +43,7 @@ Note that Zynth is an experimental framework that makes different design decisio
 
 - **Platform Agnostic Core**
 
-  The core renderer (`@zynth/core`) is completely decoupled from the OS. It speaks a generic protocol ("create node", "set prop"). This allows the same application code to drive iOS, Android, and Web backends (via a DOM adapter) without changing the business logic.
+  The core renderer (`@zynthjs/core`) is completely decoupled from the OS. It speaks a generic protocol ("create node", "set prop"). This allows the same application code to drive iOS, Android, and Web backends (via a DOM adapter) without changing the business logic.
 
 - **Native-First Navigation**
 
@@ -187,7 +187,7 @@ When a protected method is called, the native registry enforces the following ru
 2.  **Nonce Monotonicity**: The call must include a numeric `nonce`. The registry tracks the `lastUsedNonce`. If the incoming nonce is less than or equal to the previous one, the call is rejected as a replay attack.
 
 ### 4. Zero-Boilerplate Implementation
-To ensure this protection is used consistently, `@zynth/core` provides centralized `callNative` and `callNativeSync` helpers. These helpers automatically:
+To ensure this protection is used consistently, `@zynthjs/core` provides centralized `callNative` and `callNativeSync` helpers. These helpers automatically:
 - Retrieve the current `bridgeSessionId` from global constants.
 - Manage an incrementing `nonce` counter in the JS environment.
 - Inject these security tokens into the argument payload before it crosses the JSI boundary.
@@ -213,7 +213,7 @@ Zynth ensures that heavy JS work does not block the UI thread, except when synch
 
 ### Memory-based Routing
 
-`@zynth/router` is a pure JavaScript implementation of a navigation stack. It maintains the state of routes, parameters, and history.
+`@zynthjs/router` is a pure JavaScript implementation of a navigation stack. It maintains the state of routes, parameters, and history.
 
 We chose a router over a native-controller-based router (like `react-native-screens`' native stack) to support the **Hypervisor** architecture. In a Hypervisor setup, multiple independent Zynth apps might run on the same screen. If they all tried to control the single global `UINavigationController`, chaos would ensue. A router keeps navigation state isolated per-app.
 
@@ -221,13 +221,13 @@ We chose a router over a native-controller-based router (like `react-native-scre
 
 While the _state_ is in memory, the _visuals_ use native primitives.
 
-- `@zynth/screens` exposes `Screen` and `ScreenContainer`.
+- `@zynthjs/screens` exposes `Screen` and `ScreenContainer`.
 - On iOS, these map to `UIViewController` containment APIs.
 - This allows us to perform "Push" and "Pop" animations using the OS's native transitions, even though the decision to push/pop originated in JS.
 
 ### The Hypervisor Pattern
 
-`@zynth/hypervisor` allows a "Host" Zynth app to embed "Guest" Zynth apps.
+`@zynthjs/hypervisor` allows a "Host" Zynth app to embed "Guest" Zynth apps.
 
 - **Isolation**: Each Guest runs in its own `ZynthRuntime` (separate Hermes VM).
 - **Sandboxing**: Guests cannot crash the Host.
@@ -289,7 +289,7 @@ setOffset(60);
 
 ### Rsbuild and Dual-Targeting
 
-We use [Rsbuild](https://rsbuild.dev/) (based on Rspack) for blazing fast builds. The `@zynth/rsbuild-plugin` manages the complexity of targeting two very different environments:
+We use [Rsbuild](https://rsbuild.dev/) (based on Rspack) for blazing fast builds. The `@zynthjs/rsbuild-plugin` manages the complexity of targeting two very different environments:
 
 1.  **Web**: Standard HTML/CSS/JS output. Used for development iteration in the browser.
 2.  **Native**:
@@ -299,8 +299,8 @@ We use [Rsbuild](https://rsbuild.dev/) (based on Rspack) for blazing fast builds
 
 **Feature ownership model:**
 
-- `@zynth/rsbuild-plugin` stays agnostic and exposes generic build primitives (e.g. generated module features).
-- Feature packages (such as `@zynth/router`) own domain-specific semantics and provide helpers that emit those generic features.
+- `@zynthjs/rsbuild-plugin` stays agnostic and exposes generic build primitives (e.g. generated module features).
+- Feature packages (such as `@zynthjs/router`) own domain-specific semantics and provide helpers that emit those generic features.
 - This keeps bundling extensible without embedding router policy inside the bundler integration layer.
 
 ### Skyhook (AI Generation)

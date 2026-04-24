@@ -4,11 +4,11 @@
 
 ## Basic Usage
 
-For controlled inputs, always use `createSyncSignal` from `@zynth/core`. Standard Solid signals (`createSignal`) should be avoided for the `value` prop as they can cause cursor jumps and synchronization lag.
+For controlled inputs, always use `createSyncSignal` from `@zynthjs/core`. Standard Solid signals (`createSignal`) should be avoided for the `value` prop as they can cause cursor jumps and synchronization lag.
 
 ```tsx
-import { createSyncSignal } from "@zynth/core";
-import { TextInput, View, Text } from "@zynth/components";
+import { createSyncSignal } from "@zynthjs/core";
+import { TextInput, View, Text } from "@zynthjs/components";
 
 function UsernameField() {
   // Use createSyncSignal for all controlled inputs
@@ -41,8 +41,8 @@ For **controlled** `TextInput` usage, it is highly recommended to use `createSyn
 Standard signals can cause undesirable effects such as cursor jumps, text flickers, or synchronization lag because they rely on asynchronous bridge communication. `createSyncSignal` is specifically designed for responsive synchronization between the JavaScript environment and the native text buffer, ensuring that the field remains responsive and stable during rapid editing.
 
 ```tsx
-import { createSyncSignal } from "@zynth/core";
-import { TextInput } from "@zynth/components";
+import { createSyncSignal } from "@zynthjs/core";
+import { TextInput } from "@zynthjs/components";
 
 function ControlledInput() {
   // Use createSyncSignal for controlled inputs to ensure stability
@@ -61,8 +61,8 @@ For text transformations, sanitization, or masking, use the `handler` prop combi
 Because `createInputHandler` creates a **UI-thread worklet**, the transformation happens synchronously on the native side before the text is even committed to the buffer. This prevents the "jumping" effect often seen when using JavaScript-side `onChangeText` for formatting.
 
 ```tsx
-import { createInputHandler, createSyncSignal } from "@zynth/core";
-import { TextInput } from "@zynth/components";
+import { createInputHandler, createSyncSignal } from "@zynthjs/core";
+import { TextInput } from "@zynthjs/components";
 
 function CreditCardInput() {
   const [text, setText] = createSyncSignal("");

@@ -32,7 +32,7 @@ Non-interactive options:
 
 ### Runtime Selection
 
-Zynth now defaults to the core runtime in `@zynth/core`; the legacy runtimes are no longer used by the CLI.
+Zynth now defaults to the core runtime in `@zynthjs/core`; the legacy runtimes are no longer used by the CLI.
 
 ### **CLI Aesthetic Design Principles**
 

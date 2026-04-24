@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { createMemo, splitProps, createEffect, on } from "solid-js";
-import { registerComponent } from "@zynth/core";
-import type { Style } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
+import type { Style } from "@zynthjs/core";
 
 export const TextInput = (props: any) => {
   const [local, rest] = splitProps(props, [

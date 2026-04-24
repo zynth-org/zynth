@@ -9,8 +9,8 @@ A specialized layout primitive designed to stay pinned to the top of the keyboar
 Place the `KeyboardStickyView` at the bottom of a container sibling to your main content.
 
 ```tsx
-import { KeyboardStickyView } from "@zynth/keyboard";
-import { View, TextInput, Button } from "@zynth/components";
+import { KeyboardStickyView } from "@zynthjs/keyboard";
+import { View, TextInput, Button } from "@zynthjs/components";
 
 function ChatScreen() {
   return (

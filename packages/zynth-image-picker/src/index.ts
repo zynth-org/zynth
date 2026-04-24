@@ -1,4 +1,4 @@
-import { callNative, sharedNativeEventEmitter } from "@zynth/core";
+import { callNative, sharedNativeEventEmitter } from "@zynthjs/core";
 
 export interface ImagePickerOptions {
   // Placeholder for future options

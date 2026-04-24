@@ -3,7 +3,7 @@ import {
   callNativeSync as coreCallNativeSync,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import type {
   BluetoothBleEvent,
   BluetoothClassicEvent,
@@ -28,7 +28,7 @@ function getPlatform(): string | null {
 
 function createMissingModuleError(): Error {
   return new Error(
-    `[${MODULE_NAME}] Native module not found. Ensure @zynth/bluetooth is installed and native projects are regenerated.`
+    `[${MODULE_NAME}] Native module not found. Ensure @zynthjs/bluetooth is installed and native projects are regenerated.`
   );
 }
 

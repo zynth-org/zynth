@@ -21,8 +21,8 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1",
-    "@zynth/components": ">=0.0.1",
+    "@zynthjs/core": ">=0.0.1",
+    "@zynthjs/components": ">=0.0.1",
     "solid-js": ">=1.8.0"
   },
   "devDependencies": {

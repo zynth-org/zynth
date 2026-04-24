@@ -1,7 +1,7 @@
-import { Text as NativeText, type TextProps as NativeTextProps } from "@zynth/components";
+import { Text as NativeText, type TextProps as NativeTextProps } from "@zynthjs/components";
 import { type ParentComponent, splitProps } from "solid-js";
 import { useUITheme } from "../hooks";
-import type { Style, StyleProp } from "@zynth/core";
+import type { Style, StyleProp } from "@zynthjs/core";
 
 export interface TextProps extends NativeTextProps {
   variant?: "heading" | "subheading" | "body" | "caption" | "label";

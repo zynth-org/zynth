@@ -2,14 +2,14 @@
 
 The native runtime and renderer for the Zynth framework.
 
-`@zynth/core` provides the foundational primitives for the framework's UI tree and handles the synchronous communication layer (JSI). It operates without relying on a async bridge, ensuring direct interactions between the JavaScript layer and the native engine.
+`@zynthjs/core` provides the foundational primitives for the framework's UI tree and handles the synchronous communication layer (JSI). It operates without relying on a async bridge, ensuring direct interactions between the JavaScript layer and the native engine.
 
 ## Basic usage
 
 In most cases, Zynth Core is initialized implicitly by the framework, handling the entire UI lifecycle automatically. However, it also exposes specialized primitives for hardware-accelerated animations, native telemetry, and advanced view management.
 
 ```tsx
-import { PerformanceOverlay } from "@zynth/core";
+import { PerformanceOverlay } from "@zynthjs/core";
 
 // Enable the native performance overlay
 PerformanceOverlay.setEnabled(true);
@@ -22,7 +22,7 @@ PerformanceOverlay.setEnabled(true);
 `SharedSignal` is the cornerstone of Zynth's native animation and gesture system. It enables reading and writing values directly from the UI thread, providing reliable 60/120fps updates without crossing back to the JavaScript thread. 
 
 ```tsx
-import { createSharedSignal, createWorklet } from "@zynth/core";
+import { createSharedSignal, createWorklet } from "@zynthjs/core";
 
 // Creates a reactive value backed natively by the UI thread
 const [scale, setScale] = createSharedSignal(1);
@@ -39,7 +39,7 @@ const handleGesture = createWorklet((gestureDelta) => {
 The performance overlay is a native tool used to monitor your app's runtime metrics in real time. It displays memory usage, active view counts, and frames per second (FPS) for both the UI and JS threads.
 
 ```tsx
-import { PerformanceOverlay } from "@zynth/core";
+import { PerformanceOverlay } from "@zynthjs/core";
 
 function toggleTelemetry() {
   PerformanceOverlay.setEnabled(true);
@@ -58,7 +58,7 @@ function toggleTelemetry() {
 The Surface API bridges standalone Zynth hierarchies into existing native navigation structures, such as native iOS or Android BottomTabs. This allows rendering modular Zynth elements within designated surface bounds instead of occupying the main window.
 
 ```tsx
-import { setActiveSurface } from "@zynth/core";
+import { setActiveSurface } from "@zynthjs/core";
 
 function initializeMicroFrontend(surfaceId: number) {
   // Bind the runtime renderer to a specific native surface

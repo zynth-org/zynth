@@ -7,7 +7,7 @@ import {
   onCleanup,
   createMemo,
 } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 export const Menu = (props: any) => {
   const [isOpen, setIsOpen] = createSignal(false);

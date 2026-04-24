@@ -2,7 +2,7 @@
 
 Capturing and selecting images from the device library or camera using a high-performance, platform-native interface.
 
-The `@zynth/image-picker` provides a unified, cross-platform API for interacting with the device's camera and photo library. It abstracts native UI flows (UIImagePickerController on iOS and the modern `PickVisualMedia` contract on Android) while handling asynchronous results and temporary file storage.
+The `@zynthjs/image-picker` provides a unified, cross-platform API for interacting with the device's camera and photo library. It abstracts native UI flows (UIImagePickerController on iOS and the modern `PickVisualMedia` contract on Android) while handling asynchronous results and temporary file storage.
 
 Before using any Image Picker features, you must declare the required permissions and usage descriptions in your `app.json` configuration file.
 
@@ -35,8 +35,8 @@ Before using any Image Picker features, you must declare the required permission
 ### Capturing from Camera
 
 ```tsx
-import { ImagePicker } from "@zynth/image-picker";
-import { View, Button, Text } from "@zynth/components";
+import { ImagePicker } from "@zynthjs/image-picker";
+import { View, Button, Text } from "@zynthjs/components";
 
 const SimplePicker = () => {
   const pickPhoto = async () => {
@@ -66,7 +66,7 @@ You can check whether permissions have been previously granted without triggerin
 
 ```tsx
 import { createSignal, onMount } from "solid-js";
-import { ImagePicker } from "@zynth/image-picker";
+import { ImagePicker } from "@zynthjs/image-picker";
 
 const App = () => {
   const [canAsk, setCanAsk] = createSignal(true);
@@ -97,7 +97,7 @@ const App = () => {
 
 - **Permissions (iOS)**: Usage descriptions (Info.plist) are REQUIRED for both camera and photo library access. Calls made without these will cause the app to crash during submittal or development.
 - **Permissions (Android)**: The `android.permission.CAMERA` permission must be requested. Additionally, a `FileProvider` is used internally for data exchange; the framework handles the manifest entry for you based on the `imagePickerProvider` configuration in `app.json`.
-- **File Lifecycle**: Assets are stored in the application's temporary cache directory. These files may be purged by the system to reclaim disk space. Use `@zynth/filesystem` to move files to the documents directory for persistent storage.
+- **File Lifecycle**: Assets are stored in the application's temporary cache directory. These files may be purged by the system to reclaim disk space. Use `@zynthjs/filesystem` to move files to the documents directory for persistent storage.
 - **Hardware Fallbacks**: Some devices or simulators (especially older iPad Pro models or early Android emulators) may not have a physical camera. Always check hardware status or handle `launchCameraAsync` errors gracefully.
 
 ## API Reference
@@ -119,4 +119,4 @@ const App = () => {
 
 ---
 
-This package provides a standardized, high-performance way to access visual media. For advanced video manipulation or saving to the gallery, see `@zynth/media-library`. For document selection (PDFs, Zip, etc.), see `@zynth/document-picker`.
+This package provides a standardized, high-performance way to access visual media. For advanced video manipulation or saving to the gallery, see `@zynthjs/media-library`. For document selection (PDFs, Zip, etc.), see `@zynthjs/document-picker`.

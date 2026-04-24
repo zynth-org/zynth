@@ -2,7 +2,7 @@ import {
   callNativeSync,
   getGlobalObject,
   sharedNativeEventEmitter,
-} from "@zynth/core";
+} from "@zynthjs/core";
 import { createSignal } from "solid-js";
 
 const MODULE_NAME = "AppState";

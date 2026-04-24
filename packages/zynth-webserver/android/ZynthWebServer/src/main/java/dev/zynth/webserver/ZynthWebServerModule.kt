@@ -97,11 +97,11 @@ class ZynthWebServerModule(
         if (tlsEnabled && !ZynthWebServerNative.supportsTls()) {
             if (BuildConfig.ZYNTH_WEBSERVER_TLS_REQUESTED) {
                 throw IllegalStateException(
-                    "TLS was requested for @zynth/webserver, but the Android native build could not compile a TLS backend. The native build fell back to NO_SSL; HTTPS is unavailable."
+                    "TLS was requested for @zynthjs/webserver, but the Android native build could not compile a TLS backend. The native build fell back to NO_SSL; HTTPS is unavailable."
                 )
             }
             throw IllegalStateException(
-                "TLS is not available in this ZynthWebServer build. Enable @zynth/webserver nativeTls in app.json and rebuild native modules."
+                "TLS is not available in this ZynthWebServer build. Enable @zynthjs/webserver nativeTls in app.json and rebuild native modules."
             )
         }
         if (tlsEnabled && tlsCertificate.isNullOrBlank()) {

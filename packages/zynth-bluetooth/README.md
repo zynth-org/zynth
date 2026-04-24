@@ -2,7 +2,7 @@
 
 Comprehensive Bluetooth integration for Zynth applications, supporting Low Energy (BLE), Classic (Android), and Mesh Networking.
 
-The `@zynth/bluetooth` package provides a unified, reactive API for interacting with Bluetooth hardware. It is divided into three specialized subsystems:
+The `@zynthjs/bluetooth` package provides a unified, reactive API for interacting with Bluetooth hardware. It is divided into three specialized subsystems:
 
 - **[Bluetooth BLE (Low Energy)](./docs/BLE.md)**: Hardware-accelerated scanning, GATT client/server operations, and peripheral mode.
 - **[Bluetooth Classic](./docs/Classic.md)**: Support for legacy RFCOMM/SPP serial devices (**Android only**).
@@ -33,7 +33,7 @@ Before using any Bluetooth features, you must declare the required permissions i
 ## Quick Start
 
 ```tsx
-import { BluetoothBLE } from "@zynth/bluetooth";
+import { BluetoothBLE } from "@zynthjs/bluetooth";
 
 const checkSupport = async () => {
   if (BluetoothBLE.isSupported()) {

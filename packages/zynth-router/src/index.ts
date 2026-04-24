@@ -1,7 +1,7 @@
 // ============================================================================
-// @zynth/router
+// @zynthjs/router
 //
-// Memory-based navigation router for Zynth apps. Uses @zynth/screens for
+// Memory-based navigation router for Zynth apps. Uses @zynthjs/screens for
 // transitions instead of platform-specific navigation controllers.
 //
 // This router is designed for hypervisor environments where multiple apps

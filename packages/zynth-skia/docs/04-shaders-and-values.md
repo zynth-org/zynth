@@ -1,6 +1,6 @@
 # Shaders and Values
 
-`@zynth/skia` exposes two related shader models. `createShader()` builds a JavaScript-evaluated color program for declarative drawing, while `createRuntimeEffect()` and `Skia.RuntimeEffect.Make(...)` build native runtime shaders for rects, circles, and paths. The package also exposes `createSkiaValue()` for local values and shared numeric values.
+`@zynthjs/skia` exposes two related shader models. `createShader()` builds a JavaScript-evaluated color program for declarative drawing, while `createRuntimeEffect()` and `Skia.RuntimeEffect.Make(...)` build native runtime shaders for rects, circles, and paths. The package also exposes `createSkiaValue()` for local values and shared numeric values.
 
 These APIs are designed to fit SolidJS state and signals without introducing a separate animation runtime in application code.
 
@@ -13,7 +13,7 @@ import {
   Rect,
   createShader,
   createSkiaValue,
-} from "@zynth/skia";
+} from "@zynthjs/skia";
 
 const [time, setTime] = createSkiaValue(0, { shared: true });
 
@@ -42,7 +42,7 @@ export function ShaderCard() {
 ### Updating uniforms after creation
 
 ```tsx
-import { Canvas, Paint, Rect, createShader } from "@zynth/skia";
+import { Canvas, Paint, Rect, createShader } from "@zynthjs/skia";
 
 const shader = createShader("h.rgba(255 * u.mix, 90, 180, 1)", { mix: 0.2 });
 
@@ -68,7 +68,7 @@ import {
   Shader,
   createClock,
   createRuntimeEffect,
-} from "@zynth/skia";
+} from "@zynthjs/skia";
 
 const clock = createClock();
 
@@ -106,7 +106,7 @@ export function RuntimeShaderRect() {
 ### Building values for shared numeric state
 
 ```tsx
-import { createSkiaValue } from "@zynth/skia";
+import { createSkiaValue } from "@zynthjs/skia";
 
 const [progress, setProgress] = createSkiaValue(0, { shared: true });
 

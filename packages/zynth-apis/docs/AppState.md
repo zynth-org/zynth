@@ -11,7 +11,7 @@ This is critical for scenarios like pausing heavy animations, closing network so
 You can check the current status of the application using `appState.current`.
 
 ```ts
-import { appState } from "@zynth/apis";
+import { appState } from "@zynthjs/apis";
 
 if (appState.current === "active") {
   // Application is in the foreground
@@ -23,7 +23,7 @@ if (appState.current === "active") {
 Subscribe to lifecycle transitions to react to user actions in real-time.
 
 ```tsx
-import { appState } from "@zynth/apis";
+import { appState } from "@zynthjs/apis";
 
 const unsubscribe = appState.onChange((nextState) => {
   console.log(`App transitioned to: ${nextState}`);

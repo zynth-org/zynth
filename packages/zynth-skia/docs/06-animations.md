@@ -1,6 +1,6 @@
 # Animations
 
-Animations in `@zynth/skia` are usually driven by numeric values that can be passed directly into drawing props. The package exposes shared numeric state through `createSkiaValue(..., { shared: true })`, conversion helpers such as `toSharedScalar()`, and interpolation helpers such as `interpolateShared()`.
+Animations in `@zynthjs/skia` are usually driven by numeric values that can be passed directly into drawing props. The package exposes shared numeric state through `createSkiaValue(..., { shared: true })`, conversion helpers such as `toSharedScalar()`, and interpolation helpers such as `interpolateShared()`.
 
 This makes it possible to animate scalar props such as coordinates, opacity, stroke values, gradient endpoints, and shader uniforms without changing the declarative drawing model.
 
@@ -16,8 +16,8 @@ import {
   interpolateShared,
   toSharedScalar,
   vec,
-} from "@zynth/skia";
-import type { SharedSignalAccessor } from "@zynth/skia";
+} from "@zynthjs/skia";
+import type { SharedSignalAccessor } from "@zynthjs/skia";
 
 const [progress, setProgress] = createSkiaValue(0, { shared: true });
 const progressSignal = progress as SharedSignalAccessor<number>;
@@ -69,8 +69,8 @@ import {
   Circle,
   createSkiaValue,
   interpolateShared,
-} from "@zynth/skia";
-import type { SharedSignalAccessor } from "@zynth/skia";
+} from "@zynthjs/skia";
+import type { SharedSignalAccessor } from "@zynthjs/skia";
 
 const [phase, setPhase] = createSkiaValue(0, { shared: true });
 const phaseSignal = phase as SharedSignalAccessor<number>;
@@ -105,7 +105,7 @@ export function AnimatedCircle() {
 ### Combining shared values with helper clocks
 
 ```tsx
-import { Canvas, Path, createClock, createPathInterpolation } from "@zynth/skia";
+import { Canvas, Path, createClock, createPathInterpolation } from "@zynthjs/skia";
 
 const clock = createClock({ durationMs: 6_000 });
 

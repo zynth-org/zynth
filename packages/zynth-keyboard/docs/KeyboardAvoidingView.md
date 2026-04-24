@@ -9,8 +9,8 @@ A specialized container component that automatically adjusts its coordinate spac
 By default, the view adds padding to the bottom of its container to push content upward.
 
 ```tsx
-import { KeyboardAvoidingView } from "@zynth/keyboard";
-import { TextInput, View } from "@zynth/components";
+import { KeyboardAvoidingView } from "@zynthjs/keyboard";
+import { TextInput, View } from "@zynthjs/components";
 
 function LoginScreen() {
   return (

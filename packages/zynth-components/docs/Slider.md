@@ -7,7 +7,7 @@
 The component is primarily used as a controlled input with `minimumValue`, `maximumValue`, and `onValueChange`.
 
 ```tsx
-import { Slider, Text, View } from "@zynth/components";
+import { Slider, Text, View } from "@zynthjs/components";
 
 function VolumeControl() {
   const [volume, setVolume] = createSignal(50);

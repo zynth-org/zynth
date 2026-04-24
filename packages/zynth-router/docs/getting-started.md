@@ -1,13 +1,13 @@
 # Getting Started
 
-`@zynth/router` structures application navigation around typed route maps, navigator components, and reactive hooks. A router tree starts with `NavigationContainer`, then composes stack, tab, or bottom-sheet navigators depending on the flow you need to model.
+`@zynthjs/router` structures application navigation around typed route maps, navigator components, and reactive hooks. A router tree starts with `NavigationContainer`, then composes stack, tab, or bottom-sheet navigators depending on the flow you need to model.
 
 The package is designed to work naturally with SolidJS screen components and the rest of the Zynth runtime. It can be used directly through navigator factories or through a generated filesystem manifest.
 
 ## Basic usage
 
 ```tsx
-import { NavigationContainer, createStackNavigator } from "@zynth/router";
+import { NavigationContainer, createStackNavigator } from "@zynthjs/router";
 
 type RootStackParams = {
   Home: undefined;
@@ -41,8 +41,8 @@ export function App() {
 ### Navigating from a screen
 
 ```tsx
-import { useNavigation } from "@zynth/router";
-import { View, Text, Button } from "@zynth/components";
+import { useNavigation } from "@zynthjs/router";
+import { View, Text, Button } from "@zynthjs/components";
 
 function HomeScreen() {
   const navigation = useNavigation<RootStackParams>();
@@ -61,8 +61,8 @@ function HomeScreen() {
 ### Reading route params
 
 ```tsx
-import { useRoute } from "@zynth/router";
-import { Text, View } from "@zynth/components";
+import { useRoute } from "@zynthjs/router";
+import { Text, View } from "@zynthjs/components";
 
 function ProfileScreen() {
   const route = useRoute<RootStackParams, "Profile">();
@@ -79,8 +79,8 @@ function ProfileScreen() {
 ### Filesystem router entry point
 
 ```tsx
-import { NavigationContainer, createFileSystemRouter } from "@zynth/router";
-import routes from "@zynth/router/fs-routes";
+import { NavigationContainer, createFileSystemRouter } from "@zynthjs/router";
+import routes from "@zynthjs/router/fs-routes";
 
 const Router = createFileSystemRouter(routes);
 

@@ -11,10 +11,10 @@ This prompt helps an AI agent understand the Zynth monorepo and how to develop c
 - Monorepo with TypeScript workspaces (yarn). Primary runtime packages live under `packages/` and example app under `apps/components`.
 - UI layer uses SolidJS (JSX) and a Yoga-based native renderer.
 - Key packages available (non-exhaustive):
-  - `@zynth/components` — cross-platform primitives (View, Text, Button, Image, ScrollView, TextField, etc.)
-  - `@zynth/router` — navigation primitives
-  - `@zynth/components` (examples live in `apps/components/src/components/`)
-  - `@zynth/keyboard`, `@zynth/apis`, `@zynth/icons`, `@zynth/bottom-sheet`, `@zynth/apis`
+  - `@zynthjs/components` — cross-platform primitives (View, Text, Button, Image, ScrollView, TextField, etc.)
+  - `@zynthjs/router` — navigation primitives
+  - `@zynthjs/components` (examples live in `apps/components/src/components/`)
+  - `@zynthjs/keyboard`, `@zynthjs/apis`, `@zynthjs/icons`, `@zynthjs/bottom-sheet`, `@zynthjs/apis`
 
 ---
 
@@ -28,10 +28,10 @@ This prompt helps an AI agent understand the Zynth monorepo and how to develop c
 
 ## How to create a small component (example) 💡
 
-Example: a tiny card component using `@zynth/components` primitives.
+Example: a tiny card component using `@zynthjs/components` primitives.
 
 ```tsx
-import { View, Text, Button } from "@zynth/components";
+import { View, Text, Button } from "@zynthjs/components";
 import type { JSX } from "solid-js";
 
 export interface SimpleCardProps {

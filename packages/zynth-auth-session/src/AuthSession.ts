@@ -1,4 +1,4 @@
-import { Crypto, isCryptoAvailable as isZynthCryptoAvailable } from "@zynth/crypto";
+import { Crypto, isCryptoAvailable as isZynthCryptoAvailable } from "@zynthjs/crypto";
 import { callNative, isNativeAvailable } from "./native";
 import type {
   AuthSessionDismissResult,
@@ -35,7 +35,7 @@ const STATE_MAX_BYTES = 64;
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 const CRYPTO_UNAVAILABLE_WARNING =
-  "[AuthSession] Crypto is unavailable. PKCE/state helpers require @zynth/crypto with native installation (or a compatible global crypto implementation).";
+  "[AuthSession] Crypto is unavailable. PKCE/state helpers require @zynthjs/crypto with native installation (or a compatible global crypto implementation).";
 
 function getGlobalObject(): Record<string, unknown> {
   if (typeof globalThis !== "undefined") {

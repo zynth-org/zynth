@@ -1,6 +1,6 @@
 import { defineConfig } from "@rsbuild/core";
 
-const EXTERNAL_PACKAGES = ["solid-js", "@zynth/apis"];
+const EXTERNAL_PACKAGES = ["solid-js", "@zynthjs/apis"];
 
 export default defineConfig({
   mode: "production",

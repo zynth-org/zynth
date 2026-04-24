@@ -117,19 +117,19 @@ export const createAppHandler = async (c: Context) => {
     delete packageJson.resolutions;
 
     for (const pkgName of Object.keys(stagedArtifacts)) {
-      // e.g. pkgName = @zynth/core
+      // e.g. pkgName = @zynthjs/core
       // folderName = zynth-core
-      const folderName = pkgName.replace("@zynth/", "zynth-");
+      const folderName = pkgName.replace("@zynthjs/", "zynth-");
       const artifactPath = `file:${join(dockerArtifactsRoot, folderName)}`;
       packageJson.dependencies[pkgName] = artifactPath;
     }
 
-    // Drop @zynth/* deps that aren't staged to avoid registry lookups in the sandbox.
+    // Drop @zynthjs/* deps that aren't staged to avoid registry lookups in the sandbox.
     for (const section of ["dependencies", "devDependencies"] as const) {
       const deps = packageJson[section];
       if (!deps) continue;
       for (const depName of Object.keys(deps)) {
-        if (!depName.startsWith("@zynth/")) continue;
+        if (!depName.startsWith("@zynthjs/")) continue;
         if (stagedArtifacts[depName]) continue;
         delete deps[depName];
       }

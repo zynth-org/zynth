@@ -6,7 +6,7 @@ import {
   onCleanup,
   type JSX,
 } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 const DEFAULT_ANIMATION = "fade";
 const DEFAULT_OVERLAY_COLOR = "#000000";

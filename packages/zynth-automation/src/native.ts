@@ -1,4 +1,4 @@
-import { callNative, callNativeSync } from "@zynth/core";
+import { callNative, callNativeSync } from "@zynthjs/core";
 import type { AutomationConfig, AutomationReadOptions, AutomationSnapshot } from "./types";
 
 const MODULE_NAME = "Automation";

@@ -1,6 +1,6 @@
 import type { JSX, ParentComponent } from "solid-js";
-import type { Style } from "@zynth/core";
-import { View } from "@zynth/components";
+import type { Style } from "@zynthjs/core";
+import { View } from "@zynthjs/components";
 
 export interface KeyboardAwareScrollViewProps {
   /**

@@ -1,5 +1,5 @@
-import { Glyphs } from "@zynth/apis";
-import { Platform } from "@zynth/core";
+import { Glyphs } from "@zynthjs/apis";
+import { Platform } from "@zynthjs/core";
 import {
   runtimeGlyphMap,
   runtimeFontFamily,
@@ -20,7 +20,7 @@ if (Platform.isWeb) {
 
 if (Object.keys(runtimeGlyphMap).length === 0) {
   console.warn(
-    `[RuntimeGlyphs] runtimeGlyphMap is empty. Ensure @zynth/components is rebuilt after generating the runtime font.`
+    `[RuntimeGlyphs] runtimeGlyphMap is empty. Ensure @zynthjs/components is rebuilt after generating the runtime font.`
   );
 }
 

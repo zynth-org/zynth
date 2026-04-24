@@ -1,6 +1,6 @@
 import { children as resolveChildren, splitProps } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 export type BlurViewTint = "default" | "light" | "dark";
 export type BlurViewVariant = "blur" | "glass";

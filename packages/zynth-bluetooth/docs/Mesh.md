@@ -2,7 +2,7 @@
 
 A decentralized mesh networking implementation for Zynth applications, providing peer-to-peer communication over BLE without requiring a central hub.
 
-The `@zynth/bluetooth/Mesh` system delivers a multi-hop, reliable, and secure message passing interface. It abstract the complexities of network formation, relaying, and security keys into a high-level `MeshNode` API.
+The `@zynthjs/bluetooth/Mesh` system delivers a multi-hop, reliable, and secure message passing interface. It abstract the complexities of network formation, relaying, and security keys into a high-level `MeshNode` API.
 
 ## Basic usage
 
@@ -11,7 +11,7 @@ The `@zynth/bluetooth/Mesh` system delivers a multi-hop, reliable, and secure me
 Every participant in the mesh must start its node with a specific configuration (identity, policies, and keys).
 
 ```tsx
-import { BluetoothMesh } from "@zynth/bluetooth";
+import { BluetoothMesh } from "@zynthjs/bluetooth";
 
 const startMesh = async () => {
   const result = await BluetoothMesh.startNodeAsync({

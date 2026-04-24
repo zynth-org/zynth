@@ -7,7 +7,7 @@ Stacks are the default choice for linear flows such as details pages, drill-down
 ## Basic usage
 
 ```tsx
-import { createStackNavigator } from "@zynth/router";
+import { createStackNavigator } from "@zynthjs/router";
 
 type StackParams = {
   Home: undefined;
@@ -77,8 +77,8 @@ function AppStack() {
 
 ```tsx
 import { createEffect } from "solid-js";
-import { Button } from "@zynth/components";
-import { useNavigation } from "@zynth/router";
+import { Button } from "@zynthjs/components";
+import { useNavigation } from "@zynthjs/router";
 
 function DetailsScreen() {
   const navigation = useNavigation<StackParams>();
@@ -101,7 +101,7 @@ function DetailsScreen() {
 ### Stack actions
 
 ```tsx
-import { useNavigation } from "@zynth/router";
+import { useNavigation } from "@zynthjs/router";
 
 function Actions() {
   const navigation = useNavigation<StackParams>();

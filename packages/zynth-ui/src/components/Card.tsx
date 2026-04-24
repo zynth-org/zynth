@@ -1,7 +1,7 @@
-import { View, type ViewProps } from "@zynth/components";
+import { View, type ViewProps } from "@zynthjs/components";
 import { type ParentComponent, splitProps } from "solid-js";
 import { useUITheme } from "../hooks";
-import type { StyleProp } from "@zynth/core";
+import type { StyleProp } from "@zynthjs/core";
 
 export interface CardProps extends ViewProps {
   variant?: "elevated" | "outlined" | "flat";

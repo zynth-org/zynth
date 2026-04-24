@@ -1,7 +1,7 @@
 import { defineConfig } from "@rsbuild/core";
 import { pluginBabel } from "@rsbuild/plugin-babel";
 
-const EXTERNAL_PACKAGES = ["solid-js", "@zynth/core"];
+const EXTERNAL_PACKAGES = ["solid-js", "@zynthjs/core"];
 
 export default defineConfig({
   mode: "production",
@@ -41,7 +41,7 @@ export default defineConfig({
             "babel-preset-solid",
             {
               generate: "universal",
-              moduleName: "@zynth/core/universal",
+              moduleName: "@zynthjs/core/universal",
             },
           ],
           "@babel/preset-typescript",

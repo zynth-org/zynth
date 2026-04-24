@@ -8,7 +8,7 @@
 
 ```tsx
 import { createSignal } from "solid-js";
-import { TextField, View } from "@zynth/components";
+import { TextField, View } from "@zynthjs/components";
 
 function LoginScreen() {
   const [email, setEmail] = createSignal("");
@@ -43,7 +43,7 @@ _Note: On iOS, these variants map to standard native text field styles where app
 For more advanced scenarios, such as programmatically focusing a field or clearing its content, use the `useTextFieldRef` hook and pass the resulting ref to the component.
 
 ```tsx
-import { TextField, useTextFieldRef, Button, View } from "@zynth/components";
+import { TextField, useTextFieldRef, Button, View } from "@zynthjs/components";
 
 function SearchBar() {
   const ref = useTextFieldRef();

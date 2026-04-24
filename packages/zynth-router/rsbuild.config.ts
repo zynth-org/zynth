@@ -3,10 +3,10 @@ import { pluginBabel } from "@rsbuild/plugin-babel";
 
 const EXTERNAL_PACKAGES = [
   "solid-js",
-  "@zynth/core",
-  "@zynth/screens",
-  "@zynth/components",
-  "@zynth/apis",
+  "@zynthjs/core",
+  "@zynthjs/screens",
+  "@zynthjs/components",
+  "@zynthjs/apis",
 ];
 
 export default defineConfig({
@@ -47,7 +47,7 @@ export default defineConfig({
             "babel-preset-solid",
             {
               generate: "universal",
-              moduleName: "@zynth/core/universal",
+              moduleName: "@zynthjs/core/universal",
             },
           ],
           "@babel/preset-typescript",

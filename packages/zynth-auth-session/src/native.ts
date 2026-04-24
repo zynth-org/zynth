@@ -1,4 +1,4 @@
-import { callNative as coreCallNative, getGlobalObject, getModulesBridge } from "@zynth/core";
+import { callNative as coreCallNative, getGlobalObject, getModulesBridge } from "@zynthjs/core";
 
 const MODULE_NAME = "AuthSession";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
@@ -11,7 +11,7 @@ function getPlatform(): string | null {
 
 function createMissingModuleError(): Error {
   return new Error(
-    `[${MODULE_NAME}] Native module not found. Ensure @zynth/auth-session is installed and native projects are regenerated.`
+    `[${MODULE_NAME}] Native module not found. Ensure @zynthjs/auth-session is installed and native projects are regenerated.`
   );
 }
 

@@ -19,14 +19,14 @@ import {
   SystemIcon,
   BottomSheet as ZynthBottomSheet,
   type BottomSheetRef,
-} from "@zynth/components";
-import { createSafeAreaInsets, platform } from "@zynth/apis";
+} from "@zynthjs/components";
+import { createSafeAreaInsets, platform } from "@zynthjs/apis";
 import {
   ScreenContainer,
   ScreenSheetContainer,
   Screen as ScreenPrimitive,
   type ScreenAnimationType,
-} from "@zynth/screens";
+} from "@zynthjs/screens";
 import {
   NavigationContext,
   type NavigationContextValue,

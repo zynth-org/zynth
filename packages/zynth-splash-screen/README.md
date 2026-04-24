@@ -2,7 +2,7 @@
 
 Manage the visibility of the native splash screen during application initialization on iOS and Android.
 
-`@zynth/splash-screen` provides a programmatic interface to control when the native launch screen is dismissed. This is essential for preventing the UI from flickering while the initial application state is being loaded, ensuring a seamless transition from the boot sequence to the first interactive frame.
+`@zynthjs/splash-screen` provides a programmatic interface to control when the native launch screen is dismissed. This is essential for preventing the UI from flickering while the initial application state is being loaded, ensuring a seamless transition from the boot sequence to the first interactive frame.
 
 ## Basic usage
 
@@ -11,7 +11,7 @@ By default, the splash screen is automatically dismissed as soon as the first fr
 To manually control the dismissal, notify the framework that the splash screen should remain visible until you explicitly hide it.
 
 ```ts
-import { SplashScreen } from "@zynth/splash-screen";
+import { SplashScreen } from "@zynthjs/splash-screen";
 
 // At the top level of your entry point
 SplashScreen.preventAutoHideAsync();
@@ -39,7 +39,7 @@ A common pattern is to wrap the application in a guard that prevents rendering u
 
 ```ts
 import { createSignal, onMount, Show } from "solid-js";
-import { SplashScreen } from "@zynth/splash-screen";
+import { SplashScreen } from "@zynthjs/splash-screen";
 
 // Prevent the OS from auto-hiding the splash screen
 SplashScreen.preventAutoHideAsync();

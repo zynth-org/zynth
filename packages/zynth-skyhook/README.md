@@ -1,4 +1,4 @@
-# @zynth/skyhook
+# @zynthjs/skyhook
 
 The AI-powered backend for generating and deploying Zynth applications.
 
@@ -10,7 +10,7 @@ Skyhook is a specialized server that orchestrates **LLM-based code generation** 
 *   **Sandboxed Execution**: Runs the generation agent inside isolated Docker containers for security and consistency.
 *   **Iterative Updates**: Can modify existing applications by loading their snapshot and applying new prompts.
 *   **Build Pipeline**: Automatically builds the generated project into a deployable bundle.
-*   **Artifact Linking**: Injects the local `@zynth/*` packages into the generation environment, ensuring the AI uses the latest framework version.
+*   **Artifact Linking**: Injects the local `@zynthjs/*` packages into the generation environment, ensuring the AI uses the latest framework version.
 
 ## Architecture
 

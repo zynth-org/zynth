@@ -1,23 +1,23 @@
 # Components & Hooks
 
-The `@zynth/ui` package provides a suite of intelligent, theme-aware components built on top of the native primitives from `@zynth/components`. These components automatically adapt to your application's design system, handling typography, spacing, semantic colors, and platform-specific aesthetic differences out-of-the-box.
+The `@zynthjs/ui` package provides a suite of intelligent, theme-aware components built on top of the native primitives from `@zynthjs/components`. These components automatically adapt to your application's design system, handling typography, spacing, semantic colors, and platform-specific aesthetic differences out-of-the-box.
 
 ### Base Components Overview
 
-For comprehensive API references on layout props (e.g., `style`, `onPress`, `accessibilityLabel`), please refer to the corresponding underlying `<View>`, `<Text>`, and input primitives in `@zynth/components`. The UI package acts as an intelligent styling wrapper that extends those core capabilities.
+For comprehensive API references on layout props (e.g., `style`, `onPress`, `accessibilityLabel`), please refer to the corresponding underlying `<View>`, `<Text>`, and input primitives in `@zynthjs/components`. The UI package acts as an intelligent styling wrapper that extends those core capabilities.
 
 ---
 
 ## Unique Components
 
-These components are specifically structured within `@zynth/ui` to compound raw primitives into fully realized design-system patterns.
+These components are specifically structured within `@zynthjs/ui` to compound raw primitives into fully realized design-system patterns.
 
 ### Card
 
 The `Card` component is a foundational container that applies standard theming to a `View` structure. It serves as a bounded surface for content.
 
 ```tsx
-import { Card, Text } from "@zynth/ui";
+import { Card, Text } from "@zynthjs/ui";
 
 function Example() {
   return (
@@ -38,8 +38,8 @@ function Example() {
 The `Badge` component is great for status indicators, counts, or semantic labeling.
 
 ```tsx
-import { Badge } from "@zynth/ui";
-import { View } from "@zynth/components";
+import { Badge } from "@zynthjs/ui";
+import { View } from "@zynthjs/components";
 
 function Example() {
   return (
@@ -62,7 +62,7 @@ function Example() {
 These are theme-aware, accessible binary input controls. They utilize the framework's touch handling and handle focus states and platform-specific interactions cleanly.
 
 ```tsx
-import { Radio, Checkbox } from "@zynth/ui";
+import { Radio, Checkbox } from "@zynthjs/ui";
 import { createSignal } from "solid-js";
 
 function Example() {
@@ -103,10 +103,10 @@ function Example() {
 
 ### QRCode
 
-A native QR code renderer styled seamlessly with `@zynth/ui` tokens. It guarantees high-performance rendering without web-based or heavy third-party polyfills, hooking directly into platform layout parameters.
+A native QR code renderer styled seamlessly with `@zynthjs/ui` tokens. It guarantees high-performance rendering without web-based or heavy third-party polyfills, hooking directly into platform layout parameters.
 
 ```tsx
-import { QRCode } from "@zynth/ui";
+import { QRCode } from "@zynthjs/ui";
 
 function Example() {
   return (
@@ -135,8 +135,8 @@ The UI package exposes a minimal set of highly efficient hooks to interact with 
 Returns an Accessor to the current complete `UITheme` object. Because it returns an Accessor, you should call it as a function (`theme()`) inside reactive tracking scopes (like SolidJS `createMemo` or inside JSX bindings) to ensure your component updates seamlessly when the user switches color modes.
 
 ```tsx
-import { useUITheme } from "@zynth/ui";
-import { View } from "@zynth/components";
+import { useUITheme } from "@zynthjs/ui";
+import { View } from "@zynthjs/components";
 
 function Layout() {
   const theme = useUITheme();
@@ -153,8 +153,8 @@ function Layout() {
 A streamlined hook that strictly returns the active `"light"` or `"dark"` scheme string. Useful when you only need to branch logic based on dark mode, rather than extracting specific colors or typography tokens.
 
 ```tsx
-import { createUIColorScheme } from "@zynth/ui";
-import { Image } from "@zynth/components";
+import { createUIColorScheme } from "@zynthjs/ui";
+import { Image } from "@zynthjs/components";
 
 function Logo() {
   const scheme = createUIColorScheme();

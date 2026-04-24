@@ -1,4 +1,4 @@
-import { registerWebComponent } from "@zynth/core";
+import { registerWebComponent } from "@zynthjs/core";
 
 type ScrollCallbacks = {
   onScroll?: (event: any) => void;

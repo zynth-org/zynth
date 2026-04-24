@@ -16,10 +16,10 @@
     "types": ["zynth-jsx"],
     "typeRoots": ["../../types", "../../node_modules/@types"],
     "paths": {
-      "@zynth/components": ["packages/zynth-components/dist/types/zynth-components/src/index.d.ts"],
-      "@zynth/core": ["packages/zynth-core/dist/types/index.d.ts"],
-      "@zynth/core/*": ["packages/zynth-core/dist/types/*"],
-      "@zynth/apis": ["packages/zynth-apis/dist/types/zynth-apis/src/index.d.ts"]
+      "@zynthjs/components": ["packages/zynth-components/dist/types/zynth-components/src/index.d.ts"],
+      "@zynthjs/core": ["packages/zynth-core/dist/types/index.d.ts"],
+      "@zynthjs/core/*": ["packages/zynth-core/dist/types/*"],
+      "@zynthjs/apis": ["packages/zynth-apis/dist/types/zynth-apis/src/index.d.ts"]
     }
   },
   "include": [

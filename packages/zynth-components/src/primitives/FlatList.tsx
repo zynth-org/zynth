@@ -14,8 +14,8 @@ import {
   Show,
 } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
-import { platform } from "@zynth/apis";
-import type { HostNode, Style } from "@zynth/core";
+import { platform } from "@zynthjs/apis";
+import type { HostNode, Style } from "@zynthjs/core";
 import { ScrollView, type ScrollViewRef } from "./ScrollView";
 import type {
   ScrollEvent,

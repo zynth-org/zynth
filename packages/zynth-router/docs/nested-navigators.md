@@ -2,7 +2,7 @@
 
 Nested navigators let a route render another navigator as its screen component. This is the standard way to build sectioned applications, tabbed interfaces with local stacks, modal stacks above tabs, and flows that keep local navigation state isolated inside a larger app shell.
 
-`@zynth/router` treats nested navigators as regular screen components, so composition works with stack, tab, and bottom-sheet navigators without introducing a separate container at each level. BottomSheet navigation is experimental and unstable.
+`@zynthjs/router` treats nested navigators as regular screen components, so composition works with stack, tab, and bottom-sheet navigators without introducing a separate container at each level. BottomSheet navigation is experimental and unstable.
 
 ## Basic usage
 
@@ -11,7 +11,7 @@ import {
   NavigationContainer,
   createStackNavigator,
   createTabNavigator,
-} from "@zynth/router";
+} from "@zynthjs/router";
 
 type RootTabs = {
   Feed: undefined;
@@ -87,8 +87,8 @@ function ProfileTab() {
 ### Accessing a parent navigator
 
 ```tsx
-import { useNavigation } from "@zynth/router";
-import { Button } from "@zynth/components";
+import { useNavigation } from "@zynthjs/router";
+import { Button } from "@zynthjs/components";
 
 function ProductScreen() {
   const homeNavigation = useNavigation<HomeStackParams>();

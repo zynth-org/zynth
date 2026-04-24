@@ -1,6 +1,6 @@
 # Router
 
-`@zynth/router` provides navigation primitives for Zynth applications built with SolidJS. It keeps navigation state in JavaScript, renders screens through `@zynth/screens`, and exposes typed navigators, hooks, and filesystem-driven routing for stack, tab, and sheet-based flows.
+`@zynthjs/router` provides navigation primitives for Zynth applications built with SolidJS. It keeps navigation state in JavaScript, renders screens through `@zynthjs/screens`, and exposes typed navigators, hooks, and filesystem-driven routing for stack, tab, and sheet-based flows.
 
 Router supports iOS and Android as primary targets. Web support is partial and follows the adapters provided by the Zynth screen and component layers, with web-specific rendering for headers and tab bars where native containers are not available.
 
@@ -11,8 +11,8 @@ import {
   NavigationContainer,
   createStackNavigator,
   useNavigation,
-} from "@zynth/router";
-import { View, Text, Button } from "@zynth/components";
+} from "@zynthjs/router";
+import { View, Text, Button } from "@zynthjs/components";
 
 type RootStackParams = {
   Home: undefined;
@@ -72,7 +72,7 @@ import {
   NavigationContainer,
   createStackNavigator,
   createTabNavigator,
-} from "@zynth/router";
+} from "@zynthjs/router";
 
 type RootTabs = {
   Feed: undefined;
@@ -140,8 +140,8 @@ export function App() {
 ### Filesystem router
 
 ```tsx
-import { NavigationContainer, createFileSystemRouter } from "@zynth/router";
-import routes from "@zynth/router/fs-routes";
+import { NavigationContainer, createFileSystemRouter } from "@zynthjs/router";
+import routes from "@zynthjs/router/fs-routes";
 
 const AppRouter = createFileSystemRouter(routes);
 
@@ -159,7 +159,7 @@ export default function App() {
 BottomSheet navigation is experimental and currently unstable. Use it with caution in production code.
 
 ```tsx
-import { NavigationContainer, createBottomSheetNavigator } from "@zynth/router";
+import { NavigationContainer, createBottomSheetNavigator } from "@zynthjs/router";
 
 type SheetRoutes = {
   Filters: undefined;

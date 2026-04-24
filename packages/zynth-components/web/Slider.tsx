@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createMemo, splitProps } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 
 export const Slider = (props: any) => {
   const [local, rest] = splitProps(props, [

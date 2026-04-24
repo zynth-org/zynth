@@ -7,8 +7,8 @@ import {
   Show,
   splitProps,
 } from "solid-js";
-import type { HostNode, StyleProp, SyncSignalAccessor } from "@zynth/core";
-import { createWorklet, setProperty, flush } from "@zynth/core";
+import type { HostNode, StyleProp, SyncSignalAccessor } from "@zynthjs/core";
+import { createWorklet, setProperty, flush } from "@zynthjs/core";
 import type { KeyEvent } from "./events";
 export type { KeyEvent } from "./events";
 import { createStyle } from "../hooks/createStyle";

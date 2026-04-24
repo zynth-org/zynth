@@ -2,7 +2,7 @@
 
 /**
  * Auto-sync workspace package aliases to tsconfig.base.json
- * Run this after adding new @zynth/* packages
+ * Run this after adding new @zynthjs/* packages
  */
 
 import { readdir, readFile, writeFile } from "node:fs/promises";
@@ -15,7 +15,7 @@ const packagesDir = join(repoRoot, "packages");
 const tsconfigPath = join(repoRoot, "tsconfig.base.json");
 
 async function main() {
-  console.log("🔍 Discovering @zynth/* packages...");
+  console.log("🔍 Discovering @zynthjs/* packages...");
 
   const entries = await readdir(packagesDir, { withFileTypes: true });
   const paths = {};
@@ -30,7 +30,7 @@ async function main() {
       const raw = await readFile(packageJsonPath, "utf8");
       const pkg = JSON.parse(raw);
 
-      if (pkg.name?.startsWith("@zynth/")) {
+      if (pkg.name?.startsWith("@zynthjs/")) {
         // Check if src/index.ts exists
         const srcIndex = join(packageDir, "src/index.ts");
         try {
@@ -40,15 +40,15 @@ async function main() {
           paths[`${pkg.name}/*`] = [`packages/${entry.name}/src/*`];
           console.log(`  ✓ ${pkg.name}`);
 
-          // Special case for @zynth/core/universal
-          if (pkg.name === "@zynth/core") {
+          // Special case for @zynthjs/core/universal
+          if (pkg.name === "@zynthjs/core") {
             try {
               const universalPath = join(packageDir, "src/universal.ts");
               await readFile(universalPath);
-              paths["@zynth/core/universal"] = [
+              paths["@zynthjs/core/universal"] = [
                 `packages/${entry.name}/src/universal.ts`,
               ];
-              console.log(`  ✓ @zynth/core/universal`);
+              console.log(`  ✓ @zynthjs/core/universal`);
             } catch {
               // No universal.ts, skip
             }

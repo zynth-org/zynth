@@ -9,8 +9,8 @@ Designed to have a minimal footprint, it runs efficiently in the background whil
 The most common use case is starting a simple HTTP server to serve static content or accept local uploads. We recommend using `createWebServerSignal` to seamlessly integrate the server's lifecycle and state into your UI.
 
 ```tsx
-import { Button, Text, View } from "@zynth/components";
-import { createWebServerSignal } from "@zynth/webserver";
+import { Button, Text, View } from "@zynthjs/components";
+import { createWebServerSignal } from "@zynthjs/webserver";
 import { createEffect, onCleanup } from "solid-js";
 
 export function LocalServer() {
@@ -58,7 +58,7 @@ export function LocalServer() {
 For secure interactions or single-page app signaling, `WebServer` supports authenticated requests and dynamic signal states. You can require an authorization token for uploads and seamlessly send data back to your application runtime using the signal API.
 
 ```tsx
-import { createWebServerSignal } from "@zynth/webserver";
+import { createWebServerSignal } from "@zynthjs/webserver";
 
 const AUTH_TOKEN = "secure-auth-token";
 
@@ -97,7 +97,7 @@ If your app imports static HTML files (for example `import pageHtml from "./asse
 
 ```ts
 import path from "node:path";
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 
 export default defineZynthConfig({
   tools: {
@@ -119,7 +119,7 @@ export default defineZynthConfig({
 `WebServer` relies on native hardware bindings (specifically Civetweb in C++). Because of browser security constraints, HTTP server capabilities are fundamentally unsupported directly on Web targets. You should evaluate `WebServer.isAvailable()` before mounting server-dependent logic to gracefully degrade on the web.
 
 ```tsx
-import { WebServer } from "@zynth/webserver";
+import { WebServer } from "@zynthjs/webserver";
 
 if (!WebServer.isAvailable()) {
   console.log("Local web server is not available in this environment.");

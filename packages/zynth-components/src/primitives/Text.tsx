@@ -6,8 +6,8 @@ import {
   onCleanup,
 } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { HostNode, StyleProp } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
 import { createStyle } from "../hooks/createStyle";
 import { useAnimatedStyleMapper } from "../hooks/useAnimatedStyleMapper";
 

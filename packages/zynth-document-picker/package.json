@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/document-picker",
+  "name": "@zynthjs/document-picker",
   "version": "0.0.1",
   "description": "Document picker for Zynth",
   "type": "module",

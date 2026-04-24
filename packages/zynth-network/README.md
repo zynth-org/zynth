@@ -1,8 +1,8 @@
-# @zynth/network
+# @zynthjs/network
 
 Network state and local-network discovery for Zynth apps.
 
-`@zynth/network` combines:
+`@zynthjs/network` combines:
 
 - Connectivity info (`wifi`, `cellular`, `ethernet`, etc.)
 - Local peer discovery/advertising over mDNS/Bonjour
@@ -13,7 +13,7 @@ Network state and local-network discovery for Zynth apps.
 ### Install
 
 ```bash
-npm i @zynth/network
+npm i @zynthjs/network
 ```
 
 Regenerate native projects after adding the package.
@@ -26,7 +26,7 @@ import {
   Network,
   NetworkServiceDomains,
   NetworkServiceTypes,
-} from "@zynth/network";
+} from "@zynthjs/network";
 
 const state = await Network.getNetworkStateAsync();
 const ip = await Network.getIpAddressAsync();
@@ -66,7 +66,7 @@ import {
   Network,
   createNetworkTrustStore,
   createPeerChallenge,
-} from "@zynth/network";
+} from "@zynthjs/network";
 
 const trustStore = createNetworkTrustStore();
 const challenge = createPeerChallenge();
@@ -91,7 +91,7 @@ if (!result.verified || !result.trusted) {
 Use `createNetworkDiscovery` in components. It manages polling/subscription lifecycle and cleanup for you.
 
 ```ts
-import { createNetworkDiscovery, NetworkServiceTypes } from "@zynth/network";
+import { createNetworkDiscovery, NetworkServiceTypes } from "@zynthjs/network";
 
 const discovery = createNetworkDiscovery({
   autoStart: true,
@@ -107,7 +107,7 @@ const events = discovery.events();
 
 ### Secure peer session helpers
 
-`@zynth/network` now includes first-class helpers for authenticated local peer sessions:
+`@zynthjs/network` now includes first-class helpers for authenticated local peer sessions:
 
 - `createPeerChallenge()` / `Network.createChallengeBase64(...)` for challenge creation
 - `Network.authenticatePeerAsync(...)` for signature + freshness verification
@@ -163,7 +163,7 @@ import {
   NetworkServiceDomains,
   NetworkServiceTypes,
   toBonjourServiceType,
-} from "@zynth/network";
+} from "@zynthjs/network";
 
 const serviceType = NetworkServiceTypes.Zynth; // "_zynth._tcp."
 const localSendType = NetworkServiceTypes.LocalSend; // "_localsend._tcp."
@@ -179,7 +179,7 @@ Use typed capability helpers to keep TXT records ergonomic without hardcoding st
 import {
   createCapabilityTxtRecord,
   normalizePeerMetadataList,
-} from "@zynth/network";
+} from "@zynthjs/network";
 
 const txtRecord = createCapabilityTxtRecord({
   version: "1",

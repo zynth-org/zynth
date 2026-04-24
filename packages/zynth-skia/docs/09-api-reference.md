@@ -1,6 +1,6 @@
 # API Reference
 
-This page lists the public exports from `@zynth/skia` as they are exposed from `src/index.ts`. The package surface is split across view components, declarative drawing nodes, imperative surface helpers, resource loaders, shader utilities, reactive primitives, capability checks, and public types.
+This page lists the public exports from `@zynthjs/skia` as they are exposed from `src/index.ts`. The package surface is split across view components, declarative drawing nodes, imperative surface helpers, resource loaders, shader utilities, reactive primitives, capability checks, and public types.
 
 Use the focused pages for narrative guidance. Use this page as the package index when you need to locate a specific export quickly.
 
@@ -13,7 +13,7 @@ import {
   createImage,
   createPath,
   createRuntimeEffect,
-} from "@zynth/skia";
+} from "@zynthjs/skia";
 ```
 
 ## Advanced examples
@@ -21,7 +21,7 @@ import {
 ### Mixed declarative and resource exports
 
 ```tsx
-import { Canvas, Image, ImageSVG, createImage, createSVG } from "@zynth/skia";
+import { Canvas, Image, ImageSVG, createImage, createSVG } from "@zynthjs/skia";
 
 const image = createImage({ uri: "https://example.com/hero.png" });
 const icon = createSVG({ uri: "https://example.com/icon.svg" });
@@ -30,7 +30,7 @@ const icon = createSVG({ uri: "https://example.com/icon.svg" });
 ### Namespace-style helpers
 
 ```tsx
-import { Skia } from "@zynth/skia";
+import { Skia } from "@zynthjs/skia";
 
 const effect = Skia.RuntimeEffect.Make(`
 uniform float t;
@@ -43,7 +43,7 @@ half4 main(vec2 fragCoord) {
 ## Special cases and unusual features
 
 - `useImage`, `useSVG`, `useSkottie`, `useClock`, `usePathInterpolation`, and `usePathValue` remain exported as compatibility aliases. The primary naming style is `createXxx`.
-- `interpolateShared` and `toSharedScalar` are re-exported from `@zynth/core`.
+- `interpolateShared` and `toSharedScalar` are re-exported from `@zynthjs/core`.
 - Some lower-level font manager factories exist through the `Skia` namespace but are not exported as top-level functions.
 - The public type surface includes both declarative props and imperative command unions so that callers can author draw systems without importing private files.
 

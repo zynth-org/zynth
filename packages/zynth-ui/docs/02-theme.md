@@ -13,16 +13,16 @@ The theme is organized into distinct categories of tokens:
 
 ### Architecture
 
-It is important to understand that components exported from `@zynth/ui` (such as `Button`, `Text`, or `Card`) are intelligent wrappers around the native primitives provided by `@zynth/components`. The UI package provides a more convenient way to use and customize these primitives by automatically applying the current theme, colors, typography, and interactive states. While `@zynth/components` provides the raw, unstyled native views, `@zynth/ui` provides the design system implementation.
+It is important to understand that components exported from `@zynthjs/ui` (such as `Button`, `Text`, or `Card`) are intelligent wrappers around the native primitives provided by `@zynthjs/components`. The UI package provides a more convenient way to use and customize these primitives by automatically applying the current theme, colors, typography, and interactive states. While `@zynthjs/components` provides the raw, unstyled native views, `@zynthjs/ui` provides the design system implementation.
 
 ### Basic Usage
 
 The `useUITheme()` hook provides reactive access to the current theme object. This allows you to build custom components that stay synchronized with system overrides and color mode changes.
 
 ```tsx
-import { useUITheme } from "@zynth/ui";
-import { View } from "@zynth/components";
-import { Text } from "@zynth/ui";
+import { useUITheme } from "@zynthjs/ui";
+import { View } from "@zynthjs/components";
+import { Text } from "@zynthjs/ui";
 
 function CustomCard(props) {
   const theme = useUITheme();
@@ -48,7 +48,7 @@ function CustomCard(props) {
 You can customize the entire look of your application by passing a `theme` override to the `UIProvider`. This object can be a partial representation of the theme tokens.
 
 ```tsx
-import { UIProvider } from "@zynth/ui";
+import { UIProvider } from "@zynthjs/ui";
 
 const customTheme = {
   colors: {
@@ -77,7 +77,7 @@ function Root() {
 For more advanced scenarios, the theme override is handled reactively. Any changes to the `theme` prop will propagate immediately through the application's UI.
 
 ```tsx
-import { UIProvider, Button } from "@zynth/ui";
+import { UIProvider, Button } from "@zynthjs/ui";
 import { createSignal } from "solid-js";
 
 function AppRoot() {

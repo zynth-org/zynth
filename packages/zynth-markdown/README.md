@@ -2,7 +2,7 @@
 
 High-performance native Markdown parsing and rendering for Zynth applications, providing full CommonMark compliance and GitHub Flavored Markdown (GFM) support.
 
-`@zynth/markdown` leverages a native `cmark-gfm` back-end to provide granular, reactive markdown rendering. It abstracts:
+`@zynthjs/markdown` leverages a native `cmark-gfm` back-end to provide granular, reactive markdown rendering. It abstracts:
 
 - Native-speed parsing via JSI/Bridge
 - Full GFM extension support (Tables, Task lists, Strikethrough)
@@ -16,7 +16,7 @@ High-performance native Markdown parsing and rendering for Zynth applications, p
 The `MarkdownRenderer` is the primary entry point for displaying markdown content. It automatically transforms raw strings into a layout of native Zynth components.
 
 ```tsx
-import { MarkdownRenderer } from "@zynth/markdown";
+import { MarkdownRenderer } from "@zynthjs/markdown";
 
 function Article(props) {
   return (
@@ -38,7 +38,7 @@ function Article(props) {
 If you need to manipulate the markdown tree before rendering, use `parseMarkdown` to get a structured AST of `MarkdownNode` objects.
 
 ```ts
-import { parseMarkdown } from "@zynth/markdown";
+import { parseMarkdown } from "@zynthjs/markdown";
 
 const nodes = parseMarkdown("# Hello World\nThis is **Zynth**.");
 
@@ -57,8 +57,8 @@ nodes.forEach(node => {
 You can override how specific markdown elements are rendered by providing a `components` map. This is useful for injecting custom styles or specialized internal components (like a custom code block with syntax highlighting).
 
 ```tsx
-import { MarkdownRenderer, MarkdownComponentProps } from "@zynth/markdown";
-import { Text, View } from "@zynth/components";
+import { MarkdownRenderer, MarkdownComponentProps } from "@zynthjs/markdown";
+import { Text, View } from "@zynthjs/components";
 
 const MyHeading = (props: MarkdownComponentProps) => (
   <View style={{ borderBottomWidth: 2, borderBottomColor: "blue", marginBottom: 10 }}>
@@ -83,7 +83,7 @@ function CustomMarkdown() {
 Zynth Markdown supports fine-tuning the parser's behavior via the `MarkdownParseOptions` object.
 
 ```ts
-import { parseMarkdown } from "@zynth/markdown";
+import { parseMarkdown } from "@zynthjs/markdown";
 
 const doc = parseMarkdown("~~deleted~~", {
   extensions: {

@@ -1,20 +1,20 @@
 declare module "*.ttf" {
-  const content: import("@zynth/apis").FontAssetDescriptor;
+  const content: import("@zynthjs/apis").FontAssetDescriptor;
   export default content;
 }
 
 declare module "*.otf" {
-  const content: import("@zynth/apis").FontAssetDescriptor;
+  const content: import("@zynthjs/apis").FontAssetDescriptor;
   export default content;
 }
 
 declare module "*.woff" {
-  const content: import("@zynth/apis").FontAssetDescriptor;
+  const content: import("@zynthjs/apis").FontAssetDescriptor;
   export default content;
 }
 
 declare module "*.woff2" {
-  const content: import("@zynth/apis").FontAssetDescriptor;
+  const content: import("@zynthjs/apis").FontAssetDescriptor;
   export default content;
 }
 

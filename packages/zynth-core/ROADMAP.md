@@ -35,7 +35,7 @@ During the refactor, the new runtime should not reintroduce these APIs.
 ### Layers
 
 1. **Renderer Contract (JS)**
-   - `@zynth/core` keeps the renderer API and batching semantics.
+   - `@zynthjs/core` keeps the renderer API and batching semantics.
    - New runtime must implement `__ui` host functions.
 
 2. **Runtime Kernel (Native, per platform)**
@@ -49,7 +49,7 @@ During the refactor, the new runtime should not reintroduce these APIs.
 4. **Optional Runtime Features**
    - Native signals + worklets.
    - Motion and gesture runtime surfaces exposed through
-     `@zynth/core/motion` and `@zynth/core/gesture`.
+     `@zynthjs/core/motion` and `@zynthjs/core/gesture`.
 
 ---
 
@@ -72,7 +72,7 @@ The runtime must expose the following globals via JSI HostObjects:
   - `call(module: string, method: string, args: unknown[], promiseId?: number): void`
   - `callSync(module: string, method: string, args: unknown[]): unknown`
 
-- Scheduler hooks (if needed by `@zynth/core`):
+- Scheduler hooks (if needed by `@zynthjs/core`):
   - `queueMicrotask`, `requestAnimationFrame`, `cancelAnimationFrame`.
 
 ### BatchPayload
@@ -186,7 +186,7 @@ The runtime must expose the following globals via JSI HostObjects:
 
 **Exit Criteria**
 
-- `@zynth/components` renders basic UI via the new runtime.
+- `@zynthjs/components` renders basic UI via the new runtime.
 - Benchmarks show parity or improvement vs legacy for mount/update cycles.
 
 **Status**
@@ -244,19 +244,19 @@ The runtime must expose the following globals via JSI HostObjects:
 
 **Goals**
 
-- Match essential behavior expected by `@zynth/core` and core components.
+- Match essential behavior expected by `@zynthjs/core` and core components.
 
 **Deliverables**
 
 - SolidJS host semantics: text handling, event dispatch, pointer events, layout events.
 - Surface management parity (multi-surface or hypervisor-ready, if needed).
 - View recycling hooks for `FlatList`.
-- Native component registry + module/event compatibility layer so `@zynth/components` can plug in (Text/View descriptors, module constants, event dispatch).
+- Native component registry + module/event compatibility layer so `@zynthjs/components` can plug in (Text/View descriptors, module constants, event dispatch).
 
 **Exit Criteria**
 
 - Core primitives and demo app work in `apps/components` using new runtime.
-- `@zynth/components` native descriptors can be discovered and used by the new runtime (Text/View working end-to-end).
+- `@zynthjs/components` native descriptors can be discovered and used by the new runtime (Text/View working end-to-end).
 
 **Known Style Gaps (Yoga/Style Parity)**
 
@@ -279,7 +279,7 @@ Core support now covers the Phase 4 style list with a few remaining caveats:
 
 - JSI shared value store and worklet registry per runtime.
 - UI-thread worklet execution with synchronous shared value reads.
-- Runtime-owned motion APIs exposed from `@zynth/core/motion`.
+- Runtime-owned motion APIs exposed from `@zynthjs/core/motion`.
 
 **Exit Criteria**
 
@@ -368,7 +368,7 @@ Core support now covers the Phase 4 style list with a few remaining caveats:
 
 - Whether to move Android Yoga to C++ for more control (likely not needed initially).
 - Whether native signals should be required in the base runtime or remain a
-  modular subpath surface via `@zynth/core/motion`.
+  modular subpath surface via `@zynthjs/core/motion`.
 - Whether multi-surface support is required in phase 4 or deferred.
 
 ---
@@ -376,5 +376,5 @@ Core support now covers the Phase 4 style list with a few remaining caveats:
 ## Immediate Next Actions (Suggested)
 
 - Create `packages/zynth-core/README.md` with scope and design summary.
-- Remove runtime selection flag from `@zynth/cli` and `@zynth/rsbuild-plugin`.
+- Remove runtime selection flag from `@zynthjs/cli` and `@zynthjs/rsbuild-plugin`.
 - Define the first benchmark harness in `apps/components`.

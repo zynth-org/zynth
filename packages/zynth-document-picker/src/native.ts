@@ -2,7 +2,7 @@ import {
   callNative as coreCallNative,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 const MODULE_NAME = "DocumentPicker";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
@@ -16,7 +16,7 @@ function getPlatform(): string | null {
 function createMissingModuleError(): Error {
   return new Error(
     `[${MODULE_NAME}] Native module not found. ` +
-      `Ensure @zynth/document-picker is installed, linked, and your native project has been regenerated for this platform.`
+      `Ensure @zynthjs/document-picker is installed, linked, and your native project has been regenerated for this platform.`
   );
 }
 

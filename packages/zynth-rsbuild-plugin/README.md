@@ -1,8 +1,8 @@
 # Rsbuild Plugin
 
-`@zynth/rsbuild-plugin` configures Rsbuild for Zynth applications on iOS, Android, and Web.
+`@zynthjs/rsbuild-plugin` configures Rsbuild for Zynth applications on iOS, Android, and Web.
 
-It provides the default build shape used by Zynth apps, including platform-aware compilation, local asset imports for images and fonts, monorepo package aliasing for `@zynth/*` packages, and the feature hook used by packages that generate build-time modules.
+It provides the default build shape used by Zynth apps, including platform-aware compilation, local asset imports for images and fonts, monorepo package aliasing for `@zynthjs/*` packages, and the feature hook used by packages that generate build-time modules.
 
 For most apps, this package is used through `defineZynthConfig()`. The plugin applies Zynth defaults and still allows standard Rsbuild configuration to be merged in normally.
 
@@ -11,7 +11,7 @@ For most apps, this package is used through `defineZynthConfig()`. The plugin ap
 ### Default app configuration
 
 ```ts
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 
 export default defineZynthConfig();
 ```
@@ -19,7 +19,7 @@ export default defineZynthConfig();
 ### Select a target platform
 
 ```ts
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 
 export default defineZynthConfig(
   {
@@ -41,8 +41,8 @@ The plugin configures image and font imports so application code can consume loc
 
 ```tsx
 import { onMount } from "solid-js";
-import { Image } from "@zynth/components";
-import { Font } from "@zynth/apis";
+import { Image } from "@zynthjs/components";
+import { Font } from "@zynthjs/apis";
 import logo from "./assets/logo.png";
 import brandFont from "./assets/brand.ttf";
 
@@ -63,7 +63,7 @@ export function Screen() {
 
 ```ts
 import path from "node:path";
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 
 export default defineZynthConfig({
   tools: {
@@ -82,11 +82,11 @@ export default defineZynthConfig({
 
 ### Generated-module features
 
-Build-time features can generate source files and expose them through stable module identifiers. This is how packages such as `@zynth/router` integrate filesystem-driven features into the build.
+Build-time features can generate source files and expose them through stable module identifiers. This is how packages such as `@zynthjs/router` integrate filesystem-driven features into the build.
 
 ```ts
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
-import { routerFileSystem } from "@zynth/router/rsbuild";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
+import { routerFileSystem } from "@zynthjs/router/rsbuild";
 
 export default defineZynthConfig(
   {},
@@ -101,7 +101,7 @@ export default defineZynthConfig(
 ### Custom generated module
 
 ```ts
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 
 export default defineZynthConfig(
   {},
@@ -129,11 +129,11 @@ export default defineZynthConfig(
 
 ### Extra aliases
 
-Use `extraAliases` when the app needs to inject additional resolve aliases. Package aliases discovered from the workspace remain the default for `@zynth/*` packages.
+Use `extraAliases` when the app needs to inject additional resolve aliases. Package aliases discovered from the workspace remain the default for `@zynthjs/*` packages.
 
 ```ts
 import path from "node:path";
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 
 export default defineZynthConfig(
   {},
@@ -152,7 +152,7 @@ export default defineZynthConfig(
 The plugin configures Babel for Zynth defaults, including platform-aware Solid output. Additional targets can be supplied when an app needs different browser or native baselines.
 
 ```ts
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { defineZynthConfig } from "@zynthjs/rsbuild-plugin";
 
 export default defineZynthConfig(
   {},
@@ -176,8 +176,8 @@ export default defineZynthConfig(
 - Native builds write asset manifests to `dist/assets/images-manifest.json` and `dist/assets/fonts-manifest.json` so the native toolchain can discover bundled files.
 - Native development also writes `.zynth/artifacts.json` by default. This is used by the development workflow to exchange bundle metadata.
 - Native HMR support is present but still being worked on. It should be treated as development-only and may not behave as consistently as the web development flow.
-- Workspace package aliasing prefers app-local installed packages when available, then falls back to workspace source resolution for `@zynth/*` packages.
-- For web builds, `@zynth/core` resolves to its web entrypoint automatically when one is available.
+- Workspace package aliasing prefers app-local installed packages when available, then falls back to workspace source resolution for `@zynthjs/*` packages.
+- For web builds, `@zynthjs/core` resolves to its web entrypoint automatically when one is available.
 - If `platform` is omitted, the plugin uses `process.env.ZYNTH_PLATFORM` when present and otherwise defaults to `"ios"`.
 
 ## API reference

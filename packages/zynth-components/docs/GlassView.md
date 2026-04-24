@@ -7,7 +7,7 @@
 The component is typically used as a container for high-contrast content that needs to stand out against a complex background.
 
 ```tsx
-import { GlassView, Text, View } from "@zynth/components";
+import { GlassView, Text, View } from "@zynthjs/components";
 
 function GlassPanel() {
   return (

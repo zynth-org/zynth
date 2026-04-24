@@ -36,8 +36,8 @@ async function discoverZynthPackageAliases(
         const raw = await fs.readFile(packageJsonPath, "utf8");
         const pkg = JSON.parse(raw) as { name?: string };
 
-        // Only process @zynth/* packages
-        if (pkg.name?.startsWith("@zynth/")) {
+        // Only process @zynthjs/* packages
+        if (pkg.name?.startsWith("@zynthjs/")) {
           const srcDir = path.join(packageDir, "src");
           const candidates = [
             ...(isWeb ? ["index.web.ts", "index.web.tsx"] : []),

@@ -4,9 +4,9 @@
   "commit": false,
   "fixed": [
     [
-      "@zynth/core",
-      "@zynth/apis",
-      "@zynth/components"
+      "@zynthjs/core",
+      "@zynthjs/apis",
+      "@zynthjs/components"
     ]
   ],
   "linked": [],
@@ -14,7 +14,7 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "@zynth/skills",
-    "@zynth/skyhook"
+    "@zynthjs/skills",
+    "@zynthjs/skyhook"
   ]
 }

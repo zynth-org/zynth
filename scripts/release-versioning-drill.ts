@@ -129,7 +129,7 @@ async function captureVersions(snapshotRoot: string, manifest: ReleaseManifest):
 
 async function writeDrillChangeset(snapshotRoot: string) {
   const content = `---
-"@zynth/core": patch
+"@zynthjs/core": patch
 ---
 
 Temporary release-versioning drill entry for readiness validation.

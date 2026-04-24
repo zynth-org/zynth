@@ -41,7 +41,7 @@ export default defineConfig({
             "babel-preset-solid",
             {
               generate: "universal",
-              moduleName: "@zynth/core/universal",
+              moduleName: "@zynthjs/core/universal",
             },
           ],
           "@babel/preset-typescript",

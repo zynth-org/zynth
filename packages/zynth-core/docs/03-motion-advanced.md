@@ -9,7 +9,7 @@ Interpolation allows you to map a value from one range to another. This is commo
 ### `interpolate(value: number, inputRange: number[], outputRange: number[], config?: InterpolationConfig)`
 
 ```tsx
-import { interpolate, Extrapolation } from "@zynth/core/motion";
+import { interpolate, Extrapolation } from "@zynthjs/core/motion";
 
 const style = createAnimatedStyle(() => {
   const opacity = interpolate(
@@ -28,7 +28,7 @@ const style = createAnimatedStyle(() => {
 Easings control the rate of change of an animation over time.
 
 ```tsx
-import { Easing } from "@zynth/core/motion";
+import { Easing } from "@zynthjs/core/motion";
 
 withTiming(1, {
   easing: Easing.bezier(0.25, 0.1, 0.25, 1),
@@ -52,8 +52,8 @@ Layout transitions automatically animate changes to a view's size or position ca
 The simplest transition, which smoothly moves a component from its old position to its new one.
 
 ```tsx
-import { View } from "@zynth/components";
-import { LinearTransition } from "@zynth/core/motion";
+import { View } from "@zynthjs/components";
+import { LinearTransition } from "@zynthjs/core/motion";
 
 <View layout={LinearTransition} />
 ```
@@ -67,8 +67,8 @@ Zynth primitives support declarative entry and exit animations that run when a c
 ### Basic Usage
 
 ```tsx
-import { FadeIn, FadeOut } from "@zynth/core/motion";
-import { View } from "@zynth/components";
+import { FadeIn, FadeOut } from "@zynthjs/core/motion";
+import { View } from "@zynthjs/components";
 
 const App = () => {
   const [show, setShow] = createSignal(true);
@@ -89,7 +89,7 @@ const App = () => {
 For more complex entry/exit paths, you can use the `Keyframe` builder.
 
 ```tsx
-import { Keyframe } from "@zynth/core/motion";
+import { Keyframe } from "@zynthjs/core/motion";
 
 const customEntering = new Keyframe({
   0: {

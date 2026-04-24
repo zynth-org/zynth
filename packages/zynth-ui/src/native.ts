@@ -3,7 +3,7 @@ import {
   callNativeSync as coreCallNativeSync,
   getGlobalObject,
   getModulesBridge,
-} from "@zynth/core";
+} from "@zynthjs/core";
 
 const MODULE_NAME = "ZynthUI";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
@@ -17,7 +17,7 @@ function getPlatform(): string | null {
 function createMissingModuleError(): Error {
   return new Error(
     `[${MODULE_NAME}] Native module not found. ` +
-      `Ensure @zynth/ui is installed, linked, and your native project has been regenerated for this platform.`,
+      `Ensure @zynthjs/ui is installed, linked, and your native project has been regenerated for this platform.`,
   );
 }
 

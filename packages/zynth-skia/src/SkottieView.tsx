@@ -7,7 +7,7 @@ import {
   splitProps,
 } from "solid-js";
 import type { Component } from "solid-js";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 import { Canvas, Skottie } from "./declarative";
 import { createSkottie } from "./skottie";
 import type { LayoutRectangle, SkiaSkottie, SkiaSkottieSource } from "./types";

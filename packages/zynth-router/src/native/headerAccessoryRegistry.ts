@@ -4,8 +4,8 @@ import {
   getActiveSurface,
   setActiveSurface,
   type HostNode,
-} from "@zynth/core";
-import { platform } from "@zynth/apis";
+} from "@zynthjs/core";
+import { platform } from "@zynthjs/apis";
 import { runWithOwner, type JSX, type Owner } from "solid-js";
 
 export type HeaderAccessoryPosition = "right";

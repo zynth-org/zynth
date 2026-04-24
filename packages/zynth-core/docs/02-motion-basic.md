@@ -13,12 +13,12 @@ The Zynth Motion system provides a suite of tools for creating fluid, high-perfo
 To animate a property, create a **Shared Value** and use it inside a style created with `createAnimatedStyle`.
 
 ```tsx
-import { View } from "@zynth/components";
+import { View } from "@zynthjs/components";
 import { 
   createSharedValue, 
   createAnimatedStyle, 
   withSpring 
-} from "@zynth/core/motion";
+} from "@zynthjs/core/motion";
 
 const App = () => {
   const scale = createSharedValue(1);

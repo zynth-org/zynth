@@ -1,6 +1,6 @@
 # Secure Store
 
-`@zynth/secure-store` provides encrypted key-value storage for sensitive application data on iOS and Android.
+`@zynthjs/secure-store` provides encrypted key-value storage for sensitive application data on iOS and Android.
 
 On iOS, it stores values in the Keychain. On Android, it uses encrypted shared preferences backed by the Android Keystore. The API supports both asynchronous and synchronous access, optional biometric or device authentication, and multiple storage namespaces through service identifiers.
 
@@ -11,7 +11,7 @@ Web is not supported by this package. `SecureStore.isAvailableAsync()` returns `
 ### Store, read, and delete a value
 
 ```ts
-import { SecureStore } from "@zynth/secure-store";
+import { SecureStore } from "@zynthjs/secure-store";
 
 await SecureStore.setItemAsync("session_token", "secret-token");
 
@@ -23,7 +23,7 @@ await SecureStore.deleteItemAsync("session_token");
 ### Synchronous access
 
 ```ts
-import { SecureStore } from "@zynth/secure-store";
+import { SecureStore } from "@zynthjs/secure-store";
 
 SecureStore.setItem("launch_flag", "ready");
 
@@ -39,7 +39,7 @@ SecureStore.deleteItem("launch_flag");
 Use `requireAuthentication` when a value should only be read or written after biometric or device authentication.
 
 ```ts
-import { SecureStore } from "@zynth/secure-store";
+import { SecureStore } from "@zynthjs/secure-store";
 
 await SecureStore.setItemAsync(
   "saved_credentials",
@@ -59,7 +59,7 @@ const credentials = await SecureStore.getItemAsync("saved_credentials", {
 ### Check biometric support
 
 ```ts
-import { SecureStore } from "@zynth/secure-store";
+import { SecureStore } from "@zynthjs/secure-store";
 
 const secureStoreAvailable = await SecureStore.isAvailableAsync();
 const biometricsAvailable = await SecureStore.canUseBiometricAuthentication();
@@ -70,7 +70,7 @@ const biometricsAvailable = await SecureStore.canUseBiometricAuthentication();
 `keychainService` separates stored values into different logical stores.
 
 ```ts
-import { SecureStore } from "@zynth/secure-store";
+import { SecureStore } from "@zynthjs/secure-store";
 
 await SecureStore.setItemAsync("refresh_token", "token-value", {
   keychainService: "com.example.auth",
@@ -90,7 +90,7 @@ import {
   SecureStore,
   WHEN_UNLOCKED,
   AFTER_FIRST_UNLOCK,
-} from "@zynth/secure-store";
+} from "@zynthjs/secure-store";
 
 await SecureStore.setItemAsync("api_secret", "value", {
   keychainAccessible: WHEN_UNLOCKED,
@@ -104,7 +104,7 @@ await SecureStore.setItemAsync("background_token", "value", {
 ### Use the default export
 
 ```ts
-import SecureStore from "@zynth/secure-store";
+import SecureStore from "@zynthjs/secure-store";
 
 const value = await SecureStore.getItemAsync("user_id");
 ```

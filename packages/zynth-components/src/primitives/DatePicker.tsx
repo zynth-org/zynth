@@ -6,8 +6,8 @@ import {
   type ParentComponent,
   type JSX,
 } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import type { HostNode, Style } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
 
 export interface DatePickerProps {
   mode?: "date" | "range" | "year";

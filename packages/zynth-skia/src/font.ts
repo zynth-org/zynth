@@ -1,6 +1,6 @@
 import { createEffect, createSignal, createResource } from "solid-js";
 import type { Accessor, Resource } from "solid-js";
-import { Font } from "@zynth/apis";
+import { Font } from "@zynthjs/apis";
 import type {
   SkiaFont,
   SkiaFontManager,

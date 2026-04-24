@@ -26,7 +26,7 @@ To monitor network state on Android, you must declare the following permissions 
 Access the current connectivity snapshot using `connectivity.current`.
 
 ```ts
-import { connectivity } from "@zynth/apis";
+import { connectivity } from "@zynthjs/apis";
 
 const { isConnected, type } = connectivity.current;
 
@@ -40,7 +40,7 @@ if (!isConnected) {
 React to changes in network quality or type (e.g., switching from WiFi to Cellular).
 
 ```ts
-import { connectivity } from "@zynth/apis";
+import { connectivity } from "@zynthjs/apis";
 
 const unsubscribe = connectivity.subscribe((state) => {
   if (state.type === "cellular" && state.isExpensive) {

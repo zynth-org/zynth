@@ -1,5 +1,5 @@
-import { OS, Platform } from "@zynth/core";
-import type { PlatformSelectSpec } from "@zynth/core";
+import { OS, Platform } from "@zynthjs/core";
+import type { PlatformSelectSpec } from "@zynthjs/core";
 import { platform } from "./platform";
 import { Dimensions, createViewport, viewport } from "./dimensions";
 import { Font, createFontLoader } from "./font";

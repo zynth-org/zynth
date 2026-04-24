@@ -4,11 +4,11 @@
 
 ## Basic Usage
 
-Pass one or more gesture definitions created with factories from `@zynth/core/gesture`.
+Pass one or more gesture definitions created with factories from `@zynthjs/core/gesture`.
 
 ```tsx
-import { GestureDetector } from "@zynth/components";
-import { createPanGesture } from "@zynth/core/gesture";
+import { GestureDetector } from "@zynthjs/components";
+import { createPanGesture } from "@zynthjs/core/gesture";
 
 function Canvas() {
   const pan = createPanGesture({
@@ -28,7 +28,7 @@ function Canvas() {
 For maximum performance (0ms latency), `GestureDetector` can map panning directly to native `SharedSignals` on the UI thread.
 
 ```tsx
-import { createSharedValue } from "@zynth/core/motion";
+import { createSharedValue } from "@zynthjs/core/motion";
 
 const offsetX = createSharedValue(0);
 

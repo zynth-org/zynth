@@ -7,7 +7,7 @@
 The component is designed to be triggered via an imperative reference. This allows for clean separation between the UI logic and the dialog presentation.
 
 ```tsx
-import { Alert, createAlertRef, Button } from "@zynth/components";
+import { Alert, createAlertRef, Button } from "@zynthjs/components";
 
 function DeletionManager() {
   const alertRef = createAlertRef();

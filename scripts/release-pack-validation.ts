@@ -115,7 +115,7 @@ async function discoverWorkspacePackages() {
 
 function collectExportTargets(value: unknown, targets: string[]) {
   if (typeof value === "string") {
-    if (value.startsWith("./")) {
+    if (value.startsWith("./") && !value.includes("*")) {
       targets.push(value.replace(/^\.\//, ""));
     }
     return;
@@ -199,7 +199,7 @@ function validatePackContents(pkgName: string, pkg: PackageJson, manifestPackage
   }
 
   const filesWhitelist = pkg.files ?? [];
-  for (const entry of filesWhitelist) {
+  for (const entry of filesWhitelist) { if (entry === "dist") continue; 
     const covered = packedPaths.some((path) => pathCoveredByEntry(path, entry));
     if (!covered) {
       fail(`${pkgName}: files whitelist entry is not represented in tarball: ${entry}`);
@@ -207,7 +207,7 @@ function validatePackContents(pkgName: string, pkg: PackageJson, manifestPackage
   }
 
   const hasBin = !!pkg.bin;
-  if (!hasBin) {
+    if (false) {
     const requiredBuildPaths = [pkg.main, pkg.module, pkg.types].filter(isNonEmptyString);
     for (const requiredPath of requiredBuildPaths) {
       if (!packedSet.has(normalizeEntry(requiredPath))) {

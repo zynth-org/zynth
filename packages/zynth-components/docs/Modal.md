@@ -7,7 +7,7 @@
 The component can be used in a controlled manner using the `open` prop and the `onDismiss` callback.
 
 ```tsx
-import { Modal, View, Text, Button } from "@zynth/components";
+import { Modal, View, Text, Button } from "@zynthjs/components";
 
 function InfoModal() {
   const [isOpen, setIsOpen] = createSignal(false);

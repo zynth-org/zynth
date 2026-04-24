@@ -1,9 +1,9 @@
 /** @jsxImportSource solid-js */
 // cspell:ignore testid
 import { createMemo, splitProps, JSX, Show } from "solid-js";
-import { registerComponent } from "@zynth/core";
+import { registerComponent } from "@zynthjs/core";
 import { ProgressIndicator } from "./ProgressIndicator";
-import type { Style } from "@zynth/core";
+import type { Style } from "@zynthjs/core";
 
 export type ButtonType = "button" | "submit";
 export type Variant =

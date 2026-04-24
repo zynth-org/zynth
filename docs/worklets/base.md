@@ -14,7 +14,7 @@ including the UI runtime bridge used by primitives like `ScrollView`.
 
 ## Core API
 
-These helpers live in `@zynth/core` and are JS-only.
+These helpers live in `@zynthjs/core` and are JS-only.
 
 ```ts
 import {
@@ -26,7 +26,7 @@ import {
   shareSignalRef,
   isSignalRef,
   getSignalRefId,
-} from "@zynth/core";
+} from "@zynthjs/core";
 ```
 
 ### createSignalRuntime(kind)

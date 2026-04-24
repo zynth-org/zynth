@@ -2,7 +2,7 @@
 
 Hardware-accelerated Bluetooth Low Energy (BLE) functionality for Zynth applications, supporting both Central and Peripheral modes.
 
-The `@zynth/bluetooth` package provides a unified API over **CoreBluetooth** (iOS) and **BluetoothGatt** (Android). It handles the complexities of scanning, connection stability, and GATT service/characteristic interactions.
+The `@zynthjs/bluetooth` package provides a unified API over **CoreBluetooth** (iOS) and **BluetoothGatt** (Android). It handles the complexities of scanning, connection stability, and GATT service/characteristic interactions.
 
 ## Central Mode usage
 
@@ -11,7 +11,7 @@ The `@zynth/bluetooth` package provides a unified API over **CoreBluetooth** (iO
 The `startScanAsync` method initiates a native BLE scan. You must listen for the `device_found` event to receive results.
 
 ```tsx
-import { BluetoothBLE } from "@zynth/bluetooth";
+import { BluetoothBLE } from "@zynthjs/bluetooth";
 
 const discover = async () => {
   // 1. Listen for results

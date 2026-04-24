@@ -118,7 +118,7 @@ export const updateAppHandler = async (c: Context) => {
     if (!packageJson.dependencies) packageJson.dependencies = {};
 
     for (const pkgName of Object.keys(stagedArtifacts)) {
-      const folderName = pkgName.replace("@zynth/", "zynth-");
+      const folderName = pkgName.replace("@zynthjs/", "zynth-");
       packageJson.dependencies[pkgName] = `file:${join(
         dockerArtifactsRoot,
         folderName

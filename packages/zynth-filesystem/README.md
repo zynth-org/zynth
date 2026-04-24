@@ -9,7 +9,7 @@ Basic platform support is provided for iOS and Android. Web runtimes have partia
 ### File interaction
 
 ```tsx
-import { File, Paths } from "@zynth/filesystem";
+import { File, Paths } from "@zynthjs/filesystem";
 
 // Create a file relative to the app documents directory
 const note = new File(Paths.document.uri, "notes.txt");
@@ -27,7 +27,7 @@ if (note.exists) {
 ### Directory enumeration
 
 ```ts
-import { Directory, File, Paths } from "@zynth/filesystem";
+import { Directory, File, Paths } from "@zynthjs/filesystem";
 
 const cacheLogs = new Directory(Paths.cache.uri, "logs");
 if (!cacheLogs.exists) {
@@ -43,7 +43,7 @@ const files = entries.filter((e) => e instanceof File) as File[];
 
 ```tsx
 import { createEffect } from "solid-js";
-import { File, Paths, createFileSignal } from "@zynth/filesystem";
+import { File, Paths, createFileSignal } from "@zynthjs/filesystem";
 
 const configFile = new File(Paths.document.uri, "config.json");
 

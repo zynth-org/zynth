@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/safe-area",
+  "name": "@zynthjs/safe-area",
   "version": "0.0.1-alpha.0",
   "description": "Safe area insets and frame utilities for Zynth framework",
   "type": "module",
@@ -36,13 +36,13 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@zynth/core": ">=0.0.1-alpha.0",
-    "@zynth/components": ">=0.0.1-alpha.0",
+    "@zynthjs/core": ">=0.0.1-alpha.0",
+    "@zynthjs/components": ">=0.0.1-alpha.0",
     "solid-js": ">=1.8.0"
   },
   "devDependencies": {
     "@rsbuild/core": "^1.5.0",
-    "@zynth/rsbuild-plugin": "*",
+    "@zynthjs/rsbuild-plugin": "*",
     "typescript": "^5.6.3"
   },
   "zynthNative": {

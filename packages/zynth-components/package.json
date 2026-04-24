@@ -1,5 +1,5 @@
 {
-  "name": "@zynth/components",
+  "name": "@zynthjs/components",
   "version": "0.0.1-alpha.0",
   "description": "Native Zynth UI primitives and components for building SolidJS-powered iOS, Android, and partial web apps.",
   "type": "module",
@@ -59,15 +59,15 @@
   },
   "peerDependencies": {
     "solid-js": ">=1.8.0",
-    "@zynth/core": "0.0.1-alpha.0",
-    "@zynth/apis": "0.0.1-alpha.0"
+    "@zynthjs/core": "0.0.1-alpha.0",
+    "@zynthjs/apis": "0.0.1-alpha.0"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.24.7",
     "@babel/preset-typescript": "^7.24.7",
     "@rsbuild/core": "^1.0.1",
     "@rsbuild/plugin-babel": "^1.0.1",
-    "@zynth/apis": "0.0.1-alpha.0",
+    "@zynthjs/apis": "0.0.1-alpha.0",
     "babel-preset-solid": "^1.8.0",
     "solid-js": "^1.8.0",
     "typescript": "^5.6.2"
@@ -96,7 +96,7 @@
       "gradleProjects": [
         {
           "name": "ZynthAPIs",
-          "package": "@zynth/apis",
+          "package": "@zynthjs/apis",
           "path": "./android"
         }
       ]

@@ -1,5 +1,5 @@
-import type { HostNode, StyleProp } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
 import {
   createEffect,
   createMemo,
@@ -27,10 +27,10 @@ import type {
   RotationGestureEvent,
   TapGesture,
   TapGestureEvent,
-} from "@zynth/core/gesture";
+} from "@zynthjs/core/gesture";
 import { useAnimatedStyleMapper } from "../hooks/useAnimatedStyleMapper";
 
-export type { GestureDetectorProps } from "@zynth/core/gesture";
+export type { GestureDetectorProps } from "@zynthjs/core/gesture";
 
 const noopRef = () => {};
 
@@ -198,7 +198,7 @@ function invokePhaseCallback<TEvent extends BaseGestureEvent>(
  * A native gesture recognizer container.
  *
  * Accepts one or more gesture definitions (via `createTapGesture`,
- * `createPanGesture`, etc. from `@zynth/core/gesture`) and wires their
+ * `createPanGesture`, etc. from `@zynthjs/core/gesture`) and wires their
  * callbacks to the native gesture recognizer on the UI thread.
  *
  * Supports `createAnimatedStyle` on the `style` prop — a native style mapper
@@ -206,9 +206,9 @@ function invokePhaseCallback<TEvent extends BaseGestureEvent>(
  *
  * @example
  * ```tsx
- * import { GestureDetector } from "@zynth/components";
- * import { createPanGesture } from "@zynth/core/gesture";
- * import { createSharedValue } from "@zynth/core/motion";
+ * import { GestureDetector } from "@zynthjs/components";
+ * import { createPanGesture } from "@zynthjs/core/gesture";
+ * import { createSharedValue } from "@zynthjs/core/motion";
  *
  * const tx = createSharedValue(0);
  * const pan = createPanGesture({ onUpdate: (e) => { tx.value = e.translationX; } });

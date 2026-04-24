@@ -2,7 +2,7 @@
 
 Standard-compliant native implementation of the WebCrypto API for Zynth applications, providing hardware-accelerated cryptographic primitives.
 
-`@zynth/crypto` exposes a subset of the **W3C Web Cryptography API**, leveraging **CryptoKit/CommonCrypto** on iOS and **java.security/javax.crypto** on Android. It is designed for high-performance hashing, encryption, and key derivation.
+`@zynthjs/crypto` exposes a subset of the **W3C Web Cryptography API**, leveraging **CryptoKit/CommonCrypto** on iOS and **java.security/javax.crypto** on Android. It is designed for high-performance hashing, encryption, and key derivation.
 
 ## Basic usage
 
@@ -11,7 +11,7 @@ Standard-compliant native implementation of the WebCrypto API for Zynth applicat
 Zynth provides native sources for cryptographically strong random values and UUIDs.
 
 ```tsx
-import { Crypto } from "@zynth/crypto";
+import { Crypto } from "@zynthjs/crypto";
 
 // 1. Get random bytes (max 65,536 bytes)
 const bytes = new Uint8Array(32);
@@ -97,7 +97,7 @@ const ciphertext = await Crypto.subtle.encrypt(
 
 - **Global Integration**: You can install Zynth Crypto as the global `crypto` object for compatibility with third-party libraries.
   ```ts
-  import { installGlobalCrypto } from "@zynth/crypto";
+  import { installGlobalCrypto } from "@zynthjs/crypto";
   installGlobalCrypto(); // Now global.crypto is available
   ```
 - **Input Limits**: To maintain stability across the JS-native bridge, single-operation inputs are capped at **16 MB**. Requesting `getRandomValues` for more than **64 KB** at once will also result in an error.

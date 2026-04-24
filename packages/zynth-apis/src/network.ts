@@ -1,4 +1,4 @@
-import { callNativeSync, getGlobalObject, sharedNativeEventEmitter } from "@zynth/core";
+import { callNativeSync, getGlobalObject, sharedNativeEventEmitter } from "@zynthjs/core";
 import { createSignal } from "solid-js";
 
 const MODULE_NAME = "ZynthNetworkCore";

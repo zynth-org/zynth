@@ -1,4 +1,4 @@
-import type { HostNode } from "@zynth/core";
+import type { HostNode } from "@zynthjs/core";
 import {
   createNativeSurface,
   disposeNativeSurface,

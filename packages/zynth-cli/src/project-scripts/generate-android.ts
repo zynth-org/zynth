@@ -355,7 +355,7 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     )
     .replace(
       /\{\{\s*ZYNTH_ANDROID_RUNTIME_PACKAGE\s*\}\}/g,
-      extras.androidRuntimePackage ?? "@zynth/core"
+      extras.androidRuntimePackage ?? "@zynthjs/core"
     )
     .replace(
       /\{\{\s*ZYNTH_ANDROID_RUNTIME_SUBDIR\s*\}\}/g,
@@ -784,7 +784,7 @@ function formatAndroidDependencyBlock(modules: any[]): string {
 
 export function generateAndroidProject(appDir: string, options: any = {}): AppConfig {
   const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
-  const androidRuntimePackage = "@zynth/core";
+  const androidRuntimePackage = "@zynthjs/core";
   const androidRuntimeSubdir = "android/ZynthKit";
   const baseConfig = getAppConfig(appDir);
   const androidPackage = normalizeAndroidPackage(
