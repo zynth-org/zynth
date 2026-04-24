@@ -16,6 +16,7 @@ module.exports = {
       choices: ["ios", "android", "web"],
     });
     yargs.option("bootstrap", {
+      alias: "b",
       describe: "Regenerate native project before launching",
       type: "boolean",
       default: false,

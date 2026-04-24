@@ -150,8 +150,9 @@ async function createNewApp(argv) {
     chalk.cyan(`To get started, run:
 
   cd ${appDirectory}
-  yarn zynth dev ios
-  yarn zynth dev web`)
+  yarn install
+  npx zynth dev ios -b
+  npx zynth dev android -b`)
   );
 }
 
