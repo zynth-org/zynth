@@ -35,19 +35,21 @@ export function createAndroidHost(): Host {
   const NODE_TO_CONTEXT = new Map<number, string>(); // track which context owns each node
   const CONTAINER_TO_CONTEXT = new Map<number, string>(); // map container nodeId -> contextId
   let nextContextId = 0;
-  let activeRecyclingContext: string | null = null; // Currently active context for createNode
 
   // FinalizationRegistry for safe destruction
   const registry =
     typeof (globalThis as any).FinalizationRegistry !== "undefined"
       ? new (globalThis as any).FinalizationRegistry((heldId: number) => {
-          // When HostNode is GC'd, we can safely destroy the native node
-          enqueueBatchOp({ type: "dropNode", nodeId: heldId });
+          // When HostNode is GC'd, we can safely destroy the native node and our internal tracking maps
+          destroySubtreeTracking(heldId);
           schedule();
         })
       : null;
 
-  // NEW: Structured Queue System
+  const suppressionKey = "__zynthSuppressNativeMutations";
+  const isSuppressed = () => Boolean((g as any)[suppressionKey]);
+
+  // Structured Queue System
   type BatchOperation =
     | { type: "insertChild"; parentId: number; childId: number; index: number }
     | { type: "removeChild"; parentId: number; childId: number }
@@ -61,6 +63,8 @@ export function createAndroidHost(): Host {
 
   const queue: QueueItem[] = [];
   const pendingRemovals = new Map<number, number>();
+  const rescuedRemovals = new Set<number>();
+  const readyForDestruction = new Map<number, number>();
   const pendingDrops = new Set<number>();
   const exitTransitions = new Map<
     number,
@@ -68,8 +72,6 @@ export function createAndroidHost(): Host {
   >();
   const exitRemovalTimers = new Map<number, ReturnType<typeof setTimeout>>();
   let nextExitAnimationId = 1;
-  const suppressionKey = "__zynthSuppressNativeMutations";
-  const isSuppressed = () => Boolean((g as any)[suppressionKey]);
 
   const cancelPendingExitRemoval = (nodeId: number) => {
     const timer = exitRemovalTimers.get(nodeId);
@@ -96,7 +98,6 @@ export function createAndroidHost(): Host {
     if (isSuppressed()) return;
     queue.push({ type: "batch", op });
   };
-  const RECYCLING_DEBUG = false;
 
   const PROP_TO_ID: Record<string, number> = {
     width: 1,
@@ -387,7 +388,6 @@ export function createAndroidHost(): Host {
     };
   };
 
-  let rafHandle: number | null = null;
   let flushScheduled = false;
 
   type BatchContext = {
@@ -408,87 +408,140 @@ export function createAndroidHost(): Host {
   };
 
   const runFlush = () => {
+    if (batchStack.length > 0) return; // Wait for the outer-most batch to finish
     flushScheduled = false;
+
     try {
-      let hadNativeWork = false;
-      if (queue.length || pendingRemovals.size || pendingDrops.size) {
-        hadNativeWork = true;
-        const pending = queue.splice(0);
-        let batchAccumulator: BatchOperation[] = [];
+      if (!queue.length && !pendingRemovals.size && !readyForDestruction.size && !pendingDrops.size) return;
 
-        const flushBatch = () => {
-          if (!batchAccumulator.length) return;
-          if (typeof (ui as any).applyBatchTyped !== "function") {
-            throw new Error("Typed batch is required for Android host");
-          }
-          (ui as any).applyBatchTyped(
-            encodeTypedBatch(batchAccumulator, { kind: "flush", scope: "global" }),
-          );
-          batchAccumulator = [];
-        };
+      const pending = queue.splice(0);
+      let batchAccumulator: BatchOperation[] = [];
 
-        for (const item of pending) {
-          if (item.type === "batch") {
-            batchAccumulator.push(item.op);
-          } else {
-            flushBatch();
-            item.func();
-          }
+      const flushBatch = () => {
+        if (!batchAccumulator.length) return;
+        if (typeof (ui as any).applyBatchTyped !== "function") {
+          throw new Error("Typed batch is required for Android host");
         }
-        if (pendingRemovals.size) {
-          for (const [childId, parentId] of pendingRemovals) {
+        (ui as any).applyBatchTyped(
+          encodeTypedBatch(batchAccumulator, { kind: "flush", scope: "global" }),
+        );
+        batchAccumulator = [];
+      };
+
+      // PHASE 2: Finally destroy nodes that were DETACHED in the PREVIOUS flush
+      if (readyForDestruction.size) {
+        for (const childId of readyForDestruction.keys()) {
+          destroySubtreeTracking(childId);
+        }
+        readyForDestruction.clear();
+      }
+
+      // PHASE 1: Process current removals and move them to readyForDestruction
+      if (pendingRemovals.size) {
+        for (const [childId, parentId] of pendingRemovals) {
+          const node = nodeFor(childId);
+          const rescued = rescuedRemovals.has(childId);
+          const contextId = NODE_TO_CONTEXT.get(childId);
+          const shouldRecycle =
+            !rescued &&
+            contextId &&
+            RECYCLING_CONTEXTS.has(contextId) &&
+            node.type !== "text";
+          const exitTransition = exitTransitions.get(childId);
+
+          const enqueueNativeRemove = () => {
             batchAccumulator.push({
               type: "removeChild",
               parentId,
               childId,
             });
+          };
+
+          if (shouldRecycle) {
+            returnNodeToPool(contextId!, childId);
+            const childIds = CHILDREN.get(childId);
+            if (childIds) {
+              for (const cid of [...childIds]) {
+                destroySubtreeTracking(cid);
+              }
+              CHILDREN.delete(childId);
+            }
+            enqueueNativeRemove();
+            continue;
           }
-          pendingRemovals.clear();
-        }
-        if (pendingDrops.size) {
-          for (const nodeId of pendingDrops) {
-            batchAccumulator.push({
-              type: "dropNode",
-              nodeId,
+
+          if (!rescued && exitTransition) {
+            void startNativeTransition({
+              nodeId: childId,
+              animationId: nextExitAnimationId++,
+              phase: "exit",
+              from: exitTransition.from,
+              to: exitTransition.to,
+              frames: exitTransition.frames,
+              duration: exitTransition.duration,
+              delay: exitTransition.delay,
+              easing: exitTransition.easing,
             });
+            const timer = setTimeout(() => {
+              exitRemovalTimers.delete(childId);
+              // Final native removal for exit
+              const finalOp: BatchOperation = {
+                type: "removeChild",
+                parentId,
+                childId,
+              };
+              (ui as any).applyBatchTyped(
+                encodeTypedBatch([finalOp], { kind: "flush", scope: "global" }),
+              );
+              destroySubtreeTracking(childId);
+              ui.flush();
+            }, getExitDurationMs(exitTransition) + 17);
+            exitRemovalTimers.set(childId, timer);
+          } else {
+            enqueueNativeRemove();
+            if (!rescued) {
+              // Move to readyForDestruction safety net.
+              // Will be fully destroyed in the NEXT flush if not rescued.
+              readyForDestruction.set(childId, parentId);
+            }
           }
-          pendingDrops.clear();
         }
-        flushBatch();
+        pendingRemovals.clear();
+        rescuedRemovals.clear();
       }
-      if (hadNativeWork) {
-        ui.flush();
+
+      for (const item of pending) {
+        if (item.type === "batch") {
+          batchAccumulator.push(item.op);
+        } else {
+          flushBatch();
+          item.func();
+        }
       }
+
+      if (pendingDrops.size) {
+        for (const nodeId of pendingDrops) {
+          batchAccumulator.push({ type: "dropNode", nodeId });
+        }
+        pendingDrops.clear();
+      }
+
+      flushBatch();
+      ui.flush();
     } catch (e) {
       console.error("Flush error:", JSON.stringify(e));
     }
   };
 
   const schedule = () => {
-    if (flushScheduled) return;
+    if (flushScheduled || batchStack.length > 0) return;
     flushScheduled = true;
 
     if (typeof queueMicrotask === "function") {
       queueMicrotask(runFlush);
       return;
     }
-
-    if (typeof Promise !== "undefined") {
-      Promise.resolve()
-        .then(runFlush)
-        .catch((err) => {
-          flushScheduled = false;
-          console.error("Flush error:", JSON.stringify(err));
-        });
-      return;
-    }
-
-    if (typeof setTimeout !== "undefined") {
-      setTimeout(runFlush, 0);
-    } else {
-      // final fallback: run synchronously
-      runFlush();
-    }
+    setTimeout(runFlush, 0);
   };
 
   const ensure = (id: number) =>
@@ -622,8 +675,7 @@ export function createAndroidHost(): Host {
       onChange: props.onChange,
       onChangeText: props.onChangeText,
       onSelectionChange: props.onSelectionChange,
-      onSubmitEditing: props.onSubmitEditing,
-      onKeyPress: props.onKeyPress,
+      onSubmitEditing: props.onKeyPress,
       onFocus: props.onFocus,
       onBlur: props.onBlur,
       onCompositionStart: props.onCompositionStart,
@@ -637,28 +689,13 @@ export function createAndroidHost(): Host {
     }
   };
 
-  // helper to compute physical index (exclude markers)
-  const physicalIndex = (parentId: number, logicalInsertIdx: number) => {
-    const kids = ensure(parentId);
-    let count = 0;
-    for (let i = 0; i < logicalInsertIdx; i++) {
-      const k = kids[i];
-      // find child type; markers are negative ids (from renderer.ts) => skip native
-      const isMarker = k < 0; // relies on marker ids < 0
-      if (!isMarker) count++;
-    }
-    return count;
-  };
-
   const isMarkerId = (id: number) => id < 0;
   const typeFor = (id: number): HostNode["type"] =>
     TYPES.get(id) ?? (isMarkerId(id) ? "marker" : "view");
 
   const nodeFor = (id: number): HostNode => ({ id, type: typeFor(id) });
 
-  // Recycling helper functions
   const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
-    // Reset common props to default state
     enqueueBatchOp({
       type: "setProp",
       nodeId,
@@ -676,42 +713,26 @@ export function createAndroidHost(): Host {
     type: HostNode["type"],
   ): number | null => {
     const context = RECYCLING_CONTEXTS.get(contextId);
-    if (!context) {
-      console.log(
-        `[Host/findAvailableNodeInPool] ❌ Context ${contextId} not found`,
-      );
-      return null;
-    }
-
+    if (!context) return null;
     const pool = context.pool.get(type);
-    if (!pool || pool.length === 0) {
-      return null;
-    }
-
-    const nodeId = pool.pop() ?? null;
-    return nodeId;
+    if (!pool || pool.length === 0) return null;
+    return pool.pop() ?? null;
   };
 
   const returnNodeToPool = (contextId: string, nodeId: number) => {
     const context = RECYCLING_CONTEXTS.get(contextId);
     if (!context) return;
-
     const nodeType = TYPES.get(nodeId);
     if (!nodeType) return;
-
-    // Add to pool with a strict size limit to prevent memory creep
     let pool = context.pool.get(nodeType);
     if (!pool) {
       pool = [];
       context.pool.set(nodeType, pool);
     }
-    
     if (pool.length < 512) {
-      // Reset node to clean state before pooling
       resetNodeToDefault(nodeId, nodeType);
       pool.push(nodeId);
     } else {
-      // Pool full, just drop the node to reclaim memory
       recordPendingDrop(nodeId);
       TEXTS.delete(nodeId);
       TYPES.delete(nodeId);
@@ -719,8 +740,6 @@ export function createAndroidHost(): Host {
       CHILDREN.delete(nodeId);
       PARENTS.delete(nodeId);
     }
-
-    // Remove from active bindings
     context.activeBindings.delete(nodeId);
   };
 
@@ -735,9 +754,8 @@ export function createAndroidHost(): Host {
       let id: number | null = null;
       let recycled = false;
       const inBatch = !!currentBatch();
-
       if (type !== "text" && RECYCLING_CONTEXTS.size > 0) {
-        for (const [contextId, context] of RECYCLING_CONTEXTS) {
+        for (const [contextId] of RECYCLING_CONTEXTS) {
           const pooled = findAvailableNodeInPool(contextId, type);
           if (pooled !== null) {
             id = pooled;
@@ -747,38 +765,23 @@ export function createAndroidHost(): Host {
           }
         }
       }
-
       if (id === null) {
         id = ui.createNode(type);
       }
-
       const node = { id, type } as HostNode;
-      if (registry && !recycled) {
-        registry.register(node, id);
-      }
-
+      if (registry && !recycled) registry.register(node, id);
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
       if (props?.__zynthExiting && typeof props.__zynthExiting === "object") {
         exitTransitions.set(
           id,
-          props.__zynthExiting as Omit<
-            NativeTransitionConfig,
-            "nodeId" | "animationId" | "phase"
-          >,
+          props.__zynthExiting as Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">,
         );
       }
       if (props?.style) {
-        const op: BatchOperation = {
-          type: "setProp",
-          nodeId: id,
-          name: "style",
-          value: props.style as Style,
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        const op: BatchOperation = { type: "setProp", nodeId: id, name: "style", value: props.style as Style };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (typeof props?.onPress === "function") {
         enqueueOperation(() => ui.setHandler(id!, "onPress", props.onPress));
@@ -787,144 +790,64 @@ export function createAndroidHost(): Host {
         enqueueOperation(() => ui.setHandler(id!, "onLayout", props.onLayout));
       }
       if (props?.accessibilityLabel) {
-        const op: BatchOperation = {
-          type: "setProp",
-          nodeId: id,
-          name: "accessibilityLabel",
-          value: props.accessibilityLabel,
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        const op: BatchOperation = { type: "setProp", nodeId: id, name: "accessibilityLabel", value: props.accessibilityLabel };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (props?.accessibilityHint) {
-        const op: BatchOperation = {
-          type: "setProp",
-          nodeId: id,
-          name: "accessibilityHint",
-          value: props.accessibilityHint,
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        const op: BatchOperation = { type: "setProp", nodeId: id, name: "accessibilityHint", value: props.accessibilityHint };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (props?.accessibilityRole) {
-        const op: BatchOperation = {
-          type: "setProp",
-          nodeId: id,
-          name: "accessibilityRole",
-          value: props.accessibilityRole,
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        const op: BatchOperation = { type: "setProp", nodeId: id, name: "accessibilityRole", value: props.accessibilityRole };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (props?.pointerEvents) {
-        const op: BatchOperation = {
-          type: "setProp",
-          nodeId: id,
-          name: "pointerEvents",
-          value: props.pointerEvents,
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        const op: BatchOperation = { type: "setProp", nodeId: id, name: "pointerEvents", value: props.pointerEvents };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (props?.testID) {
-        const op: BatchOperation = {
-          type: "setProp",
-          nodeId: id,
-          name: "testID",
-          value: props.testID,
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        const op: BatchOperation = { type: "setProp", nodeId: id, name: "testID", value: props.testID };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (type === "text-input" || type === "secure-text-input") {
         applyTextInputInitialProps(id, props);
       }
-      if (!inBatch) {
-        schedule();
-      }
+      if (!inBatch) schedule();
       return { id, type } as HostNode;
     },
     createText(value) {
       const id: number = ui.createNode("text");
-      const setTextOp: BatchOperation = {
-        type: "setText",
-        nodeId: id,
-        value: value ?? "",
-      };
-      if (!tryEnqueueBatch(setTextOp)) {
-        enqueueBatchOp(setTextOp);
-      }
+      const setTextOp: BatchOperation = { type: "setText", nodeId: id, value: value ?? "" };
+      if (!tryEnqueueBatch(setTextOp)) enqueueBatchOp(setTextOp);
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
       TYPES.set(id, "text");
-      if (!currentBatch()) {
-        schedule();
-      }
+      if (!currentBatch()) schedule();
       return { id, type: "text" };
     },
     setProperty(node, name, value) {
-      if (value === undefined && name !== "style") {
-        return;
-      }
+      if (value === undefined && name !== "style") return;
       if (name === "__zynthExiting") {
         if (value && typeof value === "object") {
-          exitTransitions.set(
-            node.id,
-            value as Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">,
-          );
+          exitTransitions.set(node.id, value as Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">);
         } else {
           exitTransitions.delete(node.id);
         }
         return;
       }
       if (name === "style") {
-        if (
-          tryEnqueueBatch({
-            type: "setProp",
-            nodeId: node.id,
-            name: "style",
-            value: value || {},
-          })
-        ) {
-          return;
-        }
-        enqueueBatchOp({
-          type: "setProp",
-          nodeId: node.id,
-          name: "style",
-          value: value || {},
-        });
+        const op: BatchOperation = { type: "setProp", nodeId: node.id, name: "style", value: value || {} };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
         schedule();
         return;
       }
-      if (name === "controller") {
-        return;
-      }
+      if (name === "controller") return;
       if (name === "handler") {
         if (typeof value === "function" && (value as any).__zynth_worklet_id !== undefined) {
           const workletId = (value as any).__zynth_worklet_id;
-          if (
-            tryEnqueueBatch({
-              type: "setProp",
-              nodeId: node.id,
-              name: "handler",
-              value: workletId,
-            })
-          ) {
-            return;
-          }
-          enqueueBatchOp({
-            type: "setProp",
-            nodeId: node.id,
-            name: "handler",
-            value: workletId,
-          });
+          const op: BatchOperation = { type: "setProp", nodeId: node.id, name: "handler", value: workletId };
+          if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
           schedule();
           return;
         }
@@ -934,10 +857,8 @@ export function createAndroidHost(): Host {
           return;
         }
         if (value == null) {
-          if (tryEnqueueBatch({ type: "setProp", nodeId: node.id, name: "handler", value: 0 })) {
-            return;
-          }
-          enqueueBatchOp({ type: "setProp", nodeId: node.id, name: "handler", value: 0 });
+          const op: BatchOperation = { type: "setProp", nodeId: node.id, name: "handler", value: 0 };
+          if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
           schedule();
         }
         return;
@@ -947,52 +868,32 @@ export function createAndroidHost(): Host {
         schedule();
         return;
       }
-      if (tryEnqueueBatch({ type: "setProp", nodeId: node.id, name, value })) {
-        return;
-      }
-      enqueueBatchOp({ type: "setProp", nodeId: node.id, name, value });
+      const op: BatchOperation = { type: "setProp", nodeId: node.id, name, value };
+      if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       schedule();
     },
     setText(node, value) {
       TEXTS.set(node.id, value ?? "");
-      if (
-        tryEnqueueBatch({
-          type: "setText",
-          nodeId: node.id,
-          value: value ?? "",
-        })
-      ) {
-        return;
-      }
-      enqueueBatchOp({ type: "setText", nodeId: node.id, value: value ?? "" });
+      const op: BatchOperation = { type: "setText", nodeId: node.id, value: value ?? "" };
+      if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       schedule();
     },
     insertNode(parent, node, anchor) {
       if (anchor && anchor.id === node.id) return;
       cancelPendingExitRemoval(node.id);
-      if (pendingRemovals.has(node.id)) {
-        pendingRemovals.delete(node.id);
-      }
-      if (pendingDrops.has(node.id)) {
-        pendingDrops.delete(node.id);
-      }
-      const prevParentId = PARENTS.get(node.id);
-      if (prevParentId != null) {
-        const prevKids = ensure(prevParentId);
-        const prevIndex = prevKids.indexOf(node.id);
-        if (prevIndex >= 0) {
-          prevKids.splice(prevIndex, 1);
-          if (prevKids.length === 0) {
-            CHILDREN.delete(prevParentId);
-          }
-        }
-      }
+      if (pendingDrops.has(node.id)) pendingDrops.delete(node.id);
+      if (pendingRemovals.has(node.id)) rescuedRemovals.add(node.id);
+      if (readyForDestruction.has(node.id)) readyForDestruction.delete(node.id);
 
       const kids = ensure(parent.id);
-      const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
-      const logicalAt = aIdx >= 0 ? aIdx : kids.length;
+      const existingIdx = kids.indexOf(node.id);
+      if (existingIdx >= 0) {
+        kids.splice(existingIdx, 1);
+      }
 
-      // Fix: If this is a replacement in a Text parent, drop the old node at this position
+      const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
+      const logicalAt = aIdx >= 0 ? Math.min(aIdx, kids.length) : kids.length;
+
       if (parent.type === "text" && logicalAt < kids.length) {
         const oldId = kids[logicalAt];
         if (oldId !== node.id && !isMarkerId(oldId)) {
@@ -1004,17 +905,9 @@ export function createAndroidHost(): Host {
         }
       }
 
-      // physical index counts only non-markers STRICTLY BEFORE logicalAt
       let physIdx = 0;
       for (let i = 0; i < logicalAt; i++) if (!isMarkerId(kids[i])) physIdx++;
 
-      // Check if this is a recycled node being reinserted
-      const wasRecycled = NODE_TO_CONTEXT.has(node.id);
-
-      // NOTE: Implicit recycling detection was removed to prevent accidental leaks in standard For loops.
-      // Recycling is now strictly opt-in via registerRecyclingContext.
-
-      // mutate logical structure AFTER computing physIdx
       kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
       TYPES.set(node.id, node.type);
@@ -1026,92 +919,22 @@ export function createAndroidHost(): Host {
           childId: node.id,
           index: physIdx,
         };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       schedule();
     },
     removeNode(parent, node) {
       const kids = ensure(parent.id);
       let i = kids.indexOf(node.id);
-
       if (i < 0) {
-        // Fallback: if not in expected parent, find where it actually is.
-        // This prevents leaks when host tracking and renderer state diverge.
-        const actualParentId = PARENTS.get(node.id);
-        if (actualParentId != null) {
-          const actualKids = CHILDREN.get(actualParentId);
-          if (actualKids) {
-            const actualIdx = actualKids.indexOf(node.id);
-            if (actualIdx >= 0) {
-              actualKids.splice(actualIdx, 1);
-              if (actualKids.length === 0) CHILDREN.delete(actualParentId);
-            }
-          }
-        }
-      } else {
-        kids.splice(i, 1);
-        if (kids.length === 0) {
-          CHILDREN.delete(parent.id);
-        }
-      }
-
-      // Check if this node came from a recycling pool
-      const contextId = NODE_TO_CONTEXT.get(node.id);
-      const shouldRecycle =
-        contextId && RECYCLING_CONTEXTS.has(contextId) && node.type !== "text";
-      const exitTransition = exitTransitions.get(node.id);
-
-      const enqueueRemoveOp = () => {
-        recordPendingRemoval(parent.id, node.id);
-      };
-
-      if (shouldRecycle) {
-        // Return to pool instead of destroying native view
-        returnNodeToPool(contextId!, node.id);
-        
-        // IMPORTANT: We must still recursively destroy and drop all children 
-        // of this node, otherwise they leak in host maps and native state.
-        const childIds = CHILDREN.get(node.id);
-        if (childIds) {
-          for (const childId of [...childIds]) {
-            destroySubtreeTracking(childId);
-          }
-          CHILDREN.delete(node.id);
-        }
-
-        PARENTS.set(node.id, null);
-        if (!isMarkerId(node.id)) {
-          enqueueRemoveOp();
-        }
-        schedule();
         return;
       }
-
+      kids.splice(i, 1);
+      if (kids.length === 0) CHILDREN.delete(parent.id);
       PARENTS.set(node.id, null);
-      if (!isMarkerId(node.id) && exitTransition) {
-        void startNativeTransition({
-          nodeId: node.id,
-          animationId: nextExitAnimationId++,
-          phase: "exit",
-          from: exitTransition.from,
-          to: exitTransition.to,
-          frames: exitTransition.frames,
-          duration: exitTransition.duration,
-          delay: exitTransition.delay,
-          easing: exitTransition.easing,
-        });
-        const timer = setTimeout(() => {
-          exitRemovalTimers.delete(node.id);
-          enqueueRemoveOp();
-          destroySubtreeTracking(node.id);
-          schedule();
-        }, getExitDurationMs(exitTransition) + 17);
-        exitRemovalTimers.set(node.id, timer);
-      } else if (!isMarkerId(node.id)) {
-        enqueueRemoveOp();
-        destroySubtreeTracking(node.id);
+      if (!isMarkerId(node.id)) {
+        rescuedRemovals.delete(node.id);
+        recordPendingRemoval(parent.id, node.id);
       } else {
         destroySubtreeTracking(node.id);
       }
@@ -1166,79 +989,30 @@ export function createAndroidHost(): Host {
         };
       }
       if (batchStack.length) {
-        batchStack[batchStack.length - 1].operations.push(
-          ...context.operations,
-        );
+        batchStack[batchStack.length - 1].operations.push(...context.operations);
         return;
       }
-      if (!context.operations.length) return;
-
-      if (isSuppressed()) return;
-
-      if (typeof (ui as any).applyBatchTyped === "function") {
-        (ui as any).applyBatchTyped(
-          encodeTypedBatch(context.operations, context.meta),
-        );
-        if (queue.length || pendingRemovals.size || pendingDrops.size) {
-          schedule();
-        }
-        return;
+      for (const op of context.operations) {
+        queue.push({ type: "batch", op });
       }
-
-      throw new Error("Typed batch is required for Android host");
+      runFlush();
     },
-
     enableRecycling(containerId: number, config: RecyclingConfig): string {
       const contextId = `recycling-${containerId}-${nextContextId++}`;
-      RECYCLING_CONTEXTS.set(contextId, {
-        id: contextId,
-        config,
-        pool: new Map(),
-        activeBindings: new Map(),
-      });
+      RECYCLING_CONTEXTS.set(contextId, { id: contextId, config, pool: new Map(), activeBindings: new Map() });
       CONTAINER_TO_CONTEXT.set(containerId, contextId);
-
-      // Retroactively mark existing direct children for recycling
       const containerChildren = CHILDREN.get(containerId) || [];
-
-      if (RECYCLING_DEBUG) {
-        console.log(
-          `[Host/Recycling] 🔍 Container ${containerId} has ${containerChildren.length} children:`,
-          containerChildren.map((id) => `${id}(${TYPES.get(id)})`).join(", "),
-        );
-      }
-
-      let markedCount = 0;
       for (const childId of containerChildren) {
-        if (isMarkerId(childId)) {
-          if (RECYCLING_DEBUG) {
-            console.log(`[Host/Recycling] ⏭️  Skipping marker ${childId}`);
-          }
-          continue;
-        }
-
+        if (isMarkerId(childId)) continue;
         const childType = TYPES.get(childId);
-
-        // Only mark View nodes (containers), not Text or other types
-        if (childType === config.itemType) {
-          NODE_TO_CONTEXT.set(childId, contextId);
-          markedCount++;
-        }
+        if (childType === config.itemType) NODE_TO_CONTEXT.set(childId, contextId);
       }
-
       return contextId;
     },
-
     disableRecycling(contextId: string) {
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) return;
-
-      // Return all active nodes to pool before cleanup
-      for (const [nodeId] of context.activeBindings) {
-        returnNodeToPool(contextId, nodeId);
-      }
-
-      // Clean up pool nodes (actually destroy them)
+      for (const [nodeId] of context.activeBindings) returnNodeToPool(contextId, nodeId);
       for (const [, nodeIds] of context.pool) {
         for (const nodeId of nodeIds) {
           const parent = PARENTS.get(nodeId);
@@ -1249,98 +1023,47 @@ export function createAndroidHost(): Host {
           NODE_TO_CONTEXT.delete(nodeId);
         }
       }
-
       RECYCLING_CONTEXTS.delete(contextId);
     },
-
     reclaimNode(contextId: string, node: HostNode) {
-      if (!RECYCLING_CONTEXTS.has(contextId)) {
-        return;
-      }
+      if (!RECYCLING_CONTEXTS.has(contextId)) return;
       returnNodeToPool(contextId, node.id);
     },
-
-    acquireNode(
-      contextId: string,
-      type: HostNode["type"],
-      itemKey: string,
-      itemIndex: number,
-    ): HostNode | null {
+    acquireNode(contextId: string, type: HostNode["type"], itemKey: string, itemIndex: number): HostNode | null {
       const context = RECYCLING_CONTEXTS.get(contextId);
-      if (!context) {
-        return null;
-      }
-
-      // Try to get from pool first
+      if (!context) return null;
       let nodeId = findAvailableNodeInPool(contextId, type);
-
       if (nodeId !== null) {
-        // Reusing existing node
         context.activeBindings.set(nodeId, { itemKey, itemIndex });
         return nodeFor(nodeId);
       }
-
-      // Pool exhausted - create new node if within pool size limit
       const currentActiveCount = context.activeBindings.size;
-      if (currentActiveCount >= context.config.poolSize) {
-        return null;
-      }
-
-      if (type === "root") {
-        console.error("[Host/Recycling] Cannot create root node in pool");
-        return null;
-      }
+      if (currentActiveCount >= context.config.poolSize) return null;
+      if (type === "root") return null;
       const newNode = api.createNode(type, {});
       NODE_TO_CONTEXT.set(newNode.id, contextId);
       context.activeBindings.set(newNode.id, { itemKey, itemIndex });
-
       return newNode;
     },
-
-    updateNodeBinding(
-      node: HostNode,
-      itemKey: string,
-      itemIndex: number,
-      props: Record<string, any>,
-    ) {
+    updateNodeBinding(node: HostNode, itemKey: string, itemIndex: number, props: Record<string, any>) {
       const contextId = NODE_TO_CONTEXT.get(node.id);
-      if (!contextId) {
-        return;
-      }
-
+      if (!contextId) return;
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) return;
-
-      // Update binding metadata
       context.activeBindings.set(node.id, { itemKey, itemIndex });
-
-      // Apply props efficiently using batch if available
       if (props.style !== undefined) {
-        enqueueBatchOp({
-          type: "setProp",
-          nodeId: node.id,
-          name: "style",
-          value: props.style || {},
-        });
+        enqueueBatchOp({ type: "setProp", nodeId: node.id, name: "style", value: props.style || {} });
       }
-
       for (const [key, value] of Object.entries(props)) {
-        if (key === "style") continue; // Already handled
+        if (key === "style") continue;
         if (typeof value === "function") {
           enqueueOperation(() => ui.setHandler(node.id, key, value));
         } else if (value !== undefined) {
-          enqueueBatchOp({
-            type: "setProp",
-            nodeId: node.id,
-            name: key,
-            value,
-          });
+          enqueueBatchOp({ type: "setProp", nodeId: node.id, name: key, value });
         }
       }
-
       schedule();
     },
   };
-
   return api;
 }

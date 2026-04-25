@@ -15,8 +15,6 @@ import {
 } from "../animation/native";
 
 export function createIOSHost(): Host {
-  ensureNativeEmitter();
-
   const g: any =
     typeof globalThis !== "undefined"
       ? globalThis
@@ -33,18 +31,18 @@ export function createIOSHost(): Host {
   const TEXTS = new Map<number, string>();
   const TYPES = new Map<number, HostNode["type"]>();
 
-  // Recycling system mirrors Android host to support FlatList parity.
+  // Recycling system
   const RECYCLING_CONTEXTS = new Map<string, RecyclingContext>();
-  const NODE_TO_CONTEXT = new Map<number, string>();
-  const CONTAINER_TO_CONTEXT = new Map<number, string>();
+  const NODE_TO_CONTEXT = new Map<number, string>(); // track which context owns each node
+  const CONTAINER_TO_CONTEXT = new Map<number, string>(); // map container nodeId -> contextId
   let nextContextId = 0;
 
   // FinalizationRegistry for safe destruction
   const registry =
     typeof (globalThis as any).FinalizationRegistry !== "undefined"
       ? new (globalThis as any).FinalizationRegistry((heldId: number) => {
-          // When HostNode is GC'd, we can safely destroy the native node
-          enqueueBatchOp({ type: "dropNode", nodeId: heldId });
+          // When HostNode is GC'd, we can safely destroy the native node and our maps
+          destroySubtreeTracking(heldId);
           schedule();
         })
       : null;
@@ -52,7 +50,7 @@ export function createIOSHost(): Host {
   const suppressionKey = "__zynthSuppressNativeMutations";
   const isSuppressed = () => Boolean((g as any)[suppressionKey]);
 
-  // NEW: Structured Queue System
+  // Structured Queue System
   type BatchOperation =
     | { type: "insertChild"; parentId: number; childId: number; index: number }
     | { type: "removeChild"; parentId: number; childId: number }
@@ -66,6 +64,8 @@ export function createIOSHost(): Host {
 
   const queue: QueueItem[] = [];
   const pendingRemovals = new Map<number, number>();
+  const rescuedRemovals = new Set<number>();
+  const readyForDestruction = new Map<number, number>();
   const pendingDrops = new Set<number>();
   const exitTransitions = new Map<
     number,
@@ -288,85 +288,135 @@ export function createIOSHost(): Host {
   };
 
   const runFlush = () => {
+    if (batchStack.length > 0) return; // Wait for the outer-most batch to finish
     flushScheduled = false;
+
     try {
-      let hadNativeWork = false;
-      if (queue.length || pendingRemovals.size || pendingDrops.size) {
-        hadNativeWork = true;
-        const pending = queue.splice(0);
-        let batchAccumulator: BatchOperation[] = [];
+      if (!queue.length && !pendingRemovals.size && !readyForDestruction.size && !pendingDrops.size) return;
 
-        const flushBatch = () => {
-          if (!batchAccumulator.length) return;
-          if (typeof (ui as any).applyBatchTyped !== "function") {
-            throw new Error("Typed batch is required for iOS host");
-          }
-          (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator));
-          batchAccumulator = [];
-        };
+      const pending = queue.splice(0);
+      let batchAccumulator: BatchOperation[] = [];
 
-        for (const item of pending) {
-          if (item.type === "batch") {
-            batchAccumulator.push(item.op);
-          } else {
-            // Flush pending batch ops before executing the closure to maintain order
-            flushBatch();
-            item.func();
-          }
+      const flushBatch = () => {
+        if (!batchAccumulator.length) return;
+        if (typeof (ui as any).applyBatchTyped !== "function") {
+          throw new Error("Typed batch is required for iOS host");
         }
-        if (pendingRemovals.size) {
-          for (const [childId, parentId] of pendingRemovals) {
+        (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator));
+        batchAccumulator = [];
+      };
+
+      // PHASE 2: Finally destroy nodes that were DETACHED in the PREVIOUS flush
+      if (readyForDestruction.size) {
+        for (const childId of readyForDestruction.keys()) {
+          destroySubtreeTracking(childId);
+        }
+        readyForDestruction.clear();
+      }
+
+      // PHASE 1: Process current removals and move them to readyForDestruction
+      if (pendingRemovals.size) {
+        for (const [childId, parentId] of pendingRemovals) {
+          const node = nodeFor(childId);
+          const rescued = rescuedRemovals.has(childId);
+          const contextId = NODE_TO_CONTEXT.get(childId);
+          const shouldRecycle =
+            !rescued &&
+            contextId &&
+            RECYCLING_CONTEXTS.has(contextId) &&
+            node.type !== "text";
+          const exitTransition = exitTransitions.get(childId);
+
+          const enqueueNativeRemove = () => {
             batchAccumulator.push({
               type: "removeChild",
               parentId,
               childId,
             });
+          };
+
+          if (shouldRecycle) {
+            returnNodeToPool(contextId!, childId);
+            const childIds = CHILDREN.get(childId);
+            if (childIds) {
+              for (const cid of [...childIds]) {
+                destroySubtreeTracking(cid);
+              }
+              CHILDREN.delete(childId);
+            }
+            enqueueNativeRemove();
+            continue;
           }
-          pendingRemovals.clear();
-        }
-        if (pendingDrops.size) {
-          for (const nodeId of pendingDrops) {
-            batchAccumulator.push({
-              type: "dropNode",
-              nodeId,
+
+          if (!rescued && exitTransition) {
+            void startNativeTransition({
+              nodeId: childId,
+              animationId: nextExitAnimationId++,
+              phase: "exit",
+              from: exitTransition.from,
+              to: exitTransition.to,
+              frames: exitTransition.frames,
+              duration: exitTransition.duration,
+              delay: exitTransition.delay,
+              easing: exitTransition.easing,
             });
+            const timer = setTimeout(() => {
+              exitRemovalTimers.delete(childId);
+              const finalOp: BatchOperation = {
+                type: "removeChild",
+                parentId,
+                childId,
+              };
+              (ui as any).applyBatchTyped(encodeTypedBatch([finalOp]));
+              destroySubtreeTracking(childId);
+              ui.flush();
+            }, getExitDurationMs(exitTransition) + 17);
+            exitRemovalTimers.set(childId, timer);
+          } else {
+            enqueueNativeRemove();
+            if (!rescued) {
+              // Move to readyForDestruction safety net.
+              // Will be fully destroyed in the NEXT flush if not rescued.
+              readyForDestruction.set(childId, parentId);
+            }
           }
-          pendingDrops.clear();
         }
-        flushBatch();
+        pendingRemovals.clear();
+        rescuedRemovals.clear();
       }
-      if (hadNativeWork) {
-        ui.flush();
+
+      for (const item of pending) {
+        if (item.type === "batch") {
+          batchAccumulator.push(item.op);
+        } else {
+          flushBatch();
+          item.func();
+        }
       }
+
+      if (pendingDrops.size) {
+        for (const nodeId of pendingDrops) {
+          batchAccumulator.push({ type: "dropNode", nodeId });
+        }
+        pendingDrops.clear();
+      }
+
+      flushBatch();
+      ui.flush();
     } catch (e) {
       console.error("Flush error:", JSON.stringify(e));
     }
   };
 
   const schedule = () => {
-    if (flushScheduled) return;
+    if (flushScheduled || batchStack.length > 0) return;
     flushScheduled = true;
 
     if (typeof queueMicrotask === "function") {
       queueMicrotask(runFlush);
       return;
     }
-
-    if (typeof Promise !== "undefined") {
-      Promise.resolve()
-        .then(runFlush)
-        .catch((err) => {
-          flushScheduled = false;
-          console.error("Flush error:", JSON.stringify(err));
-        });
-      return;
-    }
-
-    if (typeof setTimeout !== "undefined") {
-      setTimeout(runFlush, 0);
-    } else {
-      runFlush();
-    }
+    setTimeout(runFlush, 0);
   };
 
   const ensure = (id: number) =>
@@ -814,27 +864,18 @@ export function createIOSHost(): Host {
     insertNode(parent, node, anchor) {
       if (anchor && anchor.id === node.id) return;
       cancelPendingExitRemoval(node.id);
-      if (pendingRemovals.has(node.id)) {
-        pendingRemovals.delete(node.id);
-      }
-      if (pendingDrops.has(node.id)) {
-        pendingDrops.delete(node.id);
-      }
-      const prevParentId = PARENTS.get(node.id);
-      if (prevParentId != null) {
-        const prevKids = ensure(prevParentId);
-        const prevIndex = prevKids.indexOf(node.id);
-        if (prevIndex >= 0) {
-          prevKids.splice(prevIndex, 1);
-          if (prevKids.length === 0) {
-            CHILDREN.delete(prevParentId);
-          }
-        }
-      }
+      if (pendingDrops.has(node.id)) pendingDrops.delete(node.id);
+      if (pendingRemovals.has(node.id)) rescuedRemovals.add(node.id);
+      if (readyForDestruction.has(node.id)) readyForDestruction.delete(node.id);
 
       const kids = ensure(parent.id);
+      const existingIdx = kids.indexOf(node.id);
+      if (existingIdx >= 0) {
+        kids.splice(existingIdx, 1);
+      }
+
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
-      const logicalAt = aIdx >= 0 ? aIdx : kids.length;
+      const logicalAt = aIdx >= 0 ? Math.min(aIdx, kids.length) : kids.length;
 
       if (parent.type === "text" && logicalAt < kids.length) {
         const oldId = kids[logicalAt];
@@ -847,14 +888,9 @@ export function createIOSHost(): Host {
         }
       }
 
-      // physical index counts only non-markers STRICTLY BEFORE logicalAt
       let physIdx = 0;
       for (let i = 0; i < logicalAt; i++) if (!isMarkerId(kids[i])) physIdx++;
 
-      // Implicit recycling detection was removed to avoid retaining nodes
-      // in non-recycling list churn scenarios.
-
-      // mutate logical structure AFTER computing physIdx
       kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
       TYPES.set(node.id, node.type);
@@ -866,88 +902,22 @@ export function createIOSHost(): Host {
           childId: node.id,
           index: physIdx,
         };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       schedule();
     },
     removeNode(parent, node) {
       const kids = ensure(parent.id);
       let i = kids.indexOf(node.id);
-
       if (i < 0) {
-        const actualParentId = PARENTS.get(node.id);
-        if (actualParentId != null) {
-          const actualKids = CHILDREN.get(actualParentId);
-          if (actualKids) {
-            const actualIdx = actualKids.indexOf(node.id);
-            if (actualIdx >= 0) {
-              actualKids.splice(actualIdx, 1);
-              if (actualKids.length === 0) {
-                CHILDREN.delete(actualParentId);
-              }
-            }
-          }
-        }
-      } else {
-        kids.splice(i, 1);
-        if (kids.length === 0) {
-          CHILDREN.delete(parent.id);
-        }
-      }
-
-      const contextId = NODE_TO_CONTEXT.get(node.id);
-      const shouldRecycle =
-        contextId && RECYCLING_CONTEXTS.has(contextId) && node.type !== "text";
-      const exitTransition = exitTransitions.get(node.id);
-
-      const enqueueRemoveOp = () => {
-        recordPendingRemoval(parent.id, node.id);
-      };
-
-      if (shouldRecycle) {
-        returnNodeToPool(contextId!, node.id);
-
-        const childIds = CHILDREN.get(node.id);
-        if (childIds) {
-          for (const childId of [...childIds]) {
-            destroySubtreeTracking(childId);
-          }
-          CHILDREN.delete(node.id);
-        }
-
-        PARENTS.set(node.id, null);
-        if (!isMarkerId(node.id)) {
-          enqueueRemoveOp();
-        }
-        schedule();
         return;
       }
-
+      kids.splice(i, 1);
+      if (kids.length === 0) CHILDREN.delete(parent.id);
       PARENTS.set(node.id, null);
-      if (!isMarkerId(node.id) && exitTransition) {
-        void startNativeTransition({
-          nodeId: node.id,
-          animationId: nextExitAnimationId++,
-          phase: "exit",
-          from: exitTransition.from,
-          to: exitTransition.to,
-          frames: exitTransition.frames,
-          duration: exitTransition.duration,
-          delay: exitTransition.delay,
-          easing: exitTransition.easing,
-        });
-        const timer = setTimeout(() => {
-          exitRemovalTimers.delete(node.id);
-          enqueueRemoveOp();
-          destroySubtreeTracking(node.id);
-          schedule();
-        }, getExitDurationMs(exitTransition) + 17);
-        exitRemovalTimers.set(node.id, timer);
-      } else if (!isMarkerId(node.id)) {
-        enqueueRemoveOp();
-        destroySubtreeTracking(node.id);
+      if (!isMarkerId(node.id)) {
+        rescuedRemovals.delete(node.id);
+        recordPendingRemoval(parent.id, node.id);
       } else {
         destroySubtreeTracking(node.id);
       }
@@ -1008,18 +978,14 @@ export function createIOSHost(): Host {
         );
         return;
       }
-      if (!context.operations.length) return;
-
-      if (typeof (ui as any).applyBatchTyped === "function") {
-        if (isSuppressed()) return;
-        (ui as any).applyBatchTyped(encodeTypedBatch(context.operations));
-        if (queue.length || pendingRemovals.size || pendingDrops.size) {
-          schedule();
-        }
-        return;
+      
+      // We are at the end of the outer-most batch.
+      // Move all context operations into the main queue for runFlush.
+      for (const op of context.operations) {
+        queue.push({ type: "batch", op });
       }
 
-      throw new Error("Typed batch is required for iOS host");
+      runFlush();
     },
     enableRecycling(containerId: number, config: RecyclingConfig): string {
       const contextId = `recycling-${containerId}-${nextContextId++}`;
