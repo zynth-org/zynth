@@ -3,32 +3,32 @@
   "type": "module",
   "version": "0.0.1",
   "dependencies": {
-    "@zynthjs/apis": "^0.0.1",
-    "@zynthjs/components": "^0.0.1",
-    "@zynthjs/core": "^0.0.1",
+    "@zynthjs/apis": "^0.0.1-alpha.0",
+    "@zynthjs/components": "^0.0.1-alpha.0",
+    "@zynthjs/core": "^0.0.1-alpha.0",
     "solid-js": "^1.9.9"
   },
   "devDependencies": {
     "@babel/core": "^7.28.4",
     "@babel/preset-env": "^7.24.7",
     "@babel/preset-typescript": "^7.24.7",
-    "@zynthjs/rsbuild-plugin": "^0.0.1",
+    "@zynthjs/rsbuild-plugin": "^0.0.1-alpha.0",
     "@rsbuild/core": "^1.0.1",
     "@rsbuild/plugin-babel": "^1.0.1",
     "@rspack/core": "^1.0.0",
     "babel-preset-solid": "^1.8.0",
     "hermes-compiler": "250829098.0.6",
     "typescript": "^5.6.2",
-    "zynth": "*"
+    "zynth": "^0.0.1-alpha.2"
   },
   "scripts": {
     "build": "rsbuild build --config rsbuild.config.mjs",
-    "bootstrap:ios": "yarn zynth bootstrap ios",
-    "bootstrap:android": "yarn zynth bootstrap android",
-    "ios:dev": "yarn zynth dev ios",
-    "android:dev": "yarn zynth dev android",
-    "web:dev": "yarn zynth dev web",
-    "web:build": "yarn zynth build web",
+    "bootstrap:ios": "zynth bootstrap ios",
+    "bootstrap:android": "zynth bootstrap android",
+    "ios:dev": "zynth dev ios",
+    "android:dev": "zynth dev android",
+    "web:dev": "zynth dev web",
+    "web:build": "zynth build web",
     "zynth": "zynth"
   }
 }
