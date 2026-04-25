@@ -4,6 +4,7 @@
 #import <math.h>
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
+#import <CoreText/CoreText.h>
 #if __has_include("ZynthKit-Swift.h")
 #import "ZynthKit-Swift.h"
 #endif
@@ -83,8 +84,70 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
     if (_tokens == nil) {
       _tokens = @{};
     }
+#if DEBUG
+    [self ensureRuntimeFontRegistered];
+#endif
   }
   return self;
+}
+
+- (void)ensureRuntimeFontRegistered {
+#if !DEBUG
+  return;
+#endif
+  // Check if already available
+  UIFont *existing = [UIFont fontWithName:@"ZynthRuntime" size:12];
+  if (existing != nil) return;
+
+  NSString *resourceName = @"ZynthRuntime.ttf";
+  NSString *resourceBase = @"ZynthRuntime";
+  NSURL *fontURL = nil;
+
+  // 1. Search common locations in all loaded bundles
+  NSArray<NSBundle *> *bundles = [@[[NSBundle mainBundle]] arrayByAddingObjectsFromArray:[NSBundle allBundles]];
+  for (NSBundle *bundle in bundles) {
+
+    fontURL = [bundle URLForResource:resourceBase withExtension:@"ttf"];
+    if (!fontURL) fontURL = [bundle URLForResource:resourceBase withExtension:@"ttf" subdirectory:@"Fonts"];
+    if (!fontURL) fontURL = [bundle URLForResource:resourceBase withExtension:@"ttf" subdirectory:@"fonts"];
+    if (!fontURL) fontURL = [bundle URLForResource:resourceBase withExtension:@"ttf" subdirectory:@"assets/fonts"];
+    if (fontURL) break;
+  }
+
+  // 2. Search inside ZynthComponents.bundle if not found yet
+  if (!fontURL) {
+    NSURL *bundleURL = [[NSBundle mainBundle] URLForResource:@"ZynthComponents" withExtension:@"bundle"];
+    if (bundleURL) {
+      NSBundle *bundle = [NSBundle bundleWithURL:bundleURL];
+      fontURL = [bundle URLForResource:resourceBase withExtension:@"ttf"];
+      if (!fontURL) fontURL = [bundle URLForResource:resourceBase withExtension:@"ttf" subdirectory:@"Fonts"];
+      if (!fontURL) fontURL = [bundle URLForResource:resourceBase withExtension:@"ttf" subdirectory:@"fonts"];
+      if (!fontURL) fontURL = [bundle URLForResource:resourceBase withExtension:@"ttf" subdirectory:@"assets/fonts"];
+    }
+  }
+
+  if (fontURL) {
+    CFErrorRef error = nil;
+    if (!CTFontManagerRegisterFontsForURL((__bridge CFURLRef)fontURL, kCTFontManagerScopeProcess, &error)) {
+      if (error) {
+        NSError *nsError = (__bridge NSError *)error;
+        if (nsError.code != kCTFontManagerErrorAlreadyRegistered) {
+          NSLog(@"[ZynthNativeOverlay] Failed to register ZynthRuntime font at %@: %@", fontURL.path, nsError.localizedDescription);
+        }
+        CFRelease(error);
+      }
+    } else {
+      NSLog(@"[ZynthNativeOverlay] Proactively registered ZynthRuntime font from %@", fontURL.path);
+    }
+  } else {
+    NSLog(@"[ZynthNativeOverlay] ZynthRuntime.ttf not found in main bundle or ZynthComponents.bundle.");
+  }
+
+  // Re-verify and log availability for debugging
+  UIFont *final = [UIFont fontWithName:@"ZynthRuntime" size:12];
+  if (!final) {
+    NSLog(@"[ZynthNativeOverlay] WARNING: ZynthRuntime font still not available by name after registration attempt.");
+  }
 }
 
 - (void)attachRuntime:(ZynthRuntime *)runtime {
@@ -877,6 +940,11 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
 - (UIFont *)glyphFont:(CGFloat)size {
   UIFont *font = [UIFont fontWithName:@"ZynthRuntime" size:size];
   if (font) return font;
+  
+  [self ensureRuntimeFontRegistered];
+  font = [UIFont fontWithName:@"ZynthRuntime" size:size];
+  if (font) return font;
+  
   return [UIFont systemFontOfSize:size weight:UIFontWeightRegular];
 }
 
