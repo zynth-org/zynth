@@ -88,6 +88,9 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
 }
 
 - (void)attachRuntime:(ZynthRuntime *)runtime {
+#if !DEBUG
+  return;
+#endif
   self.runtime = runtime;
   self.rootView = runtime.rootView;
 }
@@ -125,6 +128,9 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
 }
 
 - (void)flashHmrIndicator {
+#if !DEBUG
+  return;
+#endif
   dispatch_async(dispatch_get_main_queue(), ^{
     UIView *root = self.rootView;
     if (root == nil) return;
@@ -364,6 +370,9 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
                        level:(NSString *_Nullable)level
                          tag:(NSString *_Nullable)tag
                         data:(id _Nullable)data {
+#if !DEBUG
+  return;
+#endif
   (void)tag;
   if (topic.length == 0) return;
 

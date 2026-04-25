@@ -93,6 +93,9 @@ static const CGFloat ZynthPerfOverlayExpandedHeight = 142.0;
 }
 
 - (void)attachRuntime:(ZynthRuntime *)runtime {
+#if !DEBUG
+  return;
+#endif
   self.runtime = runtime;
   self.rootView = runtime.rootView;
   dispatch_async(dispatch_get_main_queue(), ^{
@@ -114,6 +117,9 @@ static const CGFloat ZynthPerfOverlayExpandedHeight = 142.0;
 }
 
 - (void)setPerformanceOverlayEnabled:(BOOL)enabled {
+#if !DEBUG
+  if (enabled) return;
+#endif
   dispatch_async(dispatch_get_main_queue(), ^{
     if (self.performanceEnabled == enabled) {
       if (enabled) {

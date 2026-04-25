@@ -27,7 +27,12 @@ internal object ZynthHmrVisualIndicator {
   private var drawable: HmrPulseDrawable? = null
   private var pulseAnimator: ValueAnimator? = null
 
+  private var isDebuggable: Boolean? = null
+
   fun pulse(root: ZynthRootView) {
+    val debug = isDebuggable ?: ((root.context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0).also { isDebuggable = it }
+    if (!debug) return
+
     if (Looper.myLooper() == Looper.getMainLooper()) {
       pulseOnMain(root)
     } else {

@@ -86,12 +86,20 @@ internal object ZynthNativePerformanceOverlay {
   private var performanceWindowPasses: Long = 0L
   private var performanceWindowConsumedFrames: Long = 0L
 
+  private var isDebuggable: Boolean = false
+
   fun attach(root: ZynthRootView) {
     rootRef = WeakReference(root)
-    installRootLayoutListener(root)
-    mainHandler.post {
-      if (performanceEnabled) {
-        ensurePerformanceOverlay()
+
+    val context = root.context
+    isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    if (isDebuggable) {
+      installRootLayoutListener(root)
+      mainHandler.post {
+        if (performanceEnabled) {
+          ensurePerformanceOverlay()
+        }
       }
     }
   }
@@ -105,6 +113,7 @@ internal object ZynthNativePerformanceOverlay {
     }
     rootLayoutListener = null
     rootRef = null
+    isDebuggable = false
     mainHandler.post {
       stopUiFrameLoop()
       dismissPerformanceOverlay()
@@ -115,6 +124,7 @@ internal object ZynthNativePerformanceOverlay {
 
   @JvmStatic
   fun setPerformanceOverlayEnabled(enabled: Boolean) {
+    if (!isDebuggable && enabled) return
     mainHandler.post {
       if (performanceEnabled == enabled) {
         if (enabled) {

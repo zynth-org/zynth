@@ -121,10 +121,18 @@ internal object ZynthNativeErrorOverlay {
     val stack: String?,
   )
 
+  private var isDebuggable: Boolean = false
+
   fun attach(runtime: ZynthRuntime, root: ZynthRootView) {
     runtimeRef = WeakReference(runtime)
     rootRef = WeakReference(root)
-    installRootLayoutListener(root)
+
+    val context = root.context
+    isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    if (isDebuggable) {
+      installRootLayoutListener(root)
+    }
   }
 
   fun detach() {
@@ -137,6 +145,7 @@ internal object ZynthNativeErrorOverlay {
     rootLayoutListener = null
     runtimeRef = null
     rootRef = null
+    isDebuggable = false
     mainHandler.post {
       removeView(fatalOverlayView)
       dismissWarning()
@@ -144,6 +153,7 @@ internal object ZynthNativeErrorOverlay {
   }
 
   fun dismissForHmrUpdate() {
+    if (!isDebuggable) return
     mainHandler.post {
       removeView(fatalOverlayView)
       fatalOverlayView = null
@@ -161,7 +171,7 @@ internal object ZynthNativeErrorOverlay {
 
   @JvmStatic
   fun handleRawEvent(eventJson: String?) {
-    if (eventJson.isNullOrBlank()) return
+    if (!isDebuggable || eventJson.isNullOrBlank()) return
     val rootObject = runCatching { JSONObject(eventJson) }.getOrNull() ?: return
     val event = rootObject.optJSONObject("event") ?: rootObject
     val topic = event.optString("topic", "")
