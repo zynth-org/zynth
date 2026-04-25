@@ -1,6 +1,6 @@
 {
   "name": "@zynthjs/components",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
   "description": "Native Zynth UI primitives and components for building SolidJS-powered iOS, Android, and partial web apps.",
   "type": "module",
   "main": "src/index.ts",

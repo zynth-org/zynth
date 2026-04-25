@@ -1,6 +1,6 @@
 {
   "name": "@zynthjs/core",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
   "description": "Zynth native runtime, SolidJS renderer, JSI host interface, and flex layout core.",
   "type": "module",
   "main": "src/index.ts",
