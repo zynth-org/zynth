@@ -13,6 +13,7 @@ const { ANDROID_BUILD_NOISE_PATTERNS } = require("./android-build-filters");
 
 let devtoolsPublish = null;
 let tsRuntimeRegistered = false;
+const IS_WINDOWS = process.platform === "win32";
 
 function readJSON(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -112,9 +113,14 @@ function registerTypeScriptRuntime() {
 function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     stdio: "inherit",
-    shell: false,
+    shell: IS_WINDOWS,
     ...options,
   });
+  if (result.error) {
+    console.error(`✖ Failed to start command: ${command} ${args.join(" ")}`);
+    console.error(result.error.message);
+    process.exit(1);
+  }
   if (result.status !== 0) {
     const code = result.status == null ? 1 : result.status;
     process.exit(code);
@@ -124,9 +130,12 @@ function runCommand(command, args, options = {}) {
 function runCommandQuiet(command, args, options = {}) {
   const result = spawnSync(command, args, {
     stdio: "ignore",
-    shell: false,
+    shell: IS_WINDOWS,
     ...options,
   });
+  if (result.error) {
+    process.exit(1);
+  }
   if (result.status !== 0) {
     const code = result.status == null ? 1 : result.status;
     process.exit(code);
@@ -136,10 +145,15 @@ function runCommandQuiet(command, args, options = {}) {
 function runCommandSilentUnlessError(command, args, options = {}) {
   const result = spawnSync(command, args, {
     stdio: ["ignore", "pipe", "pipe"],
-    shell: false,
+    shell: IS_WINDOWS,
     encoding: "utf8",
     ...options,
   });
+  if (result.error) {
+    process.stderr.write(`✖ Failed to start command: ${command} ${args.join(" ")}\n`);
+    process.stderr.write(`${result.error.message}\n`);
+    process.exit(1);
+  }
   if (result.status !== 0) {
     const stdout = (result.stdout || "").trim();
     const stderr = (result.stderr || "").trim();
@@ -154,8 +168,13 @@ function runCommandFiltered(command, args, options = {}) {
   if (options.verbose) {
     const child = spawn(command, args, {
       stdio: "inherit",
-      shell: false,
+      shell: IS_WINDOWS,
       ...options,
+    });
+    child.on("error", (err) => {
+      console.error(`✖ Failed to start command: ${command}`);
+      console.error(err.message);
+      process.exit(1);
     });
     return new Promise((resolve) => {
       child.on("close", (code, signal) => {
@@ -165,7 +184,7 @@ function runCommandFiltered(command, args, options = {}) {
   }
   const child = spawn(command, args, {
     stdio: ["ignore", "pipe", "pipe"],
-    shell: false,
+    shell: IS_WINDOWS,
     ...options,
   });
 
@@ -279,8 +298,13 @@ function runCommandFilteredAndroid(command, args, options = {}) {
   if (options.verbose) {
     const child = spawn(command, args, {
       stdio: "inherit",
-      shell: false,
+      shell: IS_WINDOWS,
       ...options,
+    });
+    child.on("error", (err) => {
+      console.error(`✖ Failed to start command: ${command}`);
+      console.error(err.message);
+      process.exit(1);
     });
     return new Promise((resolve) => {
       child.on("close", (code, signal) => {
@@ -290,8 +314,13 @@ function runCommandFilteredAndroid(command, args, options = {}) {
   }
   const child = spawn(command, args, {
     stdio: ["ignore", "pipe", "pipe"],
-    shell: false,
+    shell: IS_WINDOWS,
     ...options,
+  });
+  child.on("error", (err) => {
+    console.error(`✖ Failed to start command: ${command}`);
+    console.error(err.message);
+    process.exit(1);
   });
 
   const showProgress = options.showProgress !== false;
@@ -921,7 +950,7 @@ function runNode(scriptPath, args = [], options = {}) {
 function readCommandOutput(command, args, options = {}) {
   const result = spawnSync(command, args, {
     stdio: ["ignore", "pipe", "pipe"],
-    shell: false,
+    shell: IS_WINDOWS,
     encoding: "utf8",
     ...options,
   });
@@ -1272,7 +1301,7 @@ function ensureWebProjectScaffold(appDir) {
 }
 
 function runRsbuildWithPlatform(appDir, action, args = []) {
-  const command = process.platform === "win32" ? "npx.cmd" : "npx";
+  const command = IS_WINDOWS ? "npx.cmd" : "npx";
   runCommand(command, ["rsbuild", action, ...args], {
     cwd: appDir,
     env: {
@@ -1696,7 +1725,7 @@ async function startZynthHMRServer(appDir, platform, options = {}) {
   }
   const args = ["rsbuild", "dev", "--port", String(port), "--host", bindHost];
 
-  const command = process.platform === "win32" ? "npx.cmd" : "npx";
+  const command = IS_WINDOWS ? "npx.cmd" : "npx";
   const child = spawn(command, args, {
     cwd: appDir,
     stdio: ["ignore", "pipe", "pipe"],
@@ -2153,7 +2182,7 @@ async function devAndroid(root, appDir, options = {}) {
 
   console.log(`◆ Building ${config.appNameCapitalized} (debug)...`);
   const assembleResult = await runCommandFilteredAndroid(
-    "./gradlew",
+    IS_WINDOWS ? "gradlew.bat" : "./gradlew",
     [":app:assembleDebug"],
     { cwd: androidDir, verbose: verboseBuild }
   );
@@ -2176,7 +2205,7 @@ async function devAndroid(root, appDir, options = {}) {
   }
 
   const installResult = await runCommandFilteredAndroid(
-    "./gradlew",
+    IS_WINDOWS ? "gradlew.bat" : "./gradlew",
     [":app:installDebug", "-q"],
     {
       cwd: androidDir,
