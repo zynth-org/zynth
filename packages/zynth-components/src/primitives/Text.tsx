@@ -55,6 +55,31 @@ export const Text: ParentComponent<TextProps> = (props) => {
     props.ref?.(null);
   });
 
+  const coalescedChildren = createMemo(() => {
+    const children = resolvedChildren();
+    if (Array.isArray(children)) {
+      const result: any[] = [];
+      let currentString = "";
+      for (const child of children) {
+        if (typeof child === "string" || typeof child === "number") {
+          currentString += child;
+        } else {
+          if (currentString) {
+            result.push(currentString);
+            currentString = "";
+          }
+          if (child != null) result.push(child);
+        }
+      }
+      if (currentString) result.push(currentString);
+      if (result.length === 0) return "";
+      // Force array return to avoid Solid's replaceText(getFirstChild(parent)) optimization
+      // which is causing null node errors on both platforms under high churn.
+      return result;
+    }
+    return children ?? "";
+  });
+
   return (
     <text
       style={
@@ -65,7 +90,7 @@ export const Text: ParentComponent<TextProps> = (props) => {
       text={props.text}
       ref={refProp as unknown as any}
     >
-      {resolvedChildren()}
+      {coalescedChildren()}
     </text>
   );
 };

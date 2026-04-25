@@ -49,7 +49,6 @@ export function createIOSHost(): Host {
 
   const suppressionKey = "__zynthSuppressNativeMutations";
   const isSuppressed = () => Boolean((g as any)[suppressionKey]);
-
   // Structured Queue System
   type BatchOperation =
     | { type: "insertChild"; parentId: number; childId: number; index: number }
@@ -876,17 +875,6 @@ export function createIOSHost(): Host {
 
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
       const logicalAt = aIdx >= 0 ? Math.min(aIdx, kids.length) : kids.length;
-
-      if (parent.type === "text" && logicalAt < kids.length) {
-        const oldId = kids[logicalAt];
-        if (oldId !== node.id && !isMarkerId(oldId)) {
-          recordPendingDrop(oldId);
-          TEXTS.delete(oldId);
-          TYPES.delete(oldId);
-          PARENTS.delete(oldId);
-          kids.splice(logicalAt, 1);
-        }
-      }
 
       let physIdx = 0;
       for (let i = 0; i < logicalAt; i++) if (!isMarkerId(kids[i])) physIdx++;
