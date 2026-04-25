@@ -99,7 +99,6 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
   UIFont *existing = [UIFont fontWithName:@"ZynthRuntime" size:12];
   if (existing != nil) return;
 
-  NSString *resourceName = @"ZynthRuntime.ttf";
   NSString *resourceBase = @"ZynthRuntime";
   NSURL *fontURL = nil;
 
