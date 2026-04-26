@@ -1,145 +1,129 @@
-# Zynth
+<p align="center">
+  <img src=".github/assets/images/logo-transparent-prod.png" width="250" alt="Zynth" />
+</p>
 
-> A native, hybrid UI framework powered by [SolidJS](https://www.solidjs.com).
+<h1 align="center">Zynth</h1>
 
-Zynth brings fine-grained reactivity to native mobile development. By combining the performance of SolidJS with a direct native bridge, Zynth allows you to build high-performance iOS and Android applications with a modern, declarative API and no Virtual DOM.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@zynthjs/core">
+    <img src="https://img.shields.io/npm/v/@zynthjs/core.svg?style=for-the-badge&color=black" alt="NPM Version" />
+  </a>
+  <a href="https://discord.gg/mT5bxKymwF">
+    <img src="https://img.shields.io/discord/1234567890?style=for-the-badge&logo=discord&label=Discord&color=black" alt="Discord" />
+  </a>
+  <a href="https://www.reddit.com/r/ZynthFramework">
+    <img src="https://img.shields.io/reddit/subreddit-subscribers/zynth?style=for-the-badge&logo=reddit&label=Reddit&color=black" alt="Reddit" />
+  </a>
+</p>
 
-## Features
+<p align="center">
+  <strong><a href="https://zynthai.com/zynth/">Website</a> • <a href="https://zynthai.com/zynth/documentation/getting-started/01-introduction">Documentation</a></strong>
+</p>
 
-- **No Virtual DOM:** Updates are surgical. When a signal changes, Zynth updates _only_ the specific native property that needs to change, bypassing the heavy diffing process found in React Native.
-- **Synchronous Bridge (JSI):** Communication between JavaScript and Native (C++/Swift/Kotlin) happens synchronously via the JavaScript Interface (JSI), eliminating bridge serialization overhead.
-- **Native Signals:** `createSharedSignal` exposes Solid-style signals backed by native shared storage so the UI thread can read values without async hops.
-- **True Native Navigation:** Screens and transitions are backed by native controllers (`UINavigationController` / Fragments), ensuring 100% authentic feel and gesture support.
-- **Shared Value Animations:** Physics-based animations run on the UI thread, driven by a native loop, keeping interactions buttery smooth even if the JS thread is busy.
-- **Modular Architecture:** Everything is a package. Core logic, UI components, and native APIs are split into small, tree-shakeable modules (`@zynthjs/core`, `@zynthjs/components`, `@zynthjs/animate`).
-- **AI-Native Development:** Built-in support for **Skyhook**, an AI backend that can generate and update apps on the fly from natural language prompts.
+Zynth is a high-performance, fine-grained reactive runtime for building native cross-platform applications. Built from the ground up to leverage **SolidJS** principles, Zynth provides a full-stack solution—from the JavaScript engine to the rendering pipeline.
 
-## Usage
+While we are currently in **Alpha**, Zynth is designed for developers who value ownership of their runtime and the predictability of granular reactivity. Our engine performs surgical updates directly to native views, ensuring the UI stays in sync with your state without unnecessary overhead.
 
-### Prerequisites
-
-- Node.js >= 18
-- Yarn
-- Xcode (for iOS)
-- xcodegen, cocoapods (for iOS)
-- Android Studio (for Android)
-
-### Installation
-
-To create a new Zynth project, use the CLI:
-
-```bash
-# Create a new app
-npx zynth create my-app
-
-# Enter the directory
-cd my-app
-
-# Install dependencies
-yarn install
-```
-
-### Development
-
-Start the development server and launch the app on a simulator/emulator:
-
-```bash
-# iOS
-yarn dev:ios
-
-# Android
-yarn dev:android
-```
-
-The CLI handles everything: bundling your JS, generating the native projects (via bootstrap), and launching the native build tools.
-
-### Building for Production
-
-Zynth uses [Rsbuild](https://rsbuild.dev/) to produce highly optimized bundles.
-
-```bash
-# Bundle JS
-yarn bundle
-
-# Build native binaries
-yarn build:ios
-yarn build:android
-```
-
-## Architecture
-
-Zynth is designed to be lean and modular.
-
-### 1. The Reactive Core (`@zynthjs/core`)
-
-The heart of the framework. It implements a SolidJS Universal Renderer that translates reactive updates into a stream of instructions (`createNode`, `setProp`, `insertChild`) for the native host.
-
-### 2. The Native Runtime (`ZynthKit`)
-
-A C++ core (shared between iOS and Android) that implements the JSI bridge. It uses **Hermes** as the JavaScript engine and **Yoga** for Flexbox layout.
-
-### 3. The Ecosystem
-
-- **`@zynthjs/components`**: Core primitives (`View`, `Text`, `Image`, `FlatList`).
-- **`@zynthjs/animate`**: High-performance, interruptible animations (`createSharedValue`, `withSpring`).
-- **`@zynthjs/router`**: A stack-based router designed for multi-app environments.
-- **`@zynthjs/hypervisor`**: Run isolated "Guest" Zynth apps within a "Host" app.
-
-_For a deep dive into the internals, read the [Architecture Documentation](docs/architecture.md)._
-
-## Examples
-
-### Counter Component
+## Zynth by Example
 
 ```tsx
 import { createSignal } from "solid-js";
 import { View, Text, Button } from "@zynthjs/components";
 
-export function Counter() {
+function Counter() {
   const [count, setCount] = createSignal(0);
 
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-      <Text style={{ fontSize: 24, marginBottom: 20 }}>Count: {count()}</Text>
+    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <Text style={{ fontSize: 32 }}>{count()}</Text>
       <Button onPress={() => setCount((c) => c + 1)}>Increment</Button>
     </View>
   );
 }
 ```
 
-### Animation
+<details>
+<summary><b>Native Performance: Shared Signals & Motion</b></summary>
+
+Zynth's flagship feature is **Shared Signals**, which mirror reactive state directly into native memory for zero-latency animations and gestures.
 
 ```tsx
+import { View, GestureDetector } from "@zynthjs/components";
 import {
-  Animated,
   createSharedValue,
-  useAnimatedStyle,
+  createAnimatedStyle,
   withSpring,
-} from "@zynthjs/animate";
+} from "@zynthjs/core/motion";
+import { createPanGesture } from "@zynthjs/core/gesture";
 
-export function BouncingBox() {
+function DraggableBox() {
   const offset = createSharedValue(0);
 
-  const style = useAnimatedStyle(() => ({
-    transform: [{ translateY: offset.value }],
+  const pan = createPanGesture({
+    onUpdate: (event) => {
+      "worklet"; // Runs on the UI thread
+      offset.value = event.translationX;
+    },
+    onEnd: () => {
+      "worklet";
+      offset.value = withSpring(0);
+    },
+  });
+
+  const animatedStyle = createAnimatedStyle(() => ({
+    width: 120,
+    height: 120,
+    backgroundColor: "#FF3E00",
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    transform: [{ translateX: offset.value }],
   }));
 
   return (
-    <Animated.View
-      style={[{ width: 100, height: 100, backgroundColor: "red" }, style]}
-    />
+    <GestureDetector gesture={pan}>
+      <View style={animatedStyle} />
+    </GestureDetector>
   );
 }
 ```
+</details>
 
-## Contributing
+## Key Features
 
-We welcome contributions! Please see `CONTRIBUTING.md` (coming soon) for details on how to set up the monorepo for development.
+- **Granular Reactivity**: Powered by SolidJS. Components run once; updates are surgical and direct to native properties.
+- **Shared Signals & Worklets**: High-performance primitives that bridge the JS and Native threads with zero latency. Handle 120fps gestures and animations on the UI thread without blocking JavaScript.
+- **Native-First Navigation**: A filesystem-based router (`@zynthjs/router`) and native screen management (`@zynthjs/screens`) that provide authentic platform behavior.
+- **Motion-Ready Primitives**: Standard components like `View` and `Text` support advanced animations and native gestures via `GestureDetector`.
+- **Controlled Stability**: Use `createSyncSignal` for `TextInput` to ensure frame-perfect synchronization between JS and native text buffers.
+- **Modular Ecosystem**: Over 30 decoupled native packages designed to work together or independently.
+- **Typed Transport**: A JSI-based architecture focused on strong data typing during communication between threads.
 
-1.  Clone the repo: `git clone https://github.com/zynth-org/zynth.git`
-2.  Install dependencies: `yarn`
-3.  Run the demo app: `cd apps/components && yarn dev:ios`
+## Technical Foundation
+
+Zynth is built on a modern, performance-oriented stack:
+
+- **Engine**: Uses **Hermes V1** for fast TTI and low memory footprint.
+- **Layout**: Currently powered by **Yoga** (Flexbox), with our own Rust-based **Grid** rendering engine and text measurement system in late development.
+- **Build Tools**: Leverages **RsBuild** and **RsPack** for lightning-fast development cycles and optimized production bundles.
+- **Target Platforms**: One codebase for iOS and Android, with active development for Web support.
+
+## Why Zynth?
+
+### Ownership and Control
+
+We focus on providing a runtime that you truly own. Zynth gives you direct access to the native layer through JSI, allowing you to extend the framework with high-efficiency synchronous native bindings.
+
+### Predictable Interactions
+
+By implementing UI-thread worklets, Zynth ensures that your interactions remain smooth and responsive even during heavy JavaScript execution.
+
+### Modular Ecosystem
+
+Zynth is designed for flexibility. While the core provides high-performance motion and signals by default, the broader ecosystem—including the router and primitive components—is built as a series of decoupled packages that you can compose to fit your needs.
+
+---
 
 ## License
 
-private
+Zynth is currently in Alpha. See the [LICENSE](LICENSE) file for more details.
