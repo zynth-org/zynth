@@ -725,7 +725,7 @@ internal object ZynthNativePerformanceOverlay {
   }
 
   private fun countViews(root: View?): Int {
-    if (root == null) return 0
+    if (root == null || root === performanceOverlayView) return 0
     if (root !is ViewGroup) return 1
     var total = 1
     for (index in 0 until root.childCount) {

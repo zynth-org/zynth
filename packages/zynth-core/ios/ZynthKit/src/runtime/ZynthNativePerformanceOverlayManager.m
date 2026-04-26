@@ -637,6 +637,7 @@ static const CGFloat ZynthPerfOverlayExpandedHeight = 142.0;
 }
 
 - (NSUInteger)countViewsRecursively:(UIView *)view {
+  if (view == nil || view == self.performanceOverlay) return 0;
   NSUInteger total = 1;
   for (UIView *child in view.subviews) {
     total += [self countViewsRecursively:child];
