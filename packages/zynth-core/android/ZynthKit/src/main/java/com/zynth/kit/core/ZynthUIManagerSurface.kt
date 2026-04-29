@@ -4,7 +4,6 @@ import android.graphics.Rect
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
-import com.zynth.kit.layout.ZynthYogaLayout
 
 private const val DEBUG_SURFACE = false
 
@@ -92,7 +91,7 @@ internal fun ZynthUIManager.registerSurfaceInternal(
 ) {
   val beforeCount = surfaceRoots.size
   val existingRoot = surfaceRoots[surfaceId]
-  if (existingRoot === root && surfaceYoga.containsKey(surfaceId)) {
+  if (existingRoot === root && surfaceRoots.containsKey(surfaceId)) {
     if (owned) {
       ownedSurfaces.add(surfaceId)
     } else {
@@ -128,20 +127,6 @@ internal fun ZynthUIManager.registerSurfaceInternal(
     root.addOnLayoutChangeListener(listener)
     surfaceLayoutListeners[surfaceId] = listener
   }
-  val layout = ZynthYogaLayout()
-  layout.layoutDidUpdate = { nodeId, left, top, right, bottom, changed ->
-    if (changed && styleStates.containsKey(nodeId)) {
-      styleLayoutDirtyNodes.add(nodeId)
-      styleLayoutFrames[nodeId] = Rect(left, top, right, bottom)
-    }
-    if (changed) {
-      if (layoutNodes.contains(nodeId)) {
-        layoutDirtyNodes.add(nodeId)
-      }
-      maybeStartLayoutTransition(nodeId, left, top, right, bottom)
-    }
-  }
-  surfaceYoga[surfaceId] = layout
   surfaceSizes[surfaceId] = (root.width to root.height)
 }
 
@@ -163,12 +148,10 @@ internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {
     destroyNode(nodeId)
     parents.remove(nodeId)
     nodes.remove(nodeId)
-    surfaceYoga[surfaceId]?.removeNode(nodeId)
   }
 
   dirtySurfaces.remove(surfaceId)
   surfaceSizes.remove(surfaceId)
-  surfaceYoga.remove(surfaceId)
   surfaceRoots.remove(surfaceId)
 
   if (ownedSurfaces.remove(surfaceId)) {
@@ -244,7 +227,7 @@ private fun ViewGroup.hasVisibleContent(): Boolean {
 }
 
 internal fun ZynthUIManager.ensureSurface(surfaceId: Int) {
-  if (surfaceRoots.containsKey(surfaceId) && surfaceYoga.containsKey(surfaceId)) return
+  if (surfaceRoots.containsKey(surfaceId)) return
   val root = if (surfaceId == 0) {
     rootView
   } else {
@@ -264,14 +247,3 @@ internal fun ZynthUIManager.rootViewForSurface(surfaceId: Int): ViewGroup {
   return surfaceRoots[surfaceId] ?: rootView
 }
 
-internal fun ZynthUIManager.yogaForSurface(surfaceId: Int): ZynthYogaLayout {
-  return surfaceYoga[surfaceId] ?: run {
-    ensureSurface(surfaceId)
-    surfaceYoga[surfaceId] ?: surfaceYoga.getValue(0)
-  }
-}
-
-internal fun ZynthUIManager.yogaForNode(nodeId: Int): ZynthYogaLayout {
-  val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
-  return yogaForSurface(surfaceId)
-}

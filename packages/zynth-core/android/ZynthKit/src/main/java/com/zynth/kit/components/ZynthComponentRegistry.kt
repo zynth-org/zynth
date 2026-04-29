@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 data class ZynthComponentDescriptor(
   val type: String,
   val createView: (context: Context, nodeId: Int) -> View,
+  val hasMeasureFunc: Boolean = false,
   val onNodeCreated: (manager: ZynthUIManager, node: ZynthUIManager.Node) -> Unit = { _, _ -> },
   val applyProperty: (node: ZynthUIManager.Node, name: String, value: String?) -> Boolean = { _, _, _ -> false },
   val onSetHandler: (node: ZynthUIManager.Node, event: String) -> Boolean = { _, _ -> false },

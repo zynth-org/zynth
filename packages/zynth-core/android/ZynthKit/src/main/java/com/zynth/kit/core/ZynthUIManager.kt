@@ -17,7 +17,6 @@ import com.zynth.kit.layout.LayoutEngine
 import com.zynth.kit.layout.MeasureHandler
 import com.zynth.kit.layout.Rect as LayoutRect
 import com.zynth.kit.layout.Style
-import com.zynth.kit.layout.ZynthYogaLayout
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.runtime.JSBridge
 import org.json.JSONObject
@@ -165,7 +164,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val children = HashMap<Int, MutableList<Int>>()
   internal val nodeSurfaces = HashMap<Int, Int>()
   internal val surfaceRoots = HashMap<Int, ViewGroup>()
-  internal val surfaceYoga = HashMap<Int, ZynthYogaLayout>()
   internal val dirtySurfaces = HashSet<Int>()
   internal val surfaceSizes = HashMap<Int, Pair<Int, Int>>()
   internal val surfaceLayoutListeners = HashMap<Int, View.OnLayoutChangeListener>()
@@ -179,7 +177,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val styleLayoutDirtyNodes = HashSet<Int>()
   internal val styleLayoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val textStyleStates = HashMap<Int, ZynthTextStyleState>()
-  internal val yogaStyleCache = HashMap<Int, MutableMap<String, Any?>>()
+  private val keyboardAvoidingBasePaddingBottoms = HashMap<Int, Int>()
+  private val keyboardAvoidingBaseHeights = HashMap<Int, Int>()
   internal val pointerEvents = HashMap<Int, String>()
   internal val pressNodes = HashSet<Int>()
   internal val longPressNodes = HashSet<Int>()
@@ -238,6 +237,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var needsLayout = false
   internal var frameInProgress = false
   internal var didWarmup = false
+
   internal var budgetOverruns = 0
   internal var lastLayoutMs = 0.0
   internal var lastFrameMs = 0.0
@@ -245,7 +245,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var firstMountCommitListener: (() -> Unit)? = null
   private var didDispatchFirstMountCommit = false
   internal val frameCallback = Choreographer.FrameCallback { handleFrame() }
-  private val layoutEngine: LayoutEngine = LayoutEngineAdapter()
+  internal val layoutEngine: LayoutEngine = LayoutEngineAdapter()
   private data class TimerEntry(
     val handler: Handler,
     val runnable: Runnable,
@@ -285,6 +285,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   private var batchDepth = 0
   private var batchNeedsLayout = false
   private var atomicCommitDepth = 0
+  internal var nativeCommitEnabled = true
   internal var atomicCommitPending = false
   internal val budgetMetrics = com.zynth.kit.runtime.ZynthBudgetMetrics()
   var assetProvider: AssetProvider? = null
@@ -488,12 +489,17 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   fun createNode(type: String): Int {
     val id = nextId++
+    createNode(type, id)
+    return id
+  }
+
+  fun createNode(type: String, id: Int) {
     val create = {
       val startNs = System.nanoTime()
       if (droppedBeforeCreation.remove(id)) {
         // This node was dropped before it could be created. Skip.
         traceOp("createNodeSkip", type, startNs)
-      } else {
+      } else if (!nodes.containsKey(id)) {
         val descriptor = ZynthComponentRegistry.getDescriptor(type)
         val view = descriptor?.createView?.invoke(rootView.context, id) ?: run {
           if (type == "text") {
@@ -512,8 +518,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         nodeStates[id] = node
         pointerEvents[id] = "auto"
         nodeSurfaces[id] = activeSurfaceId
-        yogaForSurface(activeSurfaceId).ensureNode(id, view)
-        markSurfaceDirty(activeSurfaceId)
+        val hasMeasure = descriptor?.hasMeasureFunc ?: false
+        // Tell C++ to use measure function if needed
         descriptor?.onNodeCreated?.invoke(this, node)
         traceOp("createNode", type, startNs)
       }
@@ -523,7 +529,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     } else {
       runOnMain { create() }
     }
-    return id
   }
 
   fun setProp(id: Int, name: String, value: Double) {
@@ -553,9 +558,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       } else {
         floatVal
       }
-      cacheYogaStyle(id, name, scaled)
-      yogaForNode(id).setStyle(id, name, scaled)
-      markSurfaceDirtyForNode(id)
       maybeNotifyStyle(descriptor, node, name, value.toString())
       traceOp("setProp", node?.type, startNs)
       return
@@ -726,36 +728,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       traceOp("setProp", node?.type, startNs)
       return
     }
-    if (name == "width") {
-      val scaled = scaleYogaValue(name, value)
-      cacheYogaStyle(id, "width", scaled)
-      yogaForNode(id).setStyle(id, "width", scaled)
-      markSurfaceDirtyForNode(id)
-      maybeNotifyStyle(descriptor, node, name, value)
-      traceOp("setProp", node?.type, startNs)
-      return
-    }
-    if (name == "height") {
-      val scaled = scaleYogaValue(name, value)
-      cacheYogaStyle(id, "height", scaled)
-      yogaForNode(id).setStyle(id, "height", scaled)
-      markSurfaceDirtyForNode(id)
-      maybeNotifyStyle(descriptor, node, name, value)
-      traceOp("setProp", node?.type, startNs)
-      return
-    }
-    if (name == "flexDirection") {
-      cacheYogaStyle(id, "flexDirection", value)
-      yogaForNode(id).setStyle(id, "flexDirection", value)
-      markSurfaceDirtyForNode(id)
-      maybeNotifyStyle(descriptor, node, name, value)
-      traceOp("setProp", node?.type, startNs)
-      return
-    }
-    val scaled = scaleYogaValue(name, value)
-    cacheYogaStyle(id, name, scaled)
-    yogaForNode(id).setStyle(id, name, scaled)
-    markSurfaceDirtyForNode(id)
     maybeNotifyStyle(descriptor, node, name, value)
     traceOp("setProp", node?.type, startNs)
   }
@@ -908,8 +880,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (!handledByDescriptor && view is TextView) {
       node?.cachedText = text
       applyTextValue(id, view, text)
-      yogaForNode(id).markDirty(id)
-      markSurfaceDirtyForNode(id)
     }
     traceOp("setText", node?.type, startNs)
   }
@@ -971,10 +941,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     parentTextChildren?.add(insertIndex.coerceIn(0, parentTextChildren.size), childId)
     val previousSurfaceId = nodeSurfaces[childId]
     if (previousSurfaceId != surfaceId) {
-      moveSubtreeToSurface(childId, surfaceId, parentId, index)
+      nodeSurfaces[childId] = surfaceId
+      // In native commit mode, C++ handles subtree surface migration.
     } else {
       nodeSurfaces[childId] = surfaceId
-      yogaForSurface(surfaceId).ensureNode(childId, child)
     }
 
     val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
@@ -984,15 +954,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
     if (parent is TextView && child is TextView) {
       // Text composition is handled by the descriptor via updateComposedText
-      yogaForNode(parentId).markDirty(parentId)
-      markSurfaceDirty(surfaceId)
       traceOp("insertChild", parentState?.type, startNs)
       return
     }
     val group = parent as? ViewGroup
     if (group == null) {
-      val yogaParentId = if (isSurfaceRoot) 0 else parentId
-      yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
       return
     }
     val targetIndex = index.coerceIn(0, group.childCount)
@@ -1011,9 +977,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       }
       actualParent.invalidate()
     }
-    val yogaParentId = if (isSurfaceRoot) 0 else parentId
-    yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
-    markSurfaceDirty(surfaceId)
     traceOp("insertChild", parentState?.type, startNs)
   }
 
@@ -1036,9 +999,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     detachNode(childId)
     parents.remove(childId)
     (child.parent as? ViewGroup)?.removeView(child)
-    val yogaParentId = if (isSurfaceRootId(parentId)) 0 else parentId
-    val surfaceId = nodeSurfaces[childId] ?: activeSurfaceId
-    yogaForSurface(surfaceId).removeChild(yogaParentId, childId)
     markSurfaceDirtyForNode(childId)
     traceOp("removeChild", parentState?.type, startNs)
   }
@@ -1122,60 +1082,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     return buildScreenSnapshot(options)
   }
 
-  fun applyKeyboardAvoidingAdjustment(
-    nodeId: Int,
-    behavior: String,
-    overlapPx: Float,
-    availableHeightPx: Float? = null
-  ) {
-    if (Looper.myLooper() != Looper.getMainLooper()) {
-      runOnMain { applyKeyboardAvoidingAdjustment(nodeId, behavior, overlapPx, availableHeightPx) }
-      return
-    }
-    val yoga = yogaForNode(nodeId)
-    val overlap = overlapPx.coerceAtLeast(0f)
-
-    if (overlap <= 0f) {
-      if (behavior == "padding") {
-        val original = yogaStyleCache[nodeId]?.get("paddingBottom")
-        when (original) {
-          is Float -> yoga.setStyle(nodeId, "paddingBottom", original)
-          is String -> yoga.setStyle(nodeId, "paddingBottom", original)
-          else -> yoga.setStyle(nodeId, "paddingBottom", "0")
-        }
-      } else if (behavior == "height") {
-        val original = yogaStyleCache[nodeId]?.get("marginBottom")
-        when (original) {
-          is Float -> yoga.setStyle(nodeId, "marginBottom", original)
-          is String -> yoga.setStyle(nodeId, "marginBottom", original)
-          else -> yoga.setStyle(nodeId, "marginBottom", "0")
-        }
-      }
-      markSurfaceDirtyForNode(nodeId)
-      return
-    }
-
-    if (behavior == "padding") {
-      val base = getCachedFloat(nodeId, "paddingBottom")
-      yoga.setStyle(nodeId, "paddingBottom", base + overlap)
-    } else if (behavior == "height") {
-       val base = getCachedFloat(nodeId, "marginBottom")
-       yoga.setStyle(nodeId, "marginBottom", base + overlap)
-    }
-    markSurfaceDirtyForNode(nodeId)
-  }
-
-  private fun getCachedFloat(nodeId: Int, name: String): Float {
-    val value = yogaStyleCache[nodeId]?.get(name) ?: return 0f
-    return when (value) {
-      is Float -> value
-      is String -> value.toFloatOrNull() ?: 0f
-      is Double -> value.toFloat()
-      is Int -> value.toFloat()
-      else -> 0f
-    }
-  }
-
   fun getNodeState(nodeId: Int): Node? = nodeStates[nodeId]
 
   fun getParentId(nodeId: Int): Int? = parents[nodeId]
@@ -1208,6 +1114,54 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     requestLayout()
   }
 
+  fun applyKeyboardAvoidingAdjustment(
+    nodeId: Int,
+    behavior: String,
+    overlapPx: Float,
+    availableHeightPx: Float? = null
+  ) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { applyKeyboardAvoidingAdjustment(nodeId, behavior, overlapPx, availableHeightPx) }
+      return
+    }
+    val view = nodes[nodeId] ?: return
+    val overlap = overlapPx.coerceAtLeast(0f)
+
+    when (behavior) {
+      "padding" -> {
+        val basePadding = keyboardAvoidingBasePaddingBottoms.getOrPut(nodeId) {
+          view.paddingBottom
+        }
+        val nextPadding = if (overlap <= 0f) {
+          keyboardAvoidingBasePaddingBottoms.remove(nodeId) ?: basePadding
+        } else {
+          basePadding + overlap.roundToInt()
+        }
+        view.setPadding(
+          view.paddingLeft,
+          view.paddingTop,
+          view.paddingRight,
+          nextPadding,
+        )
+      }
+      "height" -> {
+        val baseHeight = availableHeightPx?.roundToInt()
+          ?: keyboardAvoidingBaseHeights.getOrPut(nodeId) { view.height }
+        val nextHeight = if (overlap <= 0f) {
+          keyboardAvoidingBaseHeights.remove(nodeId) ?: baseHeight
+        } else {
+          (baseHeight - overlap).coerceAtLeast(0f).roundToInt()
+        }
+        val params = view.layoutParams
+        if (params != null && params.height != nextHeight) {
+          params.height = nextHeight
+          view.layoutParams = params
+        }
+      }
+    }
+    view.requestLayout()
+  }
+
 
   fun applyBatch(json: String) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -1229,15 +1183,16 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     beginBatch()
     try {
       var i = 0
+      fun read(idx: Int): Double = ops[idx]
       opLoop@ while (i < ops.size) {
-        val opcode = ops[i++].toInt()
+        val opcode = read(i++).toInt()
         when (opcode) {
           1 -> { // setProp
             if (i + 3 >= ops.size) break@opLoop
-            val nodeId = ops[i++].toInt()
-            val keyToken = ops[i++].toInt()
-            val valueType = ops[i++].toInt()
-            val payload = ops[i++]
+            val nodeId = read(i++).toInt()
+            val keyToken = read(i++).toInt()
+            val valueType = read(i++).toInt()
+            val payload = read(i++)
             if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
               continue@opLoop
             }
@@ -1249,6 +1204,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
               val value: String? = when (valueType) {
                 2 -> strings.getOrNull(payload.toInt())
                 3 -> if (payload != 0.0) "true" else "false"
+                4 -> "${payload}%"
+                5 -> "auto"
                 else -> null
               }
               setProp(nodeId, key, value)
@@ -1256,28 +1213,41 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           }
           2 -> { // setText
             if (i + 1 >= ops.size) break@opLoop
-            val nodeId = ops[i++].toInt()
-            val textIndex = ops[i++].toInt()
+            val nodeId = read(i++).toInt()
+            val textIndex = read(i++).toInt()
             val text = strings.getOrNull(textIndex) ?: ""
             setText(nodeId, text)
           }
           3 -> { // insertChild
             if (i + 2 >= ops.size) break@opLoop
-            val parentId = ops[i++].toInt()
-            val childId = ops[i++].toInt()
-            val index = ops[i++].toInt()
+            val parentId = read(i++).toInt()
+            val childId = read(i++).toInt()
+            val index = read(i++).toInt()
             insertChild(parentId, childId, index)
           }
           4 -> { // removeChild
             if (i + 1 >= ops.size) break@opLoop
-            val parentId = ops[i++].toInt()
-            val childId = ops[i++].toInt()
+            val parentId = read(i++).toInt()
+            val childId = read(i++).toInt()
             removeChild(parentId, childId)
           }
           5 -> { // dropNode
             if (i >= ops.size) break@opLoop
-            val nodeId = ops[i++].toInt()
+            val nodeId = read(i++).toInt()
             dropNode(nodeId)
+          }
+          6 -> { // createNode (nodeId, typeStringIndex, hasMeasure)
+            if (i + 2 >= ops.size) break@opLoop
+            val nodeId = read(i++).toInt()
+            val typeIndex = read(i++).toInt()
+            val hasMeasure = read(i++) != 0.0
+            val type = strings.getOrNull(typeIndex) ?: "view"
+            createNode(type, nodeId)
+          }
+          7 -> { // setSurface (surfaceId)
+            if (i >= ops.size) break@opLoop
+            val surfaceId = read(i++).toInt()
+            setSurface(surfaceId)
           }
           else -> break@opLoop
         }
@@ -1285,6 +1255,72 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     } finally {
       endBatch()
     }
+  }
+
+  @androidx.annotation.Keep
+  fun measureNode(id: Int, width: Float, widthMode: Int, height: Float, heightMode: Int): Long {
+    val view = nodes[id] ?: return 0L
+    
+    val handler = layoutEngine.getMeasureHandler(id)
+    if (handler != null) {
+      val input = com.zynth.kit.layout.MeasureInput(
+        width = width,
+        widthMode = when (widthMode) {
+          1 -> com.zynth.kit.layout.MeasureMode.EXACTLY
+          2 -> com.zynth.kit.layout.MeasureMode.AT_MOST
+          else -> com.zynth.kit.layout.MeasureMode.UNDEFINED
+        },
+        height = height,
+        heightMode = when (heightMode) {
+          1 -> com.zynth.kit.layout.MeasureMode.EXACTLY
+          2 -> com.zynth.kit.layout.MeasureMode.AT_MOST
+          else -> com.zynth.kit.layout.MeasureMode.UNDEFINED
+        }
+      )
+      val result = handler(input)
+      val mw = result.first
+      val mh = result.second
+      val mwBits = mw.toRawBits().toLong()
+      val mhBits = mh.toRawBits().toLong()
+      return (mwBits shl 32) or (mhBits and 0xFFFFFFFFL)
+    }
+
+    val widthSpec = when (widthMode) {
+      0 -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+      1 -> View.MeasureSpec.makeMeasureSpec(width.toInt(), View.MeasureSpec.EXACTLY)
+      2 -> View.MeasureSpec.makeMeasureSpec(width.toInt(), View.MeasureSpec.AT_MOST)
+      else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+    }
+    
+    val heightSpec = when (heightMode) {
+      0 -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+      1 -> View.MeasureSpec.makeMeasureSpec(height.toInt(), View.MeasureSpec.EXACTLY)
+      2 -> View.MeasureSpec.makeMeasureSpec(height.toInt(), View.MeasureSpec.AT_MOST)
+      else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+    }
+
+    if (view is TextView) {
+      val pl = view.paddingLeft
+      val pt = view.paddingTop
+      val pr = view.paddingRight
+      val pb = view.paddingBottom
+      view.setPadding(0, 0, 0, 0)
+      view.measure(widthSpec, heightSpec)
+      val mw = view.measuredWidth.toFloat()
+      val mh = view.measuredHeight.toFloat()
+      view.setPadding(pl, pt, pr, pb)
+      
+      val mwBits = mw.toRawBits().toLong()
+      val mhBits = mh.toRawBits().toLong()
+      return (mwBits shl 32) or (mhBits and 0xFFFFFFFFL)
+    }
+    
+    view.measure(widthSpec, heightSpec)
+    val mw = view.measuredWidth.toFloat()
+    val mh = view.measuredHeight.toFloat()
+    val mwBits = mw.toRawBits().toLong()
+    val mhBits = mh.toRawBits().toLong()
+    return (mwBits shl 32) or (mhBits and 0xFFFFFFFFL)
   }
 
   fun applyBatchTypedBuffer(buffer: ByteBuffer, opCount: Int, strings: Array<String?>) {
@@ -1331,6 +1367,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
               val value: String? = when (valueType) {
                 2 -> strings.getOrNull(payload.toInt())
                 3 -> if (payload != 0.0) "true" else "false"
+                4 -> "${payload}%"
+                5 -> "auto"
                 else -> null
               }
               setProp(nodeId, key, value)
@@ -1361,6 +1399,146 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
             val nodeId = read(i++).toInt()
             dropNode(nodeId)
           }
+          6 -> { // createNode (nodeId, typeStringIndex)
+            if (i + 1 >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            val typeIndex = read(i++).toInt()
+            val type = strings.getOrNull(typeIndex) ?: "view"
+            createNode(type, nodeId)
+          }
+          7 -> { // setSurface (surfaceId)
+            if (i >= opCount) break@opLoop
+            val surfaceId = read(i++).toInt()
+            setSurface(surfaceId)
+          }
+          else -> break@opLoop
+        }
+      }
+    } finally {
+      endBatch()
+    }
+  }
+
+  fun applyMountTransaction(buffer: ByteBuffer, opCount: Int, strings: Array<String?>) {
+    val ops = buffer.order(ByteOrder.nativeOrder())
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      val byteLength = opCount * 8
+      val source = ops.duplicate().order(ByteOrder.nativeOrder())
+      source.position(0)
+      source.limit(byteLength.coerceAtMost(source.capacity()))
+      val copied = acquireByteBuffer(byteLength)
+      copied.put(source)
+      copied.rewind()
+      runOnMain { 
+        applyMountTransaction(copied, opCount, strings)
+        releaseByteBuffer(copied)
+      }
+      return
+    }
+    if (!didDispatchFirstMountCommit && opCount > 0) {
+      didDispatchFirstMountCommit = true
+      runCatching { firstMountCommitListener?.invoke() }
+    }
+    beginBatch()
+    try {
+      var i = 0
+      fun read(idx: Int): Double = ops.getDouble(idx * 8)
+      opLoop@ while (i < opCount) {
+        val opcode = read(i++).toInt()
+        when (opcode) {
+          1 -> { // setProp
+            if (i + 3 >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            val keyToken = read(i++).toInt()
+            val valueType = read(i++).toInt()
+            val payload = read(i++)
+            if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
+              continue@opLoop
+            }
+            val key = resolveTypedPropName(keyToken, strings)
+            if (key.isEmpty()) continue@opLoop
+            if (valueType == 1) {
+              setProp(nodeId, key, payload)
+            } else {
+              val value: String? = when (valueType) {
+                2 -> strings.getOrNull(payload.toInt())
+                3 -> if (payload != 0.0) "true" else "false"
+                4 -> "${payload}%"
+                5 -> "auto"
+                else -> null
+              }
+              setProp(nodeId, key, value)
+            }
+          }
+          2 -> { // setText
+            if (i + 1 >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            val textIndex = read(i++).toInt()
+            val text = strings.getOrNull(textIndex) ?: ""
+            setText(nodeId, text)
+          }
+          3 -> { // insertChild
+            if (i + 2 >= opCount) break@opLoop
+            val parentId = read(i++).toInt()
+            val childId = read(i++).toInt()
+            val index = read(i++).toInt()
+            insertChild(parentId, childId, index)
+          }
+          4 -> { // removeChild
+            if (i + 1 >= opCount) break@opLoop
+            val parentId = read(i++).toInt()
+            val childId = read(i++).toInt()
+            removeChild(parentId, childId)
+          }
+          5 -> { // dropNode
+            if (i >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            dropNode(nodeId)
+          }
+          7 -> { // createNode (nodeId, typeStringIndex, hasMeasure)
+            if (i + 2 >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            val typeIndex = read(i++).toInt()
+            val hasMeasure = read(i++) != 0.0
+            val type = strings.getOrNull(typeIndex) ?: "view"
+            createNode(type, nodeId)
+          }
+          8 -> { // setSurface (surfaceId)
+            if (i >= opCount) break@opLoop
+            val surfaceId = read(i++).toInt()
+            setSurface(surfaceId)
+          }
+          6 -> { // frame (nodeId, left, top, width, height)
+            if (i + 4 >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            val left = read(i++).toFloat()
+            val top = read(i++).toFloat()
+            val width = read(i++).toFloat()
+            val height = read(i++).toFloat()
+            
+            val view = nodes[nodeId]
+            if (view != null) {
+              val rLeft = left.toInt()
+              val rTop = top.toInt()
+              val rRight = (left + width).toInt()
+              val rBottom = (top + height).toInt()
+              
+              val rect = layoutFrames[nodeId] ?: android.graphics.Rect().also { layoutFrames[nodeId] = it }
+              
+              if (rect.left != rLeft || rect.top != rTop || rect.right != rRight || rect.bottom != rBottom) {
+                rect.set(rLeft, rTop, rRight, rBottom)
+                val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(rRight - rLeft, View.MeasureSpec.EXACTLY)
+                val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(rBottom - rTop, View.MeasureSpec.EXACTLY)
+                view.measure(widthMeasureSpec, heightMeasureSpec)
+                view.layout(rLeft, rTop, rRight, rBottom)
+                
+                if (layoutNodes.contains(nodeId)) {
+                  layoutEventBuffer.add(LayoutEvent(nodeId, left.toDouble(), top.toDouble(), width.toDouble(), height.toDouble()))
+                  needsLayout = true
+                }
+              }
+            }
+          }
           else -> break@opLoop
         }
       }
@@ -1388,6 +1566,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   internal fun markBatchNeedsLayout() {
     batchNeedsLayout = true
+  }
+
+  fun setNativeCommitEnabled(enabled: Boolean) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { setNativeCommitEnabled(enabled) }
+      return
+    }
+    nativeCommitEnabled = enabled
   }
 
   fun beginAtomicCommit() {
@@ -1488,41 +1674,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       else -> false
     }
     return if (shouldScale) dpToPx(numeric).toString() else value
-  }
-
-  private fun cacheYogaStyle(id: Int, name: String, value: Any?) {
-    val styles = yogaStyleCache.getOrPut(id) { HashMap() }
-    styles[name] = value
-  }
-
-  private fun reapplyYogaStyles(id: Int, surfaceId: Int) {
-    val styles = yogaStyleCache[id] ?: return
-    val layout = yogaForSurface(surfaceId)
-    for ((name, value) in styles) {
-      when (value) {
-        is Float -> layout.setStyle(id, name, value)
-        is String -> layout.setStyle(id, name, value)
-      }
-    }
-  }
-
-  private fun moveSubtreeToSurface(nodeId: Int, surfaceId: Int, parentId: Int, index: Int) {
-    val view = nodes[nodeId] ?: return
-    val previousSurfaceId = nodeSurfaces[nodeId]
-    if (previousSurfaceId != null && previousSurfaceId != surfaceId) {
-      surfaceYoga[previousSurfaceId]?.removeNode(nodeId)
-    }
-    nodeSurfaces[nodeId] = surfaceId
-    val layout = yogaForSurface(surfaceId)
-    layout.ensureNode(nodeId, view)
-    reapplyYogaStyles(nodeId, surfaceId)
-    val yogaParentId = if (parentId == 0 || isSurfaceRootId(parentId)) 0 else parentId
-    layout.insertChild(yogaParentId, nodeId, index)
-
-    val childIds = children[nodeId]?.toList() ?: return
-    for ((childIndex, childId) in childIds.withIndex()) {
-      moveSubtreeToSurface(childId, surfaceId, nodeId, childIndex)
-    }
   }
 
   fun getNodeView(nodeId: Int): View? {
@@ -1630,16 +1781,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
     val applyDp = { name: String, value: Float ->
       if (value.isFinite()) {
-        // Snap to physical pixels to avoid sub-pixel layout oscillation.
         val px = dpToPx(value).roundToInt().toFloat()
-        val previous = yogaStyleCache[nodeId]?.get(name) as? Float
-        if (previous != null && kotlin.math.abs(previous - px) < 0.5f) {
-          Unit
-        } else {
-          cacheYogaStyle(nodeId, name, px)
-          yogaForNode(nodeId).setStyle(nodeId, name, px)
-          changed = true
-        }
+        changed = true
       }
     }
 
@@ -1803,33 +1946,22 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     )
   }
 
+  private val customMeasureHandlers = HashMap<Int, com.zynth.kit.layout.MeasureHandler>()
+
   private inner class LayoutEngineAdapter : LayoutEngine {
-    override fun createNode(id: Int) {
-      nodes[id]?.let { yogaForNode(id).ensureNode(id, it) }
-    }
+    override fun createNode(id: Int) {}
 
     override fun removeNode(id: Int) {
-      yogaForNode(id).removeNode(id)
+      customMeasureHandlers.remove(id)
     }
 
-    override fun insertChild(parent: Int, child: Int, index: Int) {
-      yogaForNode(child).insertChild(parent, child, index)
-    }
+    override fun insertChild(parent: Int, child: Int, index: Int) {}
 
-    override fun setStyle(id: Int, style: com.zynth.kit.layout.Style) {
-      style
-    }
+    override fun setStyle(id: Int, style: com.zynth.kit.layout.Style) {}
 
-    override fun calculateLayout(width: Int, height: Int) {
-      width
-      height
-    }
+    override fun calculateLayout(width: Int, height: Int) {}
 
-    override fun calculateLayoutForNode(nodeId: Int, width: Float, height: Float) {
-      nodeId
-      width
-      height
-    }
+    override fun calculateLayoutForNode(nodeId: Int, width: Float, height: Float) {}
 
     override fun frame(id: Int): LayoutRect {
       val view = nodes[id] ?: return LayoutRect(0, 0, 0, 0)
@@ -1845,11 +1977,18 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
 
     override fun setMeasureHandler(id: Int, handler: MeasureHandler?) {
-      yogaForNode(id).setMeasureHandler(id, handler)
+      if (handler == null) {
+        customMeasureHandlers.remove(id)
+      } else {
+        customMeasureHandlers[id] = handler
+      }
+    }
+
+    override fun getMeasureHandler(id: Int): MeasureHandler? {
+      return customMeasureHandlers[id]
     }
 
     override fun markDirty(id: Int) {
-      yogaForNode(id).markDirty(id)
       markSurfaceDirtyForNode(id)
     }
   }

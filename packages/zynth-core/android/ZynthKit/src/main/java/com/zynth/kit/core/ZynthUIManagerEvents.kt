@@ -329,13 +329,7 @@ internal fun ZynthUIManager.destroyNode(id: Int) {
     }
 
     try {
-      val surfaceId = nodeSurfaces[nodeId]
-      val layout = if (surfaceId != null) surfaceYoga[surfaceId] else null
-      if (layout != null) {
-        layout.removeNode(nodeId)
-      } else {
-        getLayoutEngine().removeNode(nodeId)
-      }
+      getLayoutEngine().removeNode(nodeId)
     } catch (error: Throwable) {
       android.util.Log.e("ZynthUI", "Failed to remove node $nodeId from layout engine", error)
     }
@@ -391,7 +385,6 @@ internal fun ZynthUIManager.destroyNode(id: Int) {
     styleLayoutDirtyNodes.remove(nodeId)
     styleLayoutFrames.remove(nodeId)
     textStyleStates.remove(nodeId)
-    yogaStyleCache.remove(nodeId)
     children.remove(nodeId)
 
     val listener = touchListeners.remove(nodeId)

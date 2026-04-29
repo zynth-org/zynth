@@ -51,21 +51,16 @@ internal fun ZynthUIManager.handleFrame() {
   }
   val dirty = dirtySurfaces.toSet()
   dirtySurfaces.clear()
-  val nodeCount = surfaceYoga.values.sumOf { it.nodeCount() }
   val forceAtomic = atomicCommitPending
-  val layoutApplyBudgetMs =
-    if (forceAtomic) ATOMIC_LAYOUT_APPLY_BUDGET_MS
-    else computeAdaptiveLayoutApplyBudgetMs(dirty.size, nodeCount)
-  val layoutPhaseBudgetNs =
-    if (forceAtomic) ATOMIC_LAYOUT_PHASE_BUDGET_NS
-    else computeAdaptiveLayoutPhaseBudgetNs(dirty.size, nodeCount)
+  val nodeCount = nodes.size
+  
+  // C++ handles layout natively, so we just clear the dirty flags here.
+  // We still track layout metrics for debugging if needed.
   val layoutStartNs = System.nanoTime()
-  val incomplete = performLayoutInternal(dirty, layoutApplyBudgetMs, layoutPhaseBudgetNs)
   val layoutNs = System.nanoTime() - layoutStartNs
   tracePhase("layout", layoutNs)
-  val layoutComplete = incomplete.isEmpty()
+  val layoutComplete = true
   if (!layoutComplete) {
-    dirtySurfaces.addAll(incomplete)
     needsLayout = true
   }
   var styleNs = 0L
@@ -147,20 +142,15 @@ private fun ZynthUIManager.recordPerfSample(
   if (styleMs > perfMaxStyleMs) perfMaxStyleMs = styleMs
   if (layoutEventsMs > perfMaxLayoutEventsMs) perfMaxLayoutEventsMs = layoutEventsMs
 
-  var measures = 0
-  var changed = 0
-  var nodes = 0
-  for (layout in surfaceYoga.values) {
-    nodes += layout.nodeCount()
-    measures += layout.lastLayoutMeasureCount()
-    changed += layout.lastLayoutChangedCount()
-  }
+  val measures = 0
+  val changed = layoutDirtyNodes.size
+  val nodeTotal = nodes.size
   perfMeasures += measures
   perfChanged += changed
-  perfNodes = nodes
+  perfNodes = nodeTotal
   if (measures > perfMaxMeasureCount) perfMaxMeasureCount = measures
   if (changed > perfMaxChangedCount) perfMaxChangedCount = changed
-  if (nodes > perfMaxNodes) perfMaxNodes = nodes
+  if (nodeTotal > perfMaxNodes) perfMaxNodes = nodeTotal
   if (surfaceCount > perfMaxSurfaces) perfMaxSurfaces = surfaceCount
 
   val nowMs = SystemClock.uptimeMillis()
@@ -205,75 +195,6 @@ private fun ZynthUIManager.recordPerfSample(
   perfMaxNodes = 0
   perfMaxSurfaces = 0
   perfLastLogMs = nowMs
-}
-
-internal fun ZynthUIManager.performLayoutInternal(dirty: Set<Int>): Set<Int> {
-  return performLayoutInternal(dirty, layoutApplyBudgetMs, 24_000_000L)
-}
-
-private fun ZynthUIManager.computeAdaptiveLayoutApplyBudgetMs(
-  dirtySurfaceCount: Int,
-  nodeCount: Int
-): Double {
-  var budget = layoutApplyBudgetMs
-  if (lastFrameMs > 14.0 || budgetOverruns > 0) {
-    budget -= 1.0
-  }
-  if (dirtySurfaceCount >= 2) {
-    budget += 0.75
-  }
-  if (nodeCount >= 1500) {
-    budget += 1.0
-  }
-  return budget.coerceIn(layoutApplyBudgetMinMs, layoutApplyBudgetMaxMs)
-}
-
-private fun ZynthUIManager.computeAdaptiveLayoutPhaseBudgetNs(
-  dirtySurfaceCount: Int,
-  nodeCount: Int
-): Long {
-  var budgetNs = 24_000_000L
-  if (lastFrameMs > 14.0) {
-    budgetNs -= 2_000_000L
-  }
-  if (dirtySurfaceCount >= 2) {
-    budgetNs += 2_000_000L
-  }
-  if (nodeCount >= 1500) {
-    budgetNs += 2_000_000L
-  }
-  return budgetNs.coerceIn(layoutPhaseBudgetMinNs, layoutPhaseBudgetMaxNs)
-}
-
-internal fun ZynthUIManager.performLayoutInternal(
-  dirty: Set<Int>,
-  perSurfaceApplyBudgetMs: Double,
-  totalBudgetNs: Long
-): Set<Int> {
-  val incomplete = HashSet<Int>()
-  val startNs = System.nanoTime()
-
-  for (surfaceId in dirty) {
-    if (System.nanoTime() - startNs > totalBudgetNs) {
-      incomplete.add(surfaceId)
-      continue
-    }
-
-    val layout = surfaceYoga[surfaceId] ?: continue
-    val root = surfaceRoots[surfaceId] ?: rootView
-    var width = root.width.takeIf { it > 0 } ?: root.measuredWidth
-    var height = root.height.takeIf { it > 0 } ?: root.measuredHeight
-    if ((width <= 0 || height <= 0) && root !== rootView) {
-      width = rootView.width.takeIf { it > 0 } ?: rootView.measuredWidth
-      height = rootView.height.takeIf { it > 0 } ?: rootView.measuredHeight
-    }
-    syncSurfaceRootSize(surfaceId, root, width, height)
-    val complete = layout.layout(width, height, nodes, perSurfaceApplyBudgetMs)
-    if (!complete) {
-      incomplete.add(surfaceId)
-    }
-  }
-  return incomplete
 }
 
 internal fun ZynthUIManager.warmUpTextMeasurement() {

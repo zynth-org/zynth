@@ -1,11 +1,14 @@
 package com.zynth.kit.runtime
 
+import android.util.Log
+
 internal object JSBridge {
   init {
     try {
       System.loadLibrary("zynthkit")
-    } catch (_: Throwable) {
-      // Native bindings are not available in phase 1.
+    } catch (error: Throwable) {
+      Log.e("ZynthJSBridge", "Failed to load libzynthkit.so", error)
+      throw error
     }
   }
 

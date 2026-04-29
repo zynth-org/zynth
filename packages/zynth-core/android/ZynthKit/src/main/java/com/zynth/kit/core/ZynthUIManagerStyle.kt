@@ -174,42 +174,36 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       "lineHeight" -> {
         textState.lineHeight = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "lineSpacing" -> {
         textState.lineSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "paragraphSpacing" -> {
         textState.paragraphSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "baselineShift" -> {
         textState.baselineShift = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "letterSpacing" -> {
         textState.letterSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "minimumFontScale" -> {
         textState.minimumFontScale = floatVal
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
@@ -518,63 +512,54 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       "lineHeight" -> {
         textState.lineHeight = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "lineSpacing" -> {
         textState.lineSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "paragraphSpacing" -> {
         textState.paragraphSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "baselineShift" -> {
         textState.baselineShift = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "letterSpacing" -> {
         textState.letterSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "minimumFontScale" -> {
         textState.minimumFontScale = value.toFloatOrNull()
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "textDecorationLine" -> {
         textState.textDecorationLine = value
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "textTransform" -> {
         textState.textTransform = value
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "hyphenation" -> {
         textState.hyphenation = value
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }

@@ -12,6 +12,15 @@ add_library(zynthkit SHARED
   src/main/cpp/ScrollViewUICommands.cpp
   src/main/cpp/ZynthAnimateJSI.cpp
 )
+
+# Native renderer headers (Phase 0-2: telemetry, prop model, commit decoder, state)
+target_sources(zynthkit PRIVATE
+  src/main/cpp/ZynthRendererTelemetry.h
+  src/main/cpp/ZynthProp.h
+  src/main/cpp/ZynthCommit.h
+  src/main/cpp/ZynthCommitDecoder.h
+  src/main/cpp/ZynthRendererHost.h
+)
 find_package(hermes-engine REQUIRED CONFIG)
 find_package(ReactAndroid REQUIRED CONFIG)
 find_package(fbjni REQUIRED CONFIG)
@@ -20,6 +29,7 @@ target_include_directories(zynthkit
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
     $<TARGET_PROPERTY:ReactAndroid::jsi,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:ReactAndroid::reactnative,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 if(TARGET hermes-engine::hermesvm)
@@ -34,6 +44,7 @@ target_link_libraries(zynthkit
   PRIVATE
     ${ZYNTH_HERMES_TARGET}
     ReactAndroid::jsi
+    ReactAndroid::reactnative
     fbjni::fbjni
     log
 )

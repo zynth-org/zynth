@@ -38,6 +38,7 @@ projects/**/ios/Pods/**
 **/ios/*.xcodeproj/xcuserdata/
 
 # Android (generated projects - not templates)
+packages/zynth-core/native
 apps/*/android/
 !templates/android/
 packages/zynth-android/**/build/

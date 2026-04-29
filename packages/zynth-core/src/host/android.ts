@@ -98,6 +98,33 @@ export function createAndroidHost(): Host {
     queue.push({ type: "batch", op });
   };
 
+  const formatFlushError = (error: unknown) => {
+    if (error instanceof Error) {
+      return {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      };
+    }
+    if (typeof error === "string") {
+      return { message: error };
+    }
+    if (error && typeof error === "object") {
+      const candidate = error as {
+        message?: unknown;
+        stack?: unknown;
+        name?: unknown;
+      };
+      return {
+        name: typeof candidate.name === "string" ? candidate.name : undefined,
+        message: typeof candidate.message === "string" ? candidate.message : String(error),
+        stack: typeof candidate.stack === "string" ? candidate.stack : undefined,
+        raw: error,
+      };
+    }
+    return { message: String(error) };
+  };
+
   const PROP_TO_ID: Record<string, number> = {
     width: 1,
     height: 2,
@@ -528,7 +555,15 @@ export function createAndroidHost(): Host {
       flushBatch();
       ui.flush();
     } catch (e) {
-      console.error("Flush error:", JSON.stringify(e));
+      console.error("Flush error:", {
+        error: formatFlushError(e),
+        queueLength: queue.length,
+        pendingRemovals: pendingRemovals.size,
+        readyForDestruction: readyForDestruction.size,
+        pendingDrops: pendingDrops.size,
+        rescuedRemovals: rescuedRemovals.size,
+      });
+      throw e;
     }
   };
 

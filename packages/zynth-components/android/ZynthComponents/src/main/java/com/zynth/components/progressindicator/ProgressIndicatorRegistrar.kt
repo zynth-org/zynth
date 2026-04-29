@@ -16,6 +16,7 @@ class ProgressIndicatorRegistrar : ZynthComponentRegistrar {
     registry.register(
       ZynthComponentDescriptor(
         type = "progress-indicator",
+        hasMeasureFunc = true,
         createView = { context: Context, nodeId: Int ->
           ZynthProgressIndicatorView(context).apply {
             this.nodeId = nodeId

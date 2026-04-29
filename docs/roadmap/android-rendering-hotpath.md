@@ -4,6 +4,8 @@ Date: 2026-04-19
 Status: Draft for long-term native renderer refactor
 Scope: `packages/zynth-core/android/ZynthKit`
 
+Supplement: `docs/roadmap/android-native-renderer-migration-supplement.md`
+
 ## Purpose
 
 This document captures a real refactor plan for Android rendering performance, focused on reducing the gap between:

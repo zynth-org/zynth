@@ -17,6 +17,7 @@ class ImageComponentRegistrar : ZynthComponentRegistrar {
     registry.register(
       ZynthComponentDescriptor(
         type = "image",
+        hasMeasureFunc = true,
         createView = { context: Context, _: Int ->
           ImageView(context).apply {
             layoutParams = FrameLayout.LayoutParams(

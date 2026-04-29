@@ -1,6 +1,5 @@
 val reactNativeVersion = "0.84.0-rc.1"
 val hermesVersion = "250829098.0.6"
-val yogaVersion = "3.2.1"
 
 plugins {
   id("com.android.library")
@@ -48,6 +47,7 @@ android {
         "**/libhermesvm.so",
         "**/libhermes-executor-debug.so",
         "**/libhermes-executor-release.so",
+        "**/libjsi.so",
         "**/libfbjni.so",
         "**/libreactnative.so"
       )
@@ -60,8 +60,6 @@ dependencies {
   implementation("androidx.activity:activity-ktx:1.9.3")
   implementation("androidx.appcompat:appcompat:1.7.0")
   implementation("com.facebook.hermes:hermes-android:$hermesVersion")
-  implementation("com.facebook.yoga:yoga:$yogaVersion")
-  compileOnly("com.facebook.react:react-android:$reactNativeVersion")
+  implementation("com.facebook.react:react-android:$reactNativeVersion")
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
-  implementation("com.facebook.yoga:yoga:$yogaVersion")
 }

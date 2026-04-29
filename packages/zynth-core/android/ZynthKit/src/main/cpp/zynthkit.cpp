@@ -6,6 +6,13 @@
 
 #include "UICommandsRegistry.h"
 #include "ZynthJSIPluginRegistry.h"
+#include "ZynthRendererTelemetry.h"
+#include "ZynthProp.h"
+#include "ZynthCommit.h"
+#include "ZynthCommitDecoder.h"
+#include "ZynthRendererHost.h"
+#include "ZynthYogaTree.h"
+#include "ZynthMeasureRegistry.h"
 
 #include <memory>
 #include <mutex>
@@ -79,8 +86,11 @@ struct RuntimeState {
   jclass devtoolsClass = nullptr;
   jclass nativeOverlayClass = nullptr;
   jmethodID createNode = nullptr;
+  jmethodID createNodeWithId = nullptr;
+  jmethodID dropNode = nullptr;
   jmethodID setProp = nullptr;
   jmethodID setText = nullptr;
+  jmethodID measureNode = nullptr;
   jmethodID syncTextInputState = nullptr;
   jmethodID insertChild = nullptr;
   jmethodID removeChild = nullptr;
@@ -90,6 +100,8 @@ struct RuntimeState {
   jmethodID applyBatch = nullptr;
   jmethodID applyBatchTypedPacked = nullptr;
   jmethodID applyBatchTypedBuffer = nullptr;
+  jmethodID applyMountTransaction = nullptr;
+  jmethodID setNativeCommitEnabled = nullptr;
   jmethodID beginAtomicCommit = nullptr;
   jmethodID endAtomicCommit = nullptr;
   jmethodID setSurface = nullptr;
@@ -131,7 +143,47 @@ struct RuntimeState {
   std::mutex syncSignalsMutex;
   std::unordered_map<int, int> syncSignalBindings; // nodeId -> signalId
   std::mutex syncSignalBindingsMutex;
+
+  // Phase 0-2: Native renderer commit pipeline
+  bool useNativeCommit = true; ///< Runtime flag: true = native decode, false = legacy Kotlin decode
+  zynth::ZynthCommit nativeCommit; ///< Reusable commit buffer to avoid per-batch allocation
+  zynth::ZynthRendererHost rendererHost; ///< Phase 2: authoritative native node/surface state
+  
+  // Phase 3: Native Yoga Ownership
+  std::unique_ptr<zynth::ZynthYogaTree> yogaTree;
+  
+  // Phase 5: Text Measurement Cache
+  zynth::ZynthMeasureRegistry measureRegistry;
+  zynth::ZynthCommitTelemetry* currentTelemetry = nullptr;
+  
+  RuntimeState() : yogaTree(std::make_unique<zynth::ZynthYogaTree>(&rendererHost)) {
+    // We will set measureFunc_ and callback after JNI is initialized
+  }
 };
+
+thread_local RuntimeState* g_currentLayoutState = nullptr;
+
+static YGSize zynthYogaMeasureFunc(YGNodeConstRef node, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode) {
+  if (!g_currentLayoutState) return {0, 0};
+  int32_t nodeId = static_cast<int32_t>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
+  
+  auto* record = g_currentLayoutState->rendererHost.getNode(nodeId);
+  if (!record) return {0, 0};
+  
+  uint32_t hits = 0;
+  uint32_t misses = 0;
+  int64_t dummy = 0;
+  zynth::ZynthPhaseTimer timer(g_currentLayoutState->currentTelemetry ? g_currentLayoutState->currentTelemetry->measureCallbackUs : dummy);
+  
+  YGSize res = g_currentLayoutState->measureRegistry.measure(
+      nodeId, record->contentRevision, width, widthMode, height, heightMode, hits, misses);
+      
+  if (g_currentLayoutState->currentTelemetry) {
+      g_currentLayoutState->currentTelemetry->measureCacheHits += hits;
+      g_currentLayoutState->currentTelemetry->measureCacheMisses += misses;
+  }
+  return res;
+}
 
 std::mutex gStateMutex;
 std::unordered_map<facebook::hermes::HermesRuntime *, std::shared_ptr<RuntimeState>> gStates;
@@ -1519,7 +1571,7 @@ void installWorkletsBridge(Runtime &rt, facebook::hermes::HermesRuntime *runtime
 
 void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
   auto createNode = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "createNode"), 1,
+      rt, PropNameID::forAscii(rt, "createNode"), 2,
       [runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isString()) return Value::undefined();
         RuntimeState *state = stateFor(runtime);
@@ -1528,8 +1580,14 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!env) return Value::undefined();
         std::string type = args[0].asString(rt).utf8(rt);
         jstring jType = env->NewStringUTF(type.c_str());
+        jboolean jHasMeasure = (count >= 2 && args[1].isBool() && args[1].getBool()) ? JNI_TRUE : JNI_FALSE;
         jint nodeId = env->CallIntMethod(state->uiManager, state->createNode, jType);
         env->DeleteLocalRef(jType);
+        // Phase 2: Register node in native renderer state
+        if (state->useNativeCommit && nodeId > 0) {
+          state->rendererHost.createNode(
+              nodeId, type, state->rendererHost.activeSurfaceId(), jHasMeasure == JNI_TRUE);
+        }
         return Value(static_cast<double>(nodeId));
       });
 
@@ -1616,10 +1674,16 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        env->CallVoidMethod(state->uiManager, state->insertChild,
-                            static_cast<jint>(args[0].asNumber()),
-                            static_cast<jint>(args[1].asNumber()),
-                            static_cast<jint>(args[2].asNumber()));
+        jint parentId = static_cast<jint>(args[0].asNumber());
+        jint childId = static_cast<jint>(args[1].asNumber());
+        jint index = static_cast<jint>(args[2].asNumber());
+        // Phase 2: Update native tree topology
+        if (state->useNativeCommit) {
+          state->rendererHost.insertChild(parentId, childId, index);
+        } else {
+          env->CallVoidMethod(state->uiManager, state->insertChild,
+                              parentId, childId, index);
+        }
         return Value::undefined();
       });
 
@@ -1632,9 +1696,15 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        env->CallVoidMethod(state->uiManager, state->removeChild,
-                            static_cast<jint>(args[0].asNumber()),
-                            static_cast<jint>(args[1].asNumber()));
+        jint parentId = static_cast<jint>(args[0].asNumber());
+        jint childId = static_cast<jint>(args[1].asNumber());
+        // Phase 2: Update native tree topology
+        if (state->useNativeCommit) {
+          state->rendererHost.removeChild(parentId, childId);
+        } else {
+          env->CallVoidMethod(state->uiManager, state->removeChild,
+                              parentId, childId);
+        }
         return Value::undefined();
       });
 
@@ -1773,95 +1843,246 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           if (!stringTableObject.isArray(rt)) return Value::undefined();
           Array stringTable = stringTableObject.asArray(rt);
           const size_t stringCount = stringTable.length(rt);
-          jdoubleArray jOps = nullptr;
+
+          // Phase 0: Generate commit ID and start JSI entry timer
+          const uint64_t commitId = zynth::nextCommitId();
+          zynth::ZynthCommitTelemetry telemetry;
+          telemetry.commitId = commitId;
+
+          // Always extract string table once in C++ (avoids duplicate work)
+          std::vector<std::string> nativeStrings;
+          nativeStrings.reserve(stringCount);
+          for (size_t i = 0; i < stringCount; i++) {
+            Value entry = stringTable.getValueAtIndex(rt, i);
+            if (entry.isString()) {
+              nativeStrings.push_back(entry.asString(rt).utf8(rt));
+            } else {
+              nativeStrings.push_back("");
+            }
+          }
+
+          // Extract raw ops into a double vector for native decode
+          std::vector<double> opsBuffer;
+          size_t opCount = 0;
+          const uint8_t *bufferData = nullptr;
+          size_t bufferByteLength = 0;
+
           if (opsObject.isArrayBuffer(rt)) {
             ArrayBuffer buffer = opsObject.getArrayBuffer(rt);
-            const size_t byteLength = buffer.size(rt);
-            const size_t opCount = byteLength / sizeof(double);
-            if (state->applyBatchTypedBuffer) {
-              jobject jBuffer = env->NewDirectByteBuffer(buffer.data(rt), static_cast<jlong>(byteLength));
-              if (!jBuffer) return Value::undefined();
-
-              jclass stringClass = state->stringClass;
-              if (!stringClass) {
-                jclass localStringClass = env->FindClass("java/lang/String");
-                if (!localStringClass) {
-                  env->DeleteLocalRef(jBuffer);
-                  return Value::undefined();
-                }
-                stringClass = localStringClass;
-                state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
-                env->DeleteLocalRef(localStringClass);
-              }
-              jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
-              for (size_t i = 0; i < stringCount; i++) {
-                Value entry = stringTable.getValueAtIndex(rt, i);
-                if (entry.isString()) {
-                  std::string utf8 = entry.asString(rt).utf8(rt);
-                  jstring jStr = env->NewStringUTF(utf8.c_str());
-                  env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
-                  env->DeleteLocalRef(jStr);
-                }
-              }
-
-              env->CallVoidMethod(state->uiManager, state->applyBatchTypedBuffer, jBuffer,
-                                  static_cast<jint>(opCount), jStrings);
-              env->DeleteLocalRef(jBuffer);
-              env->DeleteLocalRef(jStrings);
-              return Value::undefined();
-            }
-
-            if (!state->applyBatchTypedPacked) return Value::undefined();
-            jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
-            if (!jOps) return Value::undefined();
-            if (opCount > 0) {
-              const auto *data = reinterpret_cast<const uint8_t *>(buffer.data(rt));
-              std::vector<jdouble> opsBuffer(opCount);
-              std::memcpy(opsBuffer.data(), data, opCount * sizeof(double));
-              env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
-            }
+            bufferByteLength = buffer.size(rt);
+            bufferData = buffer.data(rt);
+            opCount = bufferByteLength / sizeof(double);
           } else if (opsObject.isArray(rt)) {
-            if (!state->applyBatchTypedPacked) return Value::undefined();
             Array opsPacked = opsObject.asArray(rt);
-            const size_t opCount = opsPacked.length(rt);
-            jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
-            if (!jOps) return Value::undefined();
-            std::vector<jdouble> opsBuffer(opCount);
+            opCount = opsPacked.length(rt);
+            opsBuffer.resize(opCount);
             for (size_t i = 0; i < opCount; i++) {
               Value opVal = opsPacked.getValueAtIndex(rt, i);
               opsBuffer[i] = opVal.isNumber() ? opVal.asNumber() : 0.0;
             }
-            env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
           } else {
             return Value::undefined();
           }
 
-          jclass stringClass = state->stringClass;
-          if (!stringClass) {
-            jclass localStringClass = env->FindClass("java/lang/String");
-            if (!localStringClass) {
-              env->DeleteLocalRef(jOps);
-              return Value::undefined();
+          // Phase 1: Native commit decode path
+          if (state->useNativeCommit) {
+            zynth::ZynthCommit &commit = state->nativeCommit;
+            {
+              zynth::ZynthPhaseTimer decodeTimer(telemetry.nativeDecodeUs);
+              if (bufferData) {
+                zynth::ZynthCommitDecoder::decodeFromBuffer(
+                    bufferData, bufferByteLength, nativeStrings, commitId, commit);
+              } else {
+                zynth::ZynthCommitDecoder::decode(
+                    opsBuffer.data(), opCount, nativeStrings, commitId, commit);
+              }
             }
-            stringClass = localStringClass;
-            state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
-            env->DeleteLocalRef(localStringClass);
+
+            // Phase 2: Apply topology changes to native state
+            state->rendererHost.applyCommitTopology(commit, telemetry);
+
+            // Phase 3: Apply layout props to Yoga tree and calculate layout
+            {
+              zynth::ZynthPhaseTimer timer(telemetry.yogaMutateUs);
+              state->yogaTree->applyLayoutMutations(commit.layoutProps);
+              
+              auto processTextDirty = [&](int32_t nodeId) {
+                auto* record = state->rendererHost.getNode(nodeId);
+                if (record && record->hasMeasureFunc) {
+                  record->contentRevision++;
+                  if (record->yoga && YGNodeHasMeasureFunc(record->yoga)) YGNodeMarkDirty(record->yoga);
+                  state->rendererHost.markSurfaceDirty(record->surfaceId);
+                }
+              };
+              for (const auto& op : commit.textProps) processTextDirty(op.nodeId);
+              for (const auto& op : commit.textMutations) processTextDirty(op.nodeId);
+            }
+            
+            g_currentLayoutState = state;
+            state->currentTelemetry = &telemetry;
+            state->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
+            state->currentTelemetry = nullptr;
+            g_currentLayoutState = nullptr;
+
+            // Phase 4: Kotlin Transaction Apply
+            // C++ has already applied layout mutations and calculated layout.
+            // Now we build a new transaction buffer containing structural changes,
+            // view props, text props, text mutations, and final layout frames,
+            // and pass it to Kotlin's applyMountTransaction.
+            {
+              std::vector<double> mountOps;
+              mountOps.reserve(commit.totalOpCount() * 6);
+              
+              // 3 = insertChild
+              for (const auto& op : commit.inserts) {
+                mountOps.push_back(3);
+                mountOps.push_back(op.parentId);
+                mountOps.push_back(op.childId);
+                mountOps.push_back(op.index);
+              }
+              // 4 = removeChild
+              for (const auto& op : commit.removes) {
+                mountOps.push_back(4);
+                mountOps.push_back(op.parentId);
+                mountOps.push_back(op.childId);
+              }
+              // 5 = dropNode
+              for (const auto& op : commit.drops) {
+                mountOps.push_back(5);
+                mountOps.push_back(op.nodeId);
+              }
+              // 7 = createNode
+              for (const auto& op : commit.creates) {
+                mountOps.push_back(7);
+                mountOps.push_back(op.nodeId);
+                mountOps.push_back(op.typeStringIndex);
+                mountOps.push_back(op.hasMeasure ? 1.0 : 0.0);
+              }
+              // 8 = setSurface
+              for (const auto& op : commit.surfaces) {
+                mountOps.push_back(8);
+                mountOps.push_back(op.surfaceId);
+              }
+              
+              auto pushProp = [&](const zynth::ZynthPropMutation& op) {
+                mountOps.push_back(1); // 1 = setProp
+                mountOps.push_back(op.nodeId);
+                // The keyToken might be negative if it's an un-interned string token in the payload
+                mountOps.push_back(static_cast<double>(op.prop));
+                mountOps.push_back(static_cast<double>(op.value.kind));
+                if (op.value.kind == zynth::ZynthValueKind::Bool) {
+                  mountOps.push_back(op.value.number);
+                } else if (op.value.kind == zynth::ZynthValueKind::String) {
+                  mountOps.push_back(static_cast<double>(op.value.stringIndex));
+                } else {
+                  mountOps.push_back(op.value.number);
+                }
+              };
+              
+              // viewProps, textProps, descriptorProps
+              for (const auto& op : commit.viewProps) pushProp(op);
+              for (const auto& op : commit.textProps) pushProp(op);
+              for (const auto& op : commit.descriptorProps) pushProp(op);
+              
+              // 2 = setText
+              for (const auto& op : commit.textMutations) {
+                mountOps.push_back(2);
+                mountOps.push_back(op.nodeId);
+                mountOps.push_back(op.textStringIndex);
+              }
+              
+              // 6 = frame
+              for (const auto& op : commit.layoutFrames) {
+                mountOps.push_back(6);
+                mountOps.push_back(op.nodeId);
+                mountOps.push_back(op.left);
+                mountOps.push_back(op.top);
+                mountOps.push_back(op.width);
+                mountOps.push_back(op.height);
+              }
+
+              jclass stringClass = state->stringClass;
+              if (!stringClass) {
+                jclass localStringClass = env->FindClass("java/lang/String");
+                if (localStringClass) {
+                  state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
+                  stringClass = state->stringClass;
+                  env->DeleteLocalRef(localStringClass);
+                }
+              }
+              if (stringClass && state->applyMountTransaction) {
+                jobjectArray jStrings = env->NewObjectArray(
+                    static_cast<jsize>(nativeStrings.size()), stringClass, nullptr);
+                for (size_t i = 0; i < nativeStrings.size(); i++) {
+                  jstring jStr = env->NewStringUTF(nativeStrings[i].c_str());
+                  env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
+                  env->DeleteLocalRef(jStr);
+                }
+
+                jobject jBuffer = env->NewDirectByteBuffer(
+                    mountOps.data(),
+                    static_cast<jlong>(mountOps.size() * sizeof(double)));
+                if (jBuffer) {
+                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                      jBuffer, static_cast<jint>(mountOps.size()), jStrings);
+                  env->DeleteLocalRef(jBuffer);
+                }
+                
+                env->DeleteLocalRef(jStrings);
+              }
+            }
+
+            // Emit commit summary in debug builds
+            commit.telemetry.logSummary();
+
+            return Value::undefined();
           }
-          jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
-          for (size_t i = 0; i < stringCount; i++) {
-            Value entry = stringTable.getValueAtIndex(rt, i);
-            if (entry.isString()) {
-              std::string utf8 = entry.asString(rt).utf8(rt);
-              jstring jStr = env->NewStringUTF(utf8.c_str());
+
+          // Legacy Kotlin decode path (useNativeCommit == false)
+          {
+            jclass stringClass = state->stringClass;
+            if (!stringClass) {
+              jclass localStringClass = env->FindClass("java/lang/String");
+              if (!localStringClass) return Value::undefined();
+              stringClass = localStringClass;
+              state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
+              env->DeleteLocalRef(localStringClass);
+            }
+            jobjectArray jStrings = env->NewObjectArray(
+                static_cast<jsize>(nativeStrings.size()), stringClass, nullptr);
+            for (size_t i = 0; i < nativeStrings.size(); i++) {
+              jstring jStr = env->NewStringUTF(nativeStrings[i].c_str());
               env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
               env->DeleteLocalRef(jStr);
             }
-          }
 
-          env->CallVoidMethod(state->uiManager, state->applyBatchTypedPacked, jOps, jStrings);
-          env->DeleteLocalRef(jOps);
-          env->DeleteLocalRef(jStrings);
-          return Value::undefined();
+            if (bufferData && state->applyBatchTypedBuffer) {
+              jobject jBuffer = env->NewDirectByteBuffer(
+                  const_cast<uint8_t *>(bufferData),
+                  static_cast<jlong>(bufferByteLength));
+              if (jBuffer) {
+                env->CallVoidMethod(state->uiManager, state->applyBatchTypedBuffer,
+                                    jBuffer, static_cast<jint>(opCount), jStrings);
+                env->DeleteLocalRef(jBuffer);
+              }
+            } else if (state->applyBatchTypedPacked) {
+              jdoubleArray jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
+              if (jOps) {
+                if (!opsBuffer.empty()) {
+                  env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
+                } else if (bufferData) {
+                  std::vector<jdouble> tempBuf(opCount);
+                  std::memcpy(tempBuf.data(), bufferData, opCount * sizeof(double));
+                  env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), tempBuf.data());
+                }
+                env->CallVoidMethod(state->uiManager, state->applyBatchTypedPacked,
+                                    jOps, jStrings);
+                env->DeleteLocalRef(jOps);
+              }
+            }
+            env->DeleteLocalRef(jStrings);
+            return Value::undefined();
+          }
         }
         Value opsVal = payload.getProperty(rt, "operations");
         if (!opsVal.isObject()) return Value::undefined();
@@ -1875,10 +2096,20 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           if (!typeVal.isString()) continue;
           std::string type = typeVal.asString(rt).utf8(rt);
           if (type == "createNode") {
-            Value tagVal = op.getProperty(rt, "tag");
-            if (tagVal.isString()) {
-              __android_log_print(ANDROID_LOG_WARN, "ZynthUI",
-                                  "applyBatchTyped createNode op is unsupported on Android");
+            Value idVal = op.getProperty(rt, "nodeId");
+            Value typeVal = op.getProperty(rt, "typeString");
+            Value hasMeasureVal = op.getProperty(rt, "hasMeasureFunc");
+            if (idVal.isNumber() && typeVal.isString()) {
+              jint nodeId = static_cast<jint>(idVal.asNumber());
+              std::string nodeType = typeVal.asString(rt).utf8(rt);
+              jstring jType = env->NewStringUTF(nodeType.c_str());
+              jboolean jHasMeasure = hasMeasureVal.isBool() && hasMeasureVal.getBool() ? JNI_TRUE : JNI_FALSE;
+              env->CallVoidMethod(state->uiManager, state->createNodeWithId, jType, nodeId);
+              env->DeleteLocalRef(jType);
+              if (state->useNativeCommit) {
+                state->rendererHost.createNode(
+                    nodeId, nodeType, state->rendererHost.activeSurfaceId(), jHasMeasure == JNI_TRUE);
+              }
             }
             continue;
           }
@@ -1939,7 +2170,29 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        env->CallVoidMethod(state->uiManager, state->setSurface, static_cast<jint>(args[0].asNumber()));
+        jint surfaceId = static_cast<jint>(args[0].asNumber());
+        // Phase 2: Update native renderer state
+        if (state->useNativeCommit) {
+          state->rendererHost.setActiveSurface(surfaceId);
+        }
+        env->CallVoidMethod(state->uiManager, state->setSurface, surfaceId);
+        return Value::undefined();
+      });
+
+  auto dropNode = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "dropNode"), 1,
+      [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        RuntimeState *state = stateFor(runtime);
+        if (!state) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+        jint nodeId = static_cast<jint>(args[0].asNumber());
+        if (state->useNativeCommit) {
+          state->rendererHost.dropNode(nodeId);
+        } else {
+          env->CallVoidMethod(state->uiManager, state->dropNode, nodeId);
+        }
         return Value::undefined();
       });
 
@@ -1969,6 +2222,23 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
   ui.setProperty(rt, "flush", flush);
   ui.setProperty(rt, "__supportsTypedProps", true);
   ui.setProperty(rt, "__supportsTypedBatch", true);
+  ui.setProperty(rt, "__supportsNativeCommit", true);
+
+  // Runtime toggle for native commit decode (Phase 1).
+  // Usage from JS: __ui.__setUseNativeCommit(false) to disable.
+  auto setUseNativeCommit = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__setUseNativeCommit"), 1,
+      [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        RuntimeState *state = stateFor(runtime);
+        if (!state || count < 1) return Value::undefined();
+        state->useNativeCommit = args[0].isBool() ? args[0].getBool() : true;
+        __android_log_print(ANDROID_LOG_DEBUG, "ZynthCommit",
+                            "useNativeCommit = %s",
+                            state->useNativeCommit ? "true" : "false");
+        return Value::undefined();
+      });
+  ui.setProperty(rt, "__setUseNativeCommit", setUseNativeCommit);
+
   rt.global().setProperty(rt, "__ui", ui);
 }
 
@@ -2134,8 +2404,11 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->uiManager = env->NewGlobalRef(uiManager);
   state->uiClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(uiManager)));
   state->createNode = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;)I");
+  state->createNodeWithId = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;I)V");
+  state->dropNode = env->GetMethodID(state->uiClass, "dropNode", "(I)V");
   state->setProp = env->GetMethodID(state->uiClass, "setProp", "(ILjava/lang/String;Ljava/lang/String;)V");
   state->setText = env->GetMethodID(state->uiClass, "setText", "(ILjava/lang/String;)V");
+  state->measureNode = env->GetMethodID(state->uiClass, "measureNode", "(IFIFI)J");
   state->syncTextInputState = env->GetMethodID(state->uiClass, "syncTextInputState", "(ILjava/lang/String;II)V");
   state->insertChild = env->GetMethodID(state->uiClass, "insertChild", "(III)V");
   state->removeChild = env->GetMethodID(state->uiClass, "removeChild", "(II)V");
@@ -2147,6 +2420,10 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       env->GetMethodID(state->uiClass, "applyBatchTypedPacked", "([D[Ljava/lang/String;)V");
   state->applyBatchTypedBuffer =
       env->GetMethodID(state->uiClass, "applyBatchTypedBuffer", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
+  state->applyMountTransaction =
+      env->GetMethodID(state->uiClass, "applyMountTransaction", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
+  state->setNativeCommitEnabled =
+      env->GetMethodID(state->uiClass, "setNativeCommitEnabled", "(Z)V");
   state->beginAtomicCommit = env->GetMethodID(state->uiClass, "beginAtomicCommit", "()V");
   state->endAtomicCommit = env->GetMethodID(state->uiClass, "endAtomicCommit", "()V");
   state->setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
@@ -2194,9 +2471,33 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
     env->DeleteLocalRef(stringCls);
   }
 
+  state->rendererHost.measureFunc_ = zynthYogaMeasureFunc;
+  state->measureRegistry.setCallback([state](int32_t nodeId, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode) -> YGSize {
+    JNIEnv *env = getEnv();
+    if (!env || !state->uiManager || !state->measureNode) return {0, 0};
+    
+    jlong result = env->CallLongMethod(state->uiManager, state->measureNode,
+                                       static_cast<jint>(nodeId),
+                                       static_cast<jfloat>(width),
+                                       static_cast<jint>(widthMode),
+                                       static_cast<jfloat>(height),
+                                       static_cast<jint>(heightMode));
+                                       
+    uint32_t mwRaw = (result >> 32) & 0xFFFFFFFF;
+    uint32_t mhRaw = result & 0xFFFFFFFF;
+    float mw, mh;
+    std::memcpy(&mw, &mwRaw, sizeof(float));
+    std::memcpy(&mh, &mhRaw, sizeof(float));
+    return {mw, mh};
+  });
+
   {
     std::lock_guard<std::mutex> lock(gStateMutex);
     gStates[runtime] = state;
+  }
+  
+  if (state->setNativeCommitEnabled) {
+    env->CallVoidMethod(state->uiManager, state->setNativeCommitEnabled, state->useNativeCommit ? JNI_TRUE : JNI_FALSE);
   }
 
   installConsole(*runtime, state.get());
