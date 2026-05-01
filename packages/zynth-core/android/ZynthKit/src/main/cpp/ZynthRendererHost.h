@@ -102,7 +102,6 @@ public:
 
   ZynthRendererHost() {
     yogaConfig_ = YGConfigNew();
-    YGConfigSetUseWebDefaults(yogaConfig_, true);
   }
 
   ~ZynthRendererHost() {
@@ -491,10 +490,12 @@ public:
       markSurfaceDirtyForNode(mut.nodeId);
     }
     for (const auto &mut : commit.textProps) {
-      markSurfaceDirtyForNode(mut.nodeId);
+      auto* node = getNode(mut.nodeId);
+      if (node) markMeasuredNodeDirty(*node);
     }
     for (const auto &tm : commit.textMutations) {
-      markSurfaceDirtyForNode(tm.nodeId);
+      auto* node = getNode(tm.nodeId);
+      if (node) markMeasuredNodeDirty(*node);
     }
 
     telemetry.dirtySurfaceCount = static_cast<uint32_t>(dirtySurfaces_.size());

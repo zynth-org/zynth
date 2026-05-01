@@ -14,8 +14,6 @@ class ZynthYogaTree {
 public:
   ZynthYogaTree(ZynthRendererHost* host) : host_(host) {
     config_ = YGConfigNew();
-    // Default config matching React Native standard
-    YGConfigSetUseWebDefaults(config_, true);
   }
 
   ~ZynthYogaTree() {
