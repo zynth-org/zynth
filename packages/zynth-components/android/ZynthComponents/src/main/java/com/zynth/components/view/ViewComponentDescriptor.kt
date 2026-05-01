@@ -48,24 +48,6 @@ fun createViewComponentDescriptor(): ZynthComponentDescriptor {
         }
       }
     },
-    onStyleApplied = { node, style ->
-      val viewContainer = node.view as? ZynthViewContainer ?: return@ZynthComponentDescriptor
-      // CSS overflow behavior: only clip THIS container's content, not propagate to descendants
-      style.overflow?.let { overflow ->
-        val shouldClip =
-          overflow.equals("hidden", ignoreCase = true) ||
-            overflow.equals("scroll", ignoreCase = true)
-        viewContainer.setOverflowHidden(shouldClip)
-      }
-
-      // Apply background color
-      style.backgroundColor?.let { color ->
-        val drawable = (viewContainer.background as? ZynthBorderDrawable) ?: ZynthBorderDrawable().also {
-          viewContainer.background = it
-        }
-        drawable.backgroundColor = color
-      }
-    },
     onSetHandler = { node, event ->
       val viewContainer = node.view as? ZynthViewContainer ?: return@ZynthComponentDescriptor false
       if (event == "onPress") {

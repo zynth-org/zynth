@@ -1981,7 +1981,11 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
               auto pushProp = [&](const zynth::ZynthPropMutation& op) {
                 preLayoutOps.push_back(1); // 1 = setProp
                 preLayoutOps.push_back(op.nodeId);
-                preLayoutOps.push_back(static_cast<double>(-static_cast<int32_t>(op.prop)));
+                if (op.prop == zynth::ZynthPropId::Unknown) {
+                  preLayoutOps.push_back(static_cast<double>(op.keyToken));
+                } else {
+                  preLayoutOps.push_back(static_cast<double>(-static_cast<int32_t>(op.prop)));
+                }
                 preLayoutOps.push_back(static_cast<double>(op.value.kind));
                 if (op.value.kind == zynth::ZynthValueKind::Bool) {
                   preLayoutOps.push_back(op.value.number);
@@ -1992,9 +1996,23 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 }
               };
               
-              for (const auto& op : commit.viewProps) pushProp(op);
-              for (const auto& op : commit.textProps) pushProp(op);
-              for (const auto& op : commit.descriptorProps) pushProp(op);
+              for (const auto& op : commit.viewProps) {
+                pushProp(op);
+              }
+              for (const auto& op : commit.textProps) {
+                pushProp(op);
+              }
+              for (const auto& op : commit.descriptorProps) {
+                pushProp(op);
+              }
+              
+              // Phase 3A-1: Dual-routed props
+              // Display and Overflow affect both Yoga layout and native View visibility/clipping.
+              for (const auto& op : commit.layoutProps) {
+                if (op.prop == zynth::ZynthPropId::Display || op.prop == zynth::ZynthPropId::Overflow) {
+                  pushProp(op);
+                }
+              }
               
               // 2 = setText
               for (const auto& op : commit.textMutations) {

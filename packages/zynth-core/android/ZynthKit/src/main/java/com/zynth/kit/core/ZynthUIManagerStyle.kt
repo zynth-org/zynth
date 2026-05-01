@@ -3,6 +3,7 @@ package com.zynth.kit.core
 import android.graphics.Matrix
 import android.os.Build
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 
 internal data class ZynthViewStyleState(
@@ -202,6 +203,23 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
     "color" -> {
       if (view is TextView) {
         view.setTextColor(value.toLong().toInt())
+      }
+      return true
+    }
+    "display" -> {
+      view.visibility = if (value == 0.0) View.VISIBLE else View.GONE
+      return true
+    }
+    "overflow" -> {
+      val clip = value == 1.0 || value == 2.0
+      if (view is ZynthLayoutView) {
+        view.setOverflowHidden(clip)
+      } else {
+        view.clipToOutline = clip
+        if (view is ViewGroup) {
+          view.clipToPadding = clip
+          view.clipChildren = clip
+        }
       }
       return true
     }
@@ -528,6 +546,10 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
     "transformOrigin" -> {
       state.transformOrigin = parseTransformOrigin(value)
       styleDirtyNodes.add(id)
+      return true
+    }
+    "display" -> {
+      view.visibility = if (value == "none") View.GONE else View.VISIBLE
       return true
     }
     "overflow" -> {

@@ -69,6 +69,7 @@ public:
 
           ZynthPropMutation mut;
           mut.nodeId = nodeId;
+          mut.keyToken = keyToken;
 
           // Resolve prop ID
           if (keyToken < 0) {

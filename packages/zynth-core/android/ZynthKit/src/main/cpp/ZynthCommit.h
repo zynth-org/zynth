@@ -17,6 +17,7 @@ struct ZynthPropMutation {
   ZynthPropId prop = ZynthPropId::Unknown;
   ZynthPropClass propClass = ZynthPropClass::Descriptor;
   ZynthPropValue value;
+  int32_t keyToken = 0;
 };
 
 /**

@@ -211,9 +211,12 @@ internal class ZynthScrollView(
       }
     }
 
-    // Default to hidden (clipping) unless explicitly set to "visible"
+    // Default to hidden (clipping) unless explicitly set to "visible" (0.0)
     val overflow = style.overflow ?: "hidden"
-    val shouldClip = !overflow.equals("visible", ignoreCase = true)
+    val shouldClip = when (overflow.lowercase()) {
+      "visible", "0.0" -> false
+      else -> true
+    }
     
     clipChildren = shouldClip
     clipToPadding = shouldClip

@@ -863,20 +863,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val startNs = System.nanoTime()
     val view = nodes[id]
     
-    if (DEBUG_TEXT && text.isNotEmpty()) {
-      val firstCode = text[0].code
-      if (firstCode > 0xE000 || text.length > 1) {
-        val hex = text.map { Integer.toHexString(it.code) }.joinToString(" ")
-        val hasGlyph = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && view is TextView) {
-          view.typeface?.run {
-            android.graphics.Paint().also { it.typeface = this }.hasGlyph(text)
-          }
-        } else "unknown"
-        Log.d(TRACE_TAG, "setText($id): '$text' codes=[$hex] hasGlyph=$hasGlyph typeface=${(view as? TextView)?.typeface}")
-      }
-    }
-    // Log.d("ZynthLifecycle", "setText id=$id len=${text.length}")
-    
     val node = nodeStates[id]
     val descriptor = descriptorFor(node)
     val handledByDescriptor =
@@ -1111,9 +1097,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
    * Used by components when text or content changes.
    */
   fun markNodeDirty(nodeId: Int) {
-    if (DEBUG_TEXT_DIRTY) {
-      Log.d("ZynthText", "markNodeDirty node=$nodeId\n${Throwable().stackTraceToString()}")
-    }
     layoutEngine.markDirty(nodeId)
     requestLayout()
   }
@@ -2120,6 +2103,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         30 -> { setProp(nodeId, "rowGap", payload); return true }
         31 -> { setProp(nodeId, "columnGap", payload); return true }
         32 -> { setProp(nodeId, "aspectRatio", payload); return true }
+        40 -> { setProp(nodeId, "display", payload); return true }
+        41 -> { setProp(nodeId, "overflow", payload); return true }
         44 -> { setProp(nodeId, "backgroundColor", payload); return true }
         45 -> { setProp(nodeId, "borderColor", payload); return true }
         47 -> { setProp(nodeId, "borderRadius", payload); return true }
