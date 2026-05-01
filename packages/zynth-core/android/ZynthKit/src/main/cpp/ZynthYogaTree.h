@@ -53,7 +53,6 @@ public:
     ZynthPhaseTimer timer(telemetry.yogaCalculateUs);
     
     const auto& dirtySurfaces = host_->dirtySurfaces();
-    __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Calculating layout for %zu dirty surfaces", dirtySurfaces.size());
     for (int32_t surfaceId : dirtySurfaces) {
       // Find surface
       // We need to iterate over surfaces in host, let's assume we can get it
@@ -68,14 +67,12 @@ public:
       }
       
       auto& surface = surfIt->second;
-      __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Surface %d layout start: %.1fx%.1f", surfaceId, surface.width, surface.height);
       
       // Calculate layout
       YGNodeCalculateLayout(surface.rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
       
       // Extract frames
       extractFrames(surface.rootYoga, telemetry, commit);
-      __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Surface %d layout complete, extracted %u frames", surfaceId, telemetry.changedFrameCount);
     }
     
     // Clear dirty

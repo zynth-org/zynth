@@ -101,6 +101,7 @@ struct RuntimeState {
   jmethodID applyBatchTypedPacked = nullptr;
   jmethodID applyBatchTypedBuffer = nullptr;
   jmethodID applyMountTransaction = nullptr;
+  jmethodID applyMountTransactionSync = nullptr;
   jmethodID setNativeCommitEnabled = nullptr;
   jmethodID beginAtomicCommit = nullptr;
   jmethodID endAtomicCommit = nullptr;
@@ -177,6 +178,11 @@ static YGSize zynthYogaMeasureFunc(YGNodeConstRef node, float width, YGMeasureMo
   
   YGSize res = g_currentLayoutState->measureRegistry.measure(
       nodeId, record->contentRevision, width, widthMode, height, heightMode, hits, misses);
+      
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", 
+      "Measure node %d: in(%.1f, %d, %.1f, %d) out(%.1f, %.1f) rev=%u cacheHits=%u misses=%u",
+      nodeId, width, static_cast<int>(widthMode), height, static_cast<int>(heightMode), 
+      res.width, res.height, record->contentRevision, hits, misses);
       
   if (g_currentLayoutState->currentTelemetry) {
       g_currentLayoutState->currentTelemetry->measureCacheHits += hits;
@@ -1918,118 +1924,139 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
               for (const auto& op : commit.textMutations) processTextDirty(op.nodeId);
             }
             
-            g_currentLayoutState = state;
-            state->currentTelemetry = &telemetry;
-            state->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
-            state->currentTelemetry = nullptr;
-            g_currentLayoutState = nullptr;
+            // Phase 3A: Kotlin Pre-Layout Transaction
+            // We must dispatch text and properties to Kotlin BEFORE calculating layout,
+            // because Kotlin's TextView needs the actual text and font styles to measure correctly!
+            jclass stringClass = state->stringClass;
+            if (!stringClass) {
+              jclass localStringClass = env->FindClass("java/lang/String");
+              if (localStringClass) {
+                state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
+                stringClass = state->stringClass;
+                env->DeleteLocalRef(localStringClass);
+              }
+            }
 
-            // Phase 4: Kotlin Transaction Apply
-            // C++ has already applied layout mutations and calculated layout.
-            // Now we build a new transaction buffer containing structural changes,
-            // view props, text props, text mutations, and final layout frames,
-            // and pass it to Kotlin's applyMountTransaction.
-            {
-              std::vector<double> mountOps;
-              mountOps.reserve(commit.totalOpCount() * 6);
+            jobjectArray jStrings = nullptr;
+            if (stringClass) {
+              jStrings = env->NewObjectArray(
+                  static_cast<jsize>(nativeStrings.size()), stringClass, nullptr);
+              for (size_t i = 0; i < nativeStrings.size(); i++) {
+                jstring jStr = env->NewStringUTF(nativeStrings[i].c_str());
+                env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
+                env->DeleteLocalRef(jStr);
+              }
+            }
+
+            if (stringClass && state->applyMountTransaction) {
+              std::vector<double> preLayoutOps;
+              preLayoutOps.reserve(commit.totalOpCount() * 5);
               
               // 3 = insertChild
               for (const auto& op : commit.inserts) {
-                mountOps.push_back(3);
-                mountOps.push_back(op.parentId);
-                mountOps.push_back(op.childId);
-                mountOps.push_back(op.index);
+                preLayoutOps.push_back(3);
+                preLayoutOps.push_back(op.parentId);
+                preLayoutOps.push_back(op.childId);
+                preLayoutOps.push_back(op.index);
               }
               // 4 = removeChild
               for (const auto& op : commit.removes) {
-                mountOps.push_back(4);
-                mountOps.push_back(op.parentId);
-                mountOps.push_back(op.childId);
+                preLayoutOps.push_back(4);
+                preLayoutOps.push_back(op.parentId);
+                preLayoutOps.push_back(op.childId);
               }
               // 5 = dropNode
               for (const auto& op : commit.drops) {
-                mountOps.push_back(5);
-                mountOps.push_back(op.nodeId);
+                preLayoutOps.push_back(5);
+                preLayoutOps.push_back(op.nodeId);
               }
               // 7 = createNode
               for (const auto& op : commit.creates) {
-                mountOps.push_back(7);
-                mountOps.push_back(op.nodeId);
-                mountOps.push_back(op.typeStringIndex);
-                mountOps.push_back(op.hasMeasure ? 1.0 : 0.0);
+                preLayoutOps.push_back(7);
+                preLayoutOps.push_back(op.nodeId);
+                preLayoutOps.push_back(op.typeStringIndex);
+                preLayoutOps.push_back(op.hasMeasure ? 1.0 : 0.0);
               }
               // 8 = setSurface
               for (const auto& op : commit.surfaces) {
-                mountOps.push_back(8);
-                mountOps.push_back(op.surfaceId);
+                preLayoutOps.push_back(8);
+                preLayoutOps.push_back(op.surfaceId);
               }
               
               auto pushProp = [&](const zynth::ZynthPropMutation& op) {
-                mountOps.push_back(1); // 1 = setProp
-                mountOps.push_back(op.nodeId);
-                // The keyToken might be negative if it's an un-interned string token in the payload
-                mountOps.push_back(static_cast<double>(-static_cast<int32_t>(op.prop)));
-                mountOps.push_back(static_cast<double>(op.value.kind));
+                preLayoutOps.push_back(1); // 1 = setProp
+                preLayoutOps.push_back(op.nodeId);
+                preLayoutOps.push_back(static_cast<double>(-static_cast<int32_t>(op.prop)));
+                preLayoutOps.push_back(static_cast<double>(op.value.kind));
                 if (op.value.kind == zynth::ZynthValueKind::Bool) {
-                  mountOps.push_back(op.value.number);
+                  preLayoutOps.push_back(op.value.number);
                 } else if (op.value.kind == zynth::ZynthValueKind::String) {
-                  mountOps.push_back(static_cast<double>(op.value.stringIndex));
+                  preLayoutOps.push_back(static_cast<double>(op.value.stringIndex));
                 } else {
-                  mountOps.push_back(op.value.number);
+                  preLayoutOps.push_back(op.value.number);
                 }
               };
               
-              // viewProps, textProps, descriptorProps
               for (const auto& op : commit.viewProps) pushProp(op);
               for (const auto& op : commit.textProps) pushProp(op);
               for (const auto& op : commit.descriptorProps) pushProp(op);
               
               // 2 = setText
               for (const auto& op : commit.textMutations) {
-                mountOps.push_back(2);
-                mountOps.push_back(op.nodeId);
-                mountOps.push_back(op.textStringIndex);
+                preLayoutOps.push_back(2);
+                preLayoutOps.push_back(op.nodeId);
+                preLayoutOps.push_back(op.textStringIndex);
               }
+
+              jobject jBuffer = env->NewDirectByteBuffer(
+                  preLayoutOps.data(),
+                  static_cast<jlong>(preLayoutOps.size() * sizeof(double)));
+              if (jBuffer) {
+                if (state->applyMountTransactionSync) {
+                  env->CallVoidMethod(state->uiManager, state->applyMountTransactionSync,
+                                      jBuffer, static_cast<jint>(preLayoutOps.size()), jStrings);
+                } else {
+                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                      jBuffer, static_cast<jint>(preLayoutOps.size()), jStrings);
+                }
+                env->DeleteLocalRef(jBuffer);
+              }
+            }
+
+            // Phase 3B: Yoga Layout Calculation
+            g_currentLayoutState = state;
+            state->currentTelemetry = &telemetry;
+            state->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
+            state->currentTelemetry = nullptr;
+            g_currentLayoutState = nullptr;
+
+            // Phase 4: Kotlin Layout Transaction
+            if (stringClass && state->applyMountTransaction) {
+              std::vector<double> postLayoutOps;
+              postLayoutOps.reserve(commit.layoutFrames.size() * 6);
               
               // 6 = frame
               for (const auto& op : commit.layoutFrames) {
-                mountOps.push_back(6);
-                mountOps.push_back(op.nodeId);
-                mountOps.push_back(op.left);
-                mountOps.push_back(op.top);
-                mountOps.push_back(op.width);
-                mountOps.push_back(op.height);
+                postLayoutOps.push_back(6);
+                postLayoutOps.push_back(op.nodeId);
+                postLayoutOps.push_back(op.left);
+                postLayoutOps.push_back(op.top);
+                postLayoutOps.push_back(op.width);
+                postLayoutOps.push_back(op.height);
               }
 
-              jclass stringClass = state->stringClass;
-              if (!stringClass) {
-                jclass localStringClass = env->FindClass("java/lang/String");
-                if (localStringClass) {
-                  state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
-                  stringClass = state->stringClass;
-                  env->DeleteLocalRef(localStringClass);
-                }
+              jobject jBuffer = env->NewDirectByteBuffer(
+                  postLayoutOps.data(),
+                  static_cast<jlong>(postLayoutOps.size() * sizeof(double)));
+              if (jBuffer) {
+                env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                    jBuffer, static_cast<jint>(postLayoutOps.size()), jStrings);
+                env->DeleteLocalRef(jBuffer);
               }
-              if (stringClass && state->applyMountTransaction) {
-                jobjectArray jStrings = env->NewObjectArray(
-                    static_cast<jsize>(nativeStrings.size()), stringClass, nullptr);
-                for (size_t i = 0; i < nativeStrings.size(); i++) {
-                  jstring jStr = env->NewStringUTF(nativeStrings[i].c_str());
-                  env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
-                  env->DeleteLocalRef(jStr);
-                }
-
-                jobject jBuffer = env->NewDirectByteBuffer(
-                    mountOps.data(),
-                    static_cast<jlong>(mountOps.size() * sizeof(double)));
-                if (jBuffer) {
-                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
-                                      jBuffer, static_cast<jint>(mountOps.size()), jStrings);
-                  env->DeleteLocalRef(jBuffer);
-                }
-                
-                env->DeleteLocalRef(jStrings);
-              }
+            }
+            
+            if (jStrings) {
+              env->DeleteLocalRef(jStrings);
             }
 
             // Emit commit summary in debug builds
@@ -2432,6 +2459,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       env->GetMethodID(state->uiClass, "applyBatchTypedBuffer", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
   state->applyMountTransaction =
       env->GetMethodID(state->uiClass, "applyMountTransaction", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
+  state->applyMountTransactionSync =
+      env->GetMethodID(state->uiClass, "applyMountTransactionSync", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
   state->setNativeCommitEnabled =
       env->GetMethodID(state->uiClass, "setNativeCommitEnabled", "(Z)V");
   state->beginAtomicCommit = env->GetMethodID(state->uiClass, "beginAtomicCommit", "()V");

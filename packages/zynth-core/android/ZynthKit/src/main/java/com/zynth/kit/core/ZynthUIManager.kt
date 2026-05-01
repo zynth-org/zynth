@@ -1419,6 +1419,30 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
   }
 
+  @androidx.annotation.Keep
+  fun applyMountTransactionSync(buffer: ByteBuffer, opCount: Int, strings: Array<String?>) {
+    val ops = buffer.order(ByteOrder.nativeOrder())
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      val byteLength = opCount * 8
+      val source = ops.duplicate().order(ByteOrder.nativeOrder())
+      source.position(0)
+      source.limit(byteLength.coerceAtMost(source.capacity()))
+      val copied = acquireByteBuffer(byteLength)
+      copied.put(source)
+      copied.rewind()
+      val latch = java.util.concurrent.CountDownLatch(1)
+      runOnMain { 
+        applyMountTransactionInternal(copied, opCount, strings)
+        releaseByteBuffer(copied)
+        latch.countDown()
+      }
+      latch.await()
+      return
+    }
+    applyMountTransactionInternal(buffer, opCount, strings)
+  }
+
+  @androidx.annotation.Keep
   fun applyMountTransaction(buffer: ByteBuffer, opCount: Int, strings: Array<String?>) {
     val ops = buffer.order(ByteOrder.nativeOrder())
     if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -1430,11 +1454,15 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       copied.put(source)
       copied.rewind()
       runOnMain { 
-        applyMountTransaction(copied, opCount, strings)
+        applyMountTransactionInternal(copied, opCount, strings)
         releaseByteBuffer(copied)
       }
       return
     }
+    applyMountTransactionInternal(buffer, opCount, strings)
+  }
+
+  private fun applyMountTransactionInternal(ops: ByteBuffer, opCount: Int, strings: Array<String?>) {
     if (!didDispatchFirstMountCommit && opCount > 0) {
       didDispatchFirstMountCommit = true
       runCatching { firstMountCommitListener?.invoke() }
