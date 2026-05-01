@@ -239,6 +239,10 @@ export function createAndroidHost(): Host {
     clearButtonMode: 111,
     showClearAccessory: 112,
     __scrollCommand: 113,
+    borderTopColor: 114,
+    borderRightColor: 115,
+    borderBottomColor: 116,
+    borderLeftColor: 117,
   };
 
   const encodeTypedBatch = (

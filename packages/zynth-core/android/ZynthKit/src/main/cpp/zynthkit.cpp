@@ -179,11 +179,6 @@ static YGSize zynthYogaMeasureFunc(YGNodeConstRef node, float width, YGMeasureMo
   YGSize res = g_currentLayoutState->measureRegistry.measure(
       nodeId, record->contentRevision, width, widthMode, height, heightMode, hits, misses);
       
-  __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", 
-      "Measure node %d: in(%.1f, %d, %.1f, %d) out(%.1f, %.1f) rev=%u cacheHits=%u misses=%u",
-      nodeId, width, static_cast<int>(widthMode), height, static_cast<int>(heightMode), 
-      res.width, res.height, record->contentRevision, hits, misses);
-      
   if (g_currentLayoutState->currentTelemetry) {
       g_currentLayoutState->currentTelemetry->measureCacheHits += hits;
       g_currentLayoutState->currentTelemetry->measureCacheMisses += misses;
@@ -2060,7 +2055,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             }
 
             // Emit commit summary in debug builds
-            commit.telemetry.logSummary();
+            // commit.telemetry.logSummary();
 
             return Value::undefined();
           }

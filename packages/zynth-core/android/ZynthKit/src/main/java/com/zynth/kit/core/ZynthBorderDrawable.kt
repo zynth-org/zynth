@@ -55,22 +55,22 @@ class ZynthBorderDrawable : Drawable() {
             invalidateSelf()
         }
 
-    var borderTopColor: Int = Color.TRANSPARENT
+    var borderTopColor: Int = Color.BLACK
         set(value) {
             field = value
             invalidateSelf()
         }
-    var borderRightColor: Int = Color.TRANSPARENT
+    var borderRightColor: Int = Color.BLACK
         set(value) {
             field = value
             invalidateSelf()
         }
-    var borderBottomColor: Int = Color.TRANSPARENT
+    var borderBottomColor: Int = Color.BLACK
         set(value) {
             field = value
             invalidateSelf()
         }
-    var borderLeftColor: Int = Color.TRANSPARENT
+    var borderLeftColor: Int = Color.BLACK
         set(value) {
             field = value
             invalidateSelf()

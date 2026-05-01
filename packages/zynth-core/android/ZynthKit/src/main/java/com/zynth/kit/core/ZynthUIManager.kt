@@ -149,6 +149,10 @@ private fun resolveTypedPropName(keyToken: Int, strings: Array<String?>): String
     111 -> "clearButtonMode"
     112 -> "showClearAccessory"
     113 -> "__scrollCommand"
+    114 -> "borderTopColor"
+    115 -> "borderRightColor"
+    116 -> "borderBottomColor"
+    117 -> "borderLeftColor"
     else -> ""
   }
 }
@@ -2116,6 +2120,18 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         30 -> { setProp(nodeId, "rowGap", payload); return true }
         31 -> { setProp(nodeId, "columnGap", payload); return true }
         32 -> { setProp(nodeId, "aspectRatio", payload); return true }
+        44 -> { setProp(nodeId, "backgroundColor", payload); return true }
+        45 -> { setProp(nodeId, "borderColor", payload); return true }
+        47 -> { setProp(nodeId, "borderRadius", payload); return true }
+        48 -> { setProp(nodeId, "borderWidth", payload); return true }
+        49 -> { setProp(nodeId, "borderTopWidth", payload); return true }
+        50 -> { setProp(nodeId, "borderRightWidth", payload); return true }
+        51 -> { setProp(nodeId, "borderBottomWidth", payload); return true }
+        52 -> { setProp(nodeId, "borderLeftWidth", payload); return true }
+        53 -> { setProp(nodeId, "borderTopLeftRadius", payload); return true }
+        54 -> { setProp(nodeId, "borderTopRightRadius", payload); return true }
+        55 -> { setProp(nodeId, "borderBottomRightRadius", payload); return true }
+        56 -> { setProp(nodeId, "borderBottomLeftRadius", payload); return true }
         58 -> { setProp(nodeId, "fontSize", payload); return true }
         63 -> { setProp(nodeId, "opacity", payload); return true }
         64 -> { setProp(nodeId, "elevation", payload); return true }
@@ -2164,6 +2180,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         46 -> { setProp(nodeId, "borderStyle", value); return true }
         47 -> { setProp(nodeId, "borderRadius", value); return true }
         57 -> { setProp(nodeId, "color", value); return true }
+        114 -> { setProp(nodeId, "borderTopColor", value); return true }
+        115 -> { setProp(nodeId, "borderRightColor", value); return true }
+        116 -> { setProp(nodeId, "borderBottomColor", value); return true }
+        117 -> { setProp(nodeId, "borderLeftColor", value); return true }
         59 -> { setProp(nodeId, "fontWeight", value); return true }
         60 -> { setProp(nodeId, "fontFamily", value); return true }
         61 -> { setProp(nodeId, "fontStyle", value); return true }

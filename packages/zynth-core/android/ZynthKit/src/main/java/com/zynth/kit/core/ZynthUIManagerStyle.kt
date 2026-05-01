@@ -150,6 +150,61 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       view.alpha = floatVal
       return true
     }
+    "backgroundColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      val color = value.toLong().toInt()
+      drawable.backgroundColor = color
+      if (surfaceRoots.containsKey(id)) {
+        surfaceRoots[id]?.let { root ->
+          if (root !== view) {
+            val rootDrawable = (root.background as? ZynthBorderDrawable) ?: ZynthBorderDrawable().also { root.background = it }
+            rootDrawable.backgroundColor = color
+          }
+        }
+      }
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderColor" -> {
+      val color = value.toLong().toInt()
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopColor = color
+      drawable.borderRightColor = color
+      drawable.borderBottomColor = color
+      drawable.borderLeftColor = color
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderTopColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopColor = value.toLong().toInt()
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderRightColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderRightColor = value.toLong().toInt()
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderBottomColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderBottomColor = value.toLong().toInt()
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderLeftColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderLeftColor = value.toLong().toInt()
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "color" -> {
+      if (view is TextView) {
+        view.setTextColor(value.toLong().toInt())
+      }
+      return true
+    }
   }
 
   if (view is TextView) {

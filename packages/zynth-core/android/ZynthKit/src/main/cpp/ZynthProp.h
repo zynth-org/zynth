@@ -145,6 +145,10 @@ enum class ZynthPropId : uint16_t {
   ClearButtonMode    = 111,
   ShowClearAccessory  = 112,
   ScrollCommand      = 113,
+  BorderTopColor     = 114,
+  BorderRightColor   = 115,
+  BorderBottomColor  = 116,
+  BorderLeftColor    = 117,
 };
 
 /**
@@ -226,6 +230,10 @@ inline ZynthPropClass classifyProp(ZynthPropId prop) {
     case ZynthPropId::AccessibilityRole:
     case ZynthPropId::TestID:
     case ZynthPropId::Layout:
+    case ZynthPropId::BorderTopColor:
+    case ZynthPropId::BorderRightColor:
+    case ZynthPropId::BorderBottomColor:
+    case ZynthPropId::BorderLeftColor:
       return ZynthPropClass::View;
     default:
       break;
