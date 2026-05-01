@@ -55,19 +55,29 @@ public:
     ZynthPhaseTimer timer(telemetry.yogaCalculateUs);
     
     const auto& dirtySurfaces = host_->dirtySurfaces();
+    __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Calculating layout for %zu dirty surfaces", dirtySurfaces.size());
     for (int32_t surfaceId : dirtySurfaces) {
       // Find surface
       // We need to iterate over surfaces in host, let's assume we can get it
       auto surfIt = host_->surfaces_.find(surfaceId);
-      if (surfIt == host_->surfaces_.end() || !surfIt->second.rootYoga) continue;
+      if (surfIt == host_->surfaces_.end()) {
+        __android_log_print(ANDROID_LOG_WARN, "ZynthYoga", "Surface %d NOT FOUND in host!", surfaceId);
+        continue;
+      }
+      if (!surfIt->second.rootYoga) {
+        __android_log_print(ANDROID_LOG_WARN, "ZynthYoga", "Surface %d has NO rootYoga!", surfaceId);
+        continue;
+      }
       
       auto& surface = surfIt->second;
+      __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Surface %d layout start: %.1fx%.1f", surfaceId, surface.width, surface.height);
       
       // Calculate layout
       YGNodeCalculateLayout(surface.rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
       
       // Extract frames
       extractFrames(surface.rootYoga, telemetry, commit);
+      __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Surface %d layout complete, extracted %u frames", surfaceId, telemetry.changedFrameCount);
     }
     
     // Clear dirty
@@ -119,13 +129,13 @@ private:
     
     // Helper to get auto/percent/point values
     auto applyDimension = [&](auto ptFn, auto pctFn, auto autoFn) {
-      if (v.kind == ZynthValueKind::Number) ptFn(node, static_cast<float>(v.number));
+      if (v.kind == ZynthValueKind::Number) ptFn(node, host_->dpToPx(static_cast<float>(v.number)));
       else if (v.kind == ZynthValueKind::Percent) pctFn(node, static_cast<float>(v.number));
       else if (v.kind == ZynthValueKind::Auto) autoFn(node);
     };
     
     auto applyEdge = [&](YGEdge edge, auto ptFn, auto pctFn) {
-      if (v.kind == ZynthValueKind::Number) ptFn(node, edge, static_cast<float>(v.number));
+      if (v.kind == ZynthValueKind::Number) ptFn(node, edge, host_->dpToPx(static_cast<float>(v.number)));
       else if (v.kind == ZynthValueKind::Percent) pctFn(node, edge, static_cast<float>(v.number));
     };
 
@@ -176,9 +186,9 @@ private:
       case ZynthPropId::MarginBottom: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeBottom); else applyEdge(YGEdgeBottom, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
       case ZynthPropId::MarginLeft: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeLeft); else applyEdge(YGEdgeLeft, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
 
-      case ZynthPropId::Gap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterAll, static_cast<float>(v.number)); break;
-      case ZynthPropId::RowGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterRow, static_cast<float>(v.number)); break;
-      case ZynthPropId::ColumnGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterColumn, static_cast<float>(v.number)); break;
+      case ZynthPropId::Gap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterAll, host_->dpToPx(static_cast<float>(v.number))); break;
+      case ZynthPropId::RowGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterRow, host_->dpToPx(static_cast<float>(v.number))); break;
+      case ZynthPropId::ColumnGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterColumn, host_->dpToPx(static_cast<float>(v.number))); break;
 
       default:
         break;

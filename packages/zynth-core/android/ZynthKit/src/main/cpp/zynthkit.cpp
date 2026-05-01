@@ -1968,7 +1968,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 mountOps.push_back(1); // 1 = setProp
                 mountOps.push_back(op.nodeId);
                 // The keyToken might be negative if it's an un-interned string token in the payload
-                mountOps.push_back(static_cast<double>(op.prop));
+                mountOps.push_back(static_cast<double>(-static_cast<int32_t>(op.prop)));
                 mountOps.push_back(static_cast<double>(op.value.kind));
                 if (op.value.kind == zynth::ZynthValueKind::Bool) {
                   mountOps.push_back(op.value.number);
@@ -2316,6 +2316,15 @@ Java_com_zynth_kit_runtime_JSBridge_invokeAnimationFrame(JNIEnv *,
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_updateSurfaceSize(JNIEnv *, jobject, jlong ptr, jint surfaceId, jfloat width, jfloat height) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return;
+  auto state = stateFor(runtime);
+  if (!state) return;
+  state->rendererHost.registerSurface(surfaceId, width, height);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_zynth_kit_runtime_JSBridge_setSharedSignal(JNIEnv *, jobject, jlong ptr, jint id, jdouble value) {
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime) return;
@@ -2395,11 +2404,12 @@ Java_com_zynth_kit_runtime_JSBridge_destroyHermesRuntime(JNIEnv *, jobject, jlon
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlong ptr, jobject uiManager) {
+Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlong ptr, jobject uiManager, jfloat density) {
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime || !uiManager) return;
 
   auto state = std::make_shared<RuntimeState>();
+  state->rendererHost.setDensity(static_cast<float>(density));
   state->runtime = runtime;
   state->uiManager = env->NewGlobalRef(uiManager);
   state->uiClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(uiManager)));

@@ -33,6 +33,10 @@ internal fun ZynthUIManager.markAllSurfacesDirty() {
     ensureChoreographerInternal()
     var added = 0
     for (surfaceId in surfaceRoots.keys) {
+      val root = surfaceRoots[surfaceId]
+      if (root != null) {
+        syncSurfaceRootSize(surfaceId, root, root.width, root.height)
+      }
       if (dirtySurfaces.add(surfaceId)) {
         added += 1
       }
@@ -76,10 +80,20 @@ internal fun ZynthUIManager.syncSurfaceRootSize(
   val next = width to height
   if (prev == null || prev.first != width || prev.second != height) {
     surfaceSizes[surfaceId] = next
-    root.layout(0, 0, width, height)
-    val wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
-    val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
-    root.measure(wSpec, hSpec)
+    if (root !== rootView) {
+      root.layout(0, 0, width, height)
+      val wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+      val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+      root.measure(wSpec, hSpec)
+    }
+    if (runtimePtr != 0L) {
+      com.zynth.kit.runtime.JSBridge.updateSurfaceSize(
+        runtimePtr,
+        surfaceId,
+        pxToDp(width.toFloat()).toFloat(),
+        pxToDp(height.toFloat()).toFloat()
+      )
+    }
     dirtySurfaces.add(surfaceId)
   }
 }
@@ -118,16 +132,15 @@ internal fun ZynthUIManager.registerSurfaceInternal(
     ZynthPointerEvents.set(root, ZynthPointerEvents.Mode.BOX_NONE)
   }
   surfaceLayoutListeners.remove(surfaceId)?.let { root.removeOnLayoutChangeListener(it) }
-  if (root !== rootView) {
-    val listener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-      if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
-        markSurfaceDirty(surfaceId)
-      }
+  val listener = View.OnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+    if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
+      syncSurfaceRootSize(surfaceId, v as ViewGroup, right - left, bottom - top)
     }
-    root.addOnLayoutChangeListener(listener)
-    surfaceLayoutListeners[surfaceId] = listener
   }
-  surfaceSizes[surfaceId] = (root.width to root.height)
+  root.addOnLayoutChangeListener(listener)
+  surfaceLayoutListeners[surfaceId] = listener
+
+  syncSurfaceRootSize(surfaceId, root, root.width, root.height)
 }
 
 internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {

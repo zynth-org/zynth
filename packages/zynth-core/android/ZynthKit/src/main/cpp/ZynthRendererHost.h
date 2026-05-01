@@ -344,6 +344,7 @@ public:
    * @brief Register or update a surface.
    */
   void registerSurface(int32_t surfaceId, float width, float height) {
+    __android_log_print(ANDROID_LOG_DEBUG, "ZynthHost", "registerSurface %d: %.1fx%.1f", surfaceId, width, height);
     auto &surface = surfaces_[surfaceId];
     surface.surfaceId = surfaceId;
     surface.width = width;
@@ -359,6 +360,8 @@ public:
     // Root dimensions are usually points/dp. They come from Kotlin layout constraints.
     YGNodeStyleSetWidth(surface.rootYoga, dpToPx(width));
     YGNodeStyleSetHeight(surface.rootYoga, dpToPx(height));
+
+    markSurfaceDirty(surfaceId);
   }
 
   /**
@@ -456,24 +459,29 @@ public:
       const std::string &type = (op.typeStringIndex < commit.stringTable.size()) 
           ? commit.stringTable[op.typeStringIndex] : "";
       createNode(op.nodeId, type, activeSurfaceId_, op.hasMeasure);
+      markSurfaceDirty(activeSurfaceId_);
       telemetry.mutatedNodeCount++;
     }
 
     // Apply removes
     for (const auto &op : commit.removes) {
       removeChild(op.parentId, op.childId);
+      markSurfaceDirtyForNode(op.parentId);
       telemetry.mutatedNodeCount++;
     }
 
     // Apply inserts
     for (const auto &op : commit.inserts) {
       insertChild(op.parentId, op.childId, op.index);
+      markSurfaceDirtyForNode(op.parentId);
       telemetry.mutatedNodeCount++;
     }
 
     // Apply drops
     for (const auto &op : commit.drops) {
+      int32_t surfaceId = surfaceForNode(op.nodeId);
       dropNode(op.nodeId);
+      markSurfaceDirty(surfaceId);
       telemetry.mutatedNodeCount++;
     }
 
