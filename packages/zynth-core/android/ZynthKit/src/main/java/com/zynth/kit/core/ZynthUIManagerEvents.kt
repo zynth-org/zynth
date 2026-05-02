@@ -228,6 +228,7 @@ internal fun ZynthUIManager.maybeDispatchDoublePress(id: Int, event: MotionEvent
 internal fun ZynthUIManager.dispatchLayoutEvents() {
   if (layoutNodes.isEmpty()) return
   if (layoutPending.isEmpty() && layoutDirtyNodes.isEmpty()) return
+  noteLayoutDebug("dispatchLayoutEvents")
   
   layoutEventBuffer.clear()
   val ids = LinkedHashSet<Int>()
@@ -260,6 +261,7 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
   }
   
   if (layoutEventBuffer.isNotEmpty()) {
+    noteLayoutDebug("layoutEventsToJS")
     // Copy events to a new list to avoid ConcurrentModificationException
     // when runOnJS executes later and layoutEventBuffer is modified by the next frame.
     val eventsSnapshot = ArrayList(layoutEventBuffer)

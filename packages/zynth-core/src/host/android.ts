@@ -58,7 +58,8 @@ export function createAndroidHost(): Host {
 
   type QueueItem =
     | { type: "closure"; func: () => void }
-    | { type: "batch"; op: BatchOperation };
+    | { type: "batch"; op: BatchOperation }
+    | { type: "batchGroup"; meta: HostBatchMeta; ops: BatchOperation[] };
 
   const queue: QueueItem[] = [];
   const pendingRemovals = new Map<number, number>();
@@ -446,6 +447,7 @@ export function createAndroidHost(): Host {
 
       const pending = queue.splice(0);
       let batchAccumulator: BatchOperation[] = [];
+      let batchMeta: HostBatchMeta | null = null;
 
       const flushBatch = () => {
         if (!batchAccumulator.length) return;
@@ -453,9 +455,13 @@ export function createAndroidHost(): Host {
           throw new Error("Typed batch is required for Android host");
         }
         (ui as any).applyBatchTyped(
-          encodeTypedBatch(batchAccumulator, { kind: "flush", scope: "global" }),
+          encodeTypedBatch(
+            batchAccumulator,
+            batchMeta ?? { kind: "flush", scope: "global" }
+          ),
         );
         batchAccumulator = [];
+        batchMeta = null;
       };
 
       // PHASE 2: Finally destroy nodes that were DETACHED in the PREVIOUS flush
@@ -542,7 +548,17 @@ export function createAndroidHost(): Host {
 
       for (const item of pending) {
         if (item.type === "batch") {
+          if (batchMeta && batchMeta.kind !== "flush") {
+            flushBatch();
+          }
+          if (!batchMeta) {
+            batchMeta = { kind: "flush", scope: "global" };
+          }
           batchAccumulator.push(item.op);
+        } else if (item.type === "batchGroup") {
+          flushBatch();
+          batchMeta = item.meta;
+          batchAccumulator.push(...item.ops);
         } else {
           flushBatch();
           item.func();
@@ -574,11 +590,9 @@ export function createAndroidHost(): Host {
   const schedule = () => {
     if (flushScheduled || batchStack.length > 0) return;
     flushScheduled = true;
-
-    if (typeof queueMicrotask === "function") {
-      queueMicrotask(runFlush);
-      return;
-    }
+    // Android's native mount path is sensitive to fragmented flushes. Using a
+    // macrotask here lets multiple renderer microtasks coalesce into one host
+    // flush instead of emitting many 1-op `flush/global` transactions.
     setTimeout(runFlush, 0);
   };
 
@@ -1019,8 +1033,12 @@ export function createAndroidHost(): Host {
         batchStack[batchStack.length - 1].operations.push(...context.operations);
         return;
       }
-      for (const op of context.operations) {
-        queue.push({ type: "batch", op });
+      if (context.operations.length > 0) {
+        queue.push({
+          type: "batchGroup",
+          meta: context.meta,
+          ops: context.operations,
+        });
       }
       runFlush();
     },

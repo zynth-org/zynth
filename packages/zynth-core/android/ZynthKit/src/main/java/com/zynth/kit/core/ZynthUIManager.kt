@@ -286,6 +286,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var perfMaxChangedCount = 0
   internal var perfMaxNodes = 0
   internal var perfMaxSurfaces = 0
+  internal val layoutDebugCounts = LinkedHashMap<String, Int>()
+  internal var layoutDebugLastLogMs = android.os.SystemClock.uptimeMillis()
   private var batchDepth = 0
   private var batchNeedsLayout = false
   private var atomicCommitDepth = 0
@@ -989,7 +991,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     detachNode(childId)
     parents.remove(childId)
     (child.parent as? ViewGroup)?.removeView(child)
-    markSurfaceDirtyForNode(childId)
+    markSurfaceDirtyForNode(childId, "removeChild")
     traceOp("removeChild", parentState?.type, startNs)
   }
 
@@ -1032,9 +1034,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       return
     }
     if (name == "onLayout") {
-      layoutNodes.add(id)
-      layoutPending.add(id)
-      requestLayout()
+      val isNewLayoutNode = layoutNodes.add(id)
+      if (isNewLayoutNode) {
+        layoutPending.add(id)
+        requestLayout("setHandler:onLayout")
+      }
       traceOp("setHandler", node?.type, startNs)
       return
     }
@@ -1098,7 +1102,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
    */
   fun markNodeDirty(nodeId: Int) {
     layoutEngine.markDirty(nodeId)
-    requestLayout()
+    requestLayout("markNodeDirty")
   }
 
   fun applyKeyboardAvoidingAdjustment(
@@ -1240,7 +1244,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         }
       }
     } finally {
-      endBatch()
+      endBatch("applyBatchTypedPacked")
     }
   }
 
@@ -1402,7 +1406,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         }
       }
     } finally {
-      endBatch()
+      endBatch("applyBatchTypedBuffer")
     }
   }
 
@@ -1548,6 +1552,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                 view.layout(rLeft, rTop, rRight, rBottom)
                 
                 if (layoutNodes.contains(nodeId)) {
+                  noteLayoutDebug("mountFrame:onLayoutNode")
                   layoutEventBuffer.add(LayoutEvent(nodeId, left.toDouble(), top.toDouble(), width.toDouble(), height.toDouble()))
                   needsLayout = true
                 }
@@ -1558,7 +1563,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         }
       }
     } finally {
-      endBatch()
+      endBatch("applyMountTransaction")
     }
   }
 
@@ -1566,21 +1571,22 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     batchDepth += 1
   }
 
-  private fun endBatch() {
+  private fun endBatch(source: String = "batch") {
     if (batchDepth == 0) return
     batchDepth -= 1
     if (batchDepth == 0 && batchNeedsLayout) {
       batchNeedsLayout = false
       // Always schedule through Choreographer to coalesce work and avoid long
       // synchronous layout bursts on the main thread at batch boundaries.
-      requestLayout()
+      requestLayout("endBatch:$source")
     }
   }
 
   internal fun isBatching(): Boolean = batchDepth > 0
 
-  internal fun markBatchNeedsLayout() {
+  internal fun markBatchNeedsLayout(reason: String = "unknown") {
     batchNeedsLayout = true
+    noteLayoutDebug("batchNeedsLayout:$reason")
   }
 
   fun setNativeCommitEnabled(enabled: Boolean) {
@@ -1635,7 +1641,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     ensureSurface(surfaceId)
     activeSurfaceId = surfaceId
-    markSurfaceDirty(surfaceId)
+    markSurfaceDirty(surfaceId, "setSurface")
   }
 
   fun flush() {
@@ -1643,8 +1649,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       runOnMain { flush() }
       return
     }
-    markSurfaceDirty(activeSurfaceId)
-    requestLayout()
+    markSurfaceDirty(activeSurfaceId, "flush")
+    requestLayout("flush")
   }
 
   private fun isSurfaceRootId(nodeId: Int): Boolean {
@@ -1662,8 +1668,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     startNs
   }
 
-  private fun requestLayout() {
-    requestLayoutInternal()
+  private fun requestLayout(reason: String = "unknown") {
+    requestLayoutInternal(reason)
   }
 
   private fun ensureChoreographer() {
@@ -1810,7 +1816,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     applyDp("flexBasis", flexBasis)
 
     if (changed) {
-      markSurfaceDirtyForNode(nodeId)
+      markSurfaceDirtyForNode(nodeId, "animatedStyle")
     }
   }
 
@@ -2004,7 +2010,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
 
     override fun markDirty(id: Int) {
-      markSurfaceDirtyForNode(id)
+      markSurfaceDirtyForNode(id, "layoutEngine:markDirty")
     }
   }
 

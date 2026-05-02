@@ -7,18 +7,19 @@ import android.view.ViewGroup
 
 private const val DEBUG_SURFACE = false
 
-internal fun ZynthUIManager.markSurfaceDirty(surfaceId: Int) {
+internal fun ZynthUIManager.markSurfaceDirty(surfaceId: Int, reason: String = "unknown") {
   runOnMain {
     ensureChoreographerInternal()
     if (!dirtySurfaces.add(surfaceId)) {
       return@runOnMain
     }
     needsLayout = true
+    noteLayoutDebug("markSurfaceDirty:$reason")
     if (DEBUG_SURFACE) {
       Log.d("ZynthUI", "markSurfaceDirty surface=$surfaceId")
     }
     if (isBatching()) {
-      markBatchNeedsLayout()
+      markBatchNeedsLayout(reason)
       return@runOnMain
     }
     if (!frameCallbackPosted) {
@@ -45,6 +46,7 @@ internal fun ZynthUIManager.markAllSurfacesDirty() {
       return@runOnMain
     }
     needsLayout = true
+    noteLayoutDebug("markAllSurfacesDirty")
     if (DEBUG_SURFACE) {
       Log.d("ZynthUI", "markAllSurfacesDirty count=${surfaceRoots.size}")
     }
@@ -59,9 +61,9 @@ internal fun ZynthUIManager.markAllSurfacesDirty() {
   }
 }
 
-internal fun ZynthUIManager.markSurfaceDirtyForNode(nodeId: Int) {
+internal fun ZynthUIManager.markSurfaceDirtyForNode(nodeId: Int, reason: String = "unknown") {
   val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
-  markSurfaceDirty(surfaceId)
+  markSurfaceDirty(surfaceId, "node:$reason")
 }
 
 internal fun ZynthUIManager.syncSurfaceRootSize(
@@ -259,4 +261,3 @@ internal fun ZynthUIManager.ensureSurface(surfaceId: Int) {
 internal fun ZynthUIManager.rootViewForSurface(surfaceId: Int): ViewGroup {
   return surfaceRoots[surfaceId] ?: rootView
 }
-

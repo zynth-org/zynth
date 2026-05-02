@@ -110,6 +110,14 @@ internal class ZynthScrollView(
   private var perfLastLogMs = SystemClock.uptimeMillis()
   private var perfScrollDispatchMaxMs = 0L
   private var perfScrollHandleMaxMs = 0L
+  private var debugLastLogMs = SystemClock.uptimeMillis()
+  private var debugChildLayoutEvents = 0
+  private var debugContentGeometryUpdates = 0
+  private var debugContentLayoutChanges = 0
+  private var debugLayoutEvents = 0
+  private var debugScrollChangedEvents = 0
+  private var debugScrollDispatchedEvents = 0
+  private var debugScrollSkippedEvents = 0
 
   private var snapEnabled = false
   private var snapAxisMode: String = "both"
@@ -127,6 +135,7 @@ internal class ZynthScrollView(
     updateContentGeometry()
   }
   private val childLayoutListener = OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+    debugChildLayoutEvents += 1
     scheduleContentGeometryUpdate()
   }
 
@@ -266,7 +275,9 @@ internal class ZynthScrollView(
           horizontalHost.measure(wSpec, hSpec)
         }
         super.onLayout(changed, left, top, right, bottom)
+        debugLayoutEvents += 1
         logState("onLayout changed=$changed frame=[$left,$top,$right,$bottom]")
+        logDebugSummaryIfNeeded("onLayout")
         post { logState("postLayout") }
         scheduleContentGeometryUpdate()
   }
@@ -733,6 +744,7 @@ internal class ZynthScrollView(
 
   internal fun handleScrollChanged(x: Int, y: Int) {
     logState("handleScrollChanged(x=$x,y=$y)")
+    debugScrollChangedEvents += 1
     val handleStart = SystemClock.uptimeMillis()
     val now = SystemClock.uptimeMillis()
     val dt = (now - lastDispatchTime).coerceAtLeast(1L)
@@ -768,7 +780,7 @@ internal class ZynthScrollView(
       }
     } else {
       val payload = buildPayload(x, y)
-      dispatchScrollEventInternal("onScroll", payload, force = true)
+      dispatchScrollEventInternal("onScroll", payload)
     }
     
     val handleTime = SystemClock.uptimeMillis() - handleStart
@@ -776,6 +788,7 @@ internal class ZynthScrollView(
       perfScrollHandleMaxMs = handleTime
     }
     logPerfSummaryIfNeeded()
+    logDebugSummaryIfNeeded("scrollChanged")
   }
 
   fun setScrollGuardConfig(value: Any?) {
@@ -1044,6 +1057,7 @@ internal class ZynthScrollView(
     if (!skipThrottle) {
       val dt = now - lastDispatchTime
       if (event == "onScroll" && dt < eventThrottleMs) {
+        debugScrollSkippedEvents += 1
         return
       }
       val offsetObj = payload.optJSONObject("contentOffset")
@@ -1052,9 +1066,11 @@ internal class ZynthScrollView(
       val dx = abs(currentX - lastDispatchedX)
       val dy = abs(currentY - lastDispatchedY)
       if (event == "onScroll" && dx < eventMinDisplacementPx && dy < eventMinDisplacementPx) {
+        debugScrollSkippedEvents += 1
         return
       }
     }
+    debugScrollDispatchedEvents += 1
     lastDispatchTime = now
     payload.optJSONObject("contentOffset")?.let {
       lastDispatchedX = (it.optDouble("x") * density).roundToInt()
@@ -1068,6 +1084,7 @@ internal class ZynthScrollView(
       perfScrollDispatchMaxMs = dispatchTime
     }
     logPerfSummaryIfNeeded()
+    logDebugSummaryIfNeeded("dispatch:$event")
   }
 
   private fun logPerfSummaryIfNeeded() {
@@ -1082,6 +1099,24 @@ internal class ZynthScrollView(
     perfScrollDispatchMaxMs = 0L
     perfScrollHandleMaxMs = 0L
     perfLastLogMs = now
+  }
+
+  private fun logDebugSummaryIfNeeded(reason: String) {
+    if (!isVirtualListDebugEnabled()) return
+    val now = SystemClock.uptimeMillis()
+    if (now - debugLastLogMs < 500L) return
+    Log.d(
+      "ZynthScrollDebug",
+      "reason=$reason node=$nodeId axis=$axis scroll=(${currentScrollX()},${currentScrollY()}) viewport=${host.view.width}x${host.view.height} content=${contentView.width}x${contentView.height} children=${contentView.childCount} scrollChanged=$debugScrollChangedEvents dispatched=$debugScrollDispatchedEvents skipped=$debugScrollSkippedEvents layout=$debugLayoutEvents childLayout=$debugChildLayoutEvents geometryUpdates=$debugContentGeometryUpdates geometryChanges=$debugContentLayoutChanges coalescing=$bridgeCoalescing throttleMs=$eventThrottleMs"
+    )
+    debugScrollChangedEvents = 0
+    debugScrollDispatchedEvents = 0
+    debugScrollSkippedEvents = 0
+    debugLayoutEvents = 0
+    debugChildLayoutEvents = 0
+    debugContentGeometryUpdates = 0
+    debugContentLayoutChanges = 0
+    debugLastLogMs = now
   }
 
   private fun attachHost(host: ScrollHost) {
@@ -1134,6 +1169,7 @@ internal class ZynthScrollView(
   }
 
   private fun updateContentGeometry() {
+    debugContentGeometryUpdates += 1
     val viewportWidth = if (width > 0) width else measuredWidth
     val viewportHeight = if (height > 0) height else measuredHeight
     if (viewportWidth <= 0 || viewportHeight <= 0) return
@@ -1149,6 +1185,7 @@ internal class ZynthScrollView(
         contentView.layoutParams = params
       }
       if (contentView.width != widthPx || contentView.height != heightPx) {
+        debugContentLayoutChanges += 1
         val widthSpec = MeasureSpec.makeMeasureSpec(widthPx, MeasureSpec.EXACTLY)
         val heightSpec = MeasureSpec.makeMeasureSpec(heightPx, MeasureSpec.EXACTLY)
         contentView.measure(widthSpec, heightSpec)
@@ -1214,6 +1251,7 @@ internal class ZynthScrollView(
       contentView.layoutParams = params
     }
     if (contentView.width != widthPx || contentView.height != heightPx) {
+      debugContentLayoutChanges += 1
       val widthSpec = MeasureSpec.makeMeasureSpec(widthPx, MeasureSpec.EXACTLY)
       val heightSpec = MeasureSpec.makeMeasureSpec(heightPx, MeasureSpec.EXACTLY)
       contentView.measure(widthSpec, heightSpec)
@@ -1226,6 +1264,22 @@ internal class ZynthScrollView(
     return try {
       val debugValue = System.getProperty("__NATIVE_DEBUG__")
       debugValue?.toBoolean() ?: false
+    } catch (e: Exception) {
+      false
+    }
+  }
+
+  private fun isVirtualListDebugEnabled(): Boolean {
+    return try {
+      val debugValue = System.getProperty("__ZYNTH_VLIST_DEBUG__")
+      val nativeDebugValue = System.getProperty("__NATIVE_DEBUG__")
+      debugValue?.toBoolean()
+        ?: nativeDebugValue?.toBoolean()
+        ?: runCatching {
+          val properties = Class.forName("android.os.SystemProperties")
+          val getBoolean = properties.getMethod("getBoolean", String::class.java, Boolean::class.javaPrimitiveType)
+          getBoolean.invoke(null, "debug.zynth.vlist", false) as? Boolean ?: false
+        }.getOrDefault(false)
     } catch (e: Exception) {
       false
     }

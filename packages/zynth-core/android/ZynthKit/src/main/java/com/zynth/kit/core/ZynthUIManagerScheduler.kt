@@ -9,16 +9,60 @@ private const val DEBUG_SCHEDULER = false
 private const val ATOMIC_LAYOUT_APPLY_BUDGET_MS = 48.0
 private const val ATOMIC_LAYOUT_PHASE_BUDGET_NS = 64_000_000L
 
+internal fun ZynthUIManager.isLayoutDebugEnabled(): Boolean {
+  return try {
+    val virtualListDebug = System.getProperty("__ZYNTH_VLIST_DEBUG__")
+    val nativeDebug = System.getProperty("__NATIVE_DEBUG__")
+    virtualListDebug?.toBoolean()
+      ?: nativeDebug?.toBoolean()
+      ?: runCatching {
+        val properties = Class.forName("android.os.SystemProperties")
+        val getBoolean = properties.getMethod("getBoolean", String::class.java, Boolean::class.javaPrimitiveType)
+        getBoolean.invoke(null, "debug.zynth.vlist", false) as? Boolean ?: false
+      }.getOrDefault(false)
+  } catch (error: Exception) {
+    false
+  }
+}
+
+internal fun ZynthUIManager.noteLayoutDebug(reason: String) {
+  if (!isLayoutDebugEnabled()) return
+  synchronized(layoutDebugCounts) {
+    layoutDebugCounts[reason] = (layoutDebugCounts[reason] ?: 0) + 1
+  }
+}
+
+internal fun ZynthUIManager.logLayoutDebugIfNeeded(reason: String) {
+  if (!isLayoutDebugEnabled()) return
+  val now = SystemClock.uptimeMillis()
+  if (now - layoutDebugLastLogMs < 500L) return
+  val counts = synchronized(layoutDebugCounts) {
+    if (layoutDebugCounts.isEmpty()) {
+      "none"
+    } else {
+      layoutDebugCounts.entries.joinToString(", ") { "${it.key}=${it.value}" }.also {
+        layoutDebugCounts.clear()
+      }
+    }
+  }
+  Log.d(
+    "ZynthLayoutDebug",
+    "reason=$reason needsLayout=$needsLayout dirtySurfaces=${dirtySurfaces.size} layoutNodes=${layoutNodes.size} layoutPending=${layoutPending.size} layoutDirty=${layoutDirtyNodes.size} bufferedEvents=${layoutEventBuffer.size} counts=$counts"
+  )
+  layoutDebugLastLogMs = now
+}
+
 internal fun ZynthUIManager.setFrameProfilerInternal(
   profiler: ((frameMs: Double, layoutMs: Double, overBudget: Boolean, nodeCount: Int) -> Unit)?
 ) {
   frameProfiler = profiler
 }
 
-internal fun ZynthUIManager.requestLayoutInternal() {
+internal fun ZynthUIManager.requestLayoutInternal(reason: String = "unknown") {
   runOnMain {
     ensureChoreographerInternal()
     needsLayout = true
+    noteLayoutDebug("requestLayout:$reason")
     if (!frameCallbackPosted) {
       frameCallbackPosted = true
       choreographer?.postFrameCallback(frameCallback)
@@ -35,12 +79,15 @@ internal fun ZynthUIManager.ensureChoreographerInternal() {
 internal fun ZynthUIManager.handleFrame() {
   if (frameInProgress) return
   if (!needsLayout || dirtySurfaces.isEmpty()) {
+    noteLayoutDebug("frameSkipped")
     if (dirtySurfaces.isEmpty()) {
       atomicCommitPending = false
     }
+    logLayoutDebugIfNeeded("frameSkipped")
     frameCallbackPosted = false
     return
   }
+  noteLayoutDebug("frame")
   frameInProgress = true
   needsLayout = false
 
@@ -118,8 +165,10 @@ internal fun ZynthUIManager.handleFrame() {
     layoutEventNs / 1_000_000.0,
     dirty.size
   )
+  logLayoutDebugIfNeeded("frame")
   frameInProgress = false
   if (needsLayout && dirtySurfaces.isNotEmpty()) {
+    noteLayoutDebug("frameReschedule")
     frameCallbackPosted = true
     choreographer?.postFrameCallback(frameCallback)
   } else {
