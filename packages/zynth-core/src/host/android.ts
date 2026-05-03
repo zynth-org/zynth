@@ -82,9 +82,10 @@ export function createAndroidHost(): Host {
   };
 
   const getExitDurationMs = (
-    transition: Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">,
+    transition: Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">
   ) => {
-    const duration = typeof transition.duration === "number" ? transition.duration : 300;
+    const duration =
+      typeof transition.duration === "number" ? transition.duration : 300;
     const delay = typeof transition.delay === "number" ? transition.delay : 0;
     return Math.max(0, duration) + Math.max(0, delay);
   };
@@ -118,8 +119,12 @@ export function createAndroidHost(): Host {
       };
       return {
         name: typeof candidate.name === "string" ? candidate.name : undefined,
-        message: typeof candidate.message === "string" ? candidate.message : String(error),
-        stack: typeof candidate.stack === "string" ? candidate.stack : undefined,
+        message:
+          typeof candidate.message === "string"
+            ? candidate.message
+            : String(error),
+        stack:
+          typeof candidate.stack === "string" ? candidate.stack : undefined,
         raw: error,
       };
     }
@@ -248,7 +253,7 @@ export function createAndroidHost(): Host {
 
   const encodeTypedBatch = (
     ops: BatchOperation[],
-    meta: HostBatchMeta = { kind: "flush", scope: "global" },
+    meta: HostBatchMeta = { kind: "flush", scope: "global" }
   ) => {
     const stringTable: string[] = [];
     const stringIndex = new Map<string, number>();
@@ -329,7 +334,7 @@ export function createAndroidHost(): Host {
               nodeId,
               keyToken,
               2,
-              addString(JSON.stringify(value)),
+              addString(JSON.stringify(value))
             );
           } catch (e) {
             // ignore serialization error
@@ -420,6 +425,14 @@ export function createAndroidHost(): Host {
   };
 
   let flushScheduled = false;
+  let isNativeBatching = false;
+
+  (globalThis as any).__setNativeBatching = (val: boolean) => {
+    isNativeBatching = val;
+    if (!val && flushScheduled) {
+      runFlush();
+    }
+  };
 
   type BatchContext = {
     meta: HostBatchMeta;
@@ -439,29 +452,77 @@ export function createAndroidHost(): Host {
   };
 
   const runFlush = () => {
-    if (batchStack.length > 0) return; // Wait for the outer-most batch to finish
+    if (batchStack.length > 0 || isNativeBatching) {
+      if (isNativeBatching) flushScheduled = true;
+      return; 
+    }
     flushScheduled = false;
 
     try {
-      if (!queue.length && !pendingRemovals.size && !readyForDestruction.size && !pendingDrops.size) return;
+      if (
+        !queue.length &&
+        !pendingRemovals.size &&
+        !readyForDestruction.size &&
+        !pendingDrops.size
+      )
+        return;
 
       const pending = queue.splice(0);
       let batchAccumulator: BatchOperation[] = [];
-      let batchMeta: HostBatchMeta | null = null;
+      let currentMeta: HostBatchMeta | null = null;
+      let sentAnyOps = false;
 
-      const flushBatch = () => {
+      const logVirtualListFlush = (
+        meta: HostBatchMeta,
+        ops: BatchOperation[]
+      ) => {
+        const counts = {
+          dropNode: 0,
+          insertChild: 0,
+          removeChild: 0,
+          setProp: 0,
+          setText: 0,
+        };
+        for (const op of ops) {
+          counts[op.type] += 1;
+        }
+        console.log("VirtualList host flush", {
+          extras: meta.extras ?? null,
+          host: {
+            childrenMaps: CHILDREN.size,
+            parentLinks: PARENTS.size,
+            pendingDrops: pendingDrops.size,
+            pendingRemovals: pendingRemovals.size,
+            readyForDestruction: readyForDestruction.size,
+            rescuedRemovals: rescuedRemovals.size,
+            textNodes: TEXTS.size,
+            trackedNodes: TYPES.size,
+            trackedNativeNodes: Array.from(TYPES.keys()).filter(
+              (id) => !isMarkerId(id)
+            ).length,
+          },
+          ops: counts,
+          totalOps: ops.length,
+        });
+      };
+
+      const flushAccumulator = () => {
         if (!batchAccumulator.length) return;
         if (typeof (ui as any).applyBatchTyped !== "function") {
           throw new Error("Typed batch is required for Android host");
         }
+        sentAnyOps = true;
+        const meta = currentMeta ?? { kind: "flush", scope: "global" };
+
+        if (meta.scope === "virtual-list-window") {
+          logVirtualListFlush(meta, batchAccumulator);
+        }
+
         (ui as any).applyBatchTyped(
-          encodeTypedBatch(
-            batchAccumulator,
-            batchMeta ?? { kind: "flush", scope: "global" }
-          ),
+          encodeTypedBatch(batchAccumulator, meta)
         );
         batchAccumulator = [];
-        batchMeta = null;
+        currentMeta = null;
       };
 
       // PHASE 2: Finally destroy nodes that were DETACHED in the PREVIOUS flush
@@ -527,7 +588,7 @@ export function createAndroidHost(): Host {
                 childId,
               };
               (ui as any).applyBatchTyped(
-                encodeTypedBatch([finalOp], { kind: "flush", scope: "global" }),
+                encodeTypedBatch([finalOp], { kind: "flush", scope: "global" })
               );
               destroySubtreeTracking(childId);
               ui.flush();
@@ -548,19 +609,26 @@ export function createAndroidHost(): Host {
 
       for (const item of pending) {
         if (item.type === "batch") {
-          if (batchMeta && batchMeta.kind !== "flush") {
-            flushBatch();
-          }
-          if (!batchMeta) {
-            batchMeta = { kind: "flush", scope: "global" };
-          }
+          // Coalesce generic batches into the accumulator
           batchAccumulator.push(item.op);
         } else if (item.type === "batchGroup") {
-          flushBatch();
-          batchMeta = item.meta;
+          // If the meta is the same as current, we can coalesce.
+          // Otherwise flush what we have and start a new group.
+          const isSameMeta =
+            currentMeta &&
+            currentMeta.kind === item.meta.kind &&
+            currentMeta.scope === item.meta.scope;
+
+          if (currentMeta && !isSameMeta) {
+            flushAccumulator();
+          }
+
+          if (!currentMeta) {
+            currentMeta = item.meta;
+          }
           batchAccumulator.push(...item.ops);
         } else {
-          flushBatch();
+          flushAccumulator();
           item.func();
         }
       }
@@ -572,8 +640,10 @@ export function createAndroidHost(): Host {
         pendingDrops.clear();
       }
 
-      flushBatch();
-      ui.flush();
+      flushAccumulator();
+      if (sentAnyOps) {
+        ui.flush();
+      }
     } catch (e) {
       console.error("Flush error:", {
         error: formatFlushError(e),
@@ -590,10 +660,14 @@ export function createAndroidHost(): Host {
   const schedule = () => {
     if (flushScheduled || batchStack.length > 0) return;
     flushScheduled = true;
-    // Android's native mount path is sensitive to fragmented flushes. Using a
-    // macrotask here lets multiple renderer microtasks coalesce into one host
-    // flush instead of emitting many 1-op `flush/global` transactions.
-    setTimeout(runFlush, 0);
+
+    // Use requestAnimationFrame to ensure all SolidJS reactive updates,
+    // effects, and microtasks have settled before a single atomic native flush.
+    requestAnimationFrame(() => {
+      if (!flushScheduled) return;
+      if (isNativeBatching) return;
+      runFlush();
+    });
   };
 
   const ensure = (id: number) =>
@@ -626,22 +700,24 @@ export function createAndroidHost(): Host {
   };
 
   const destroySubtreeTracking = (rootId: number) => {
-    const stack: { id: number; expanded: boolean }[] = [{ id: rootId, expanded: false }];
+    const stack: { id: number; expanded: boolean }[] = [
+      { id: rootId, expanded: false },
+    ];
     const seen = new Set<number>();
     const ordered: number[] = [];
-    
+
     while (stack.length) {
       const item = stack.pop()!;
       if (item.expanded) {
         ordered.push(item.id);
         continue;
       }
-      
+
       if (seen.has(item.id)) continue;
       seen.add(item.id);
-      
+
       stack.push({ id: item.id, expanded: true });
-      
+
       const childIds = CHILDREN.get(item.id);
       if (childIds) {
         for (let i = childIds.length - 1; i >= 0; i--) {
@@ -669,7 +745,12 @@ export function createAndroidHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        const op: BatchOperation = { type: "setProp", nodeId: id, name: key, value };
+        const op: BatchOperation = {
+          type: "setProp",
+          nodeId: id,
+          name: key,
+          value,
+        };
         if (!tryEnqueueBatch(op)) {
           enqueueBatchOp(op);
         }
@@ -718,7 +799,10 @@ export function createAndroidHost(): Host {
 
     if (props.handler) {
       const handler = props.handler;
-      if (typeof handler === "function" && (handler as any).__zynth_worklet_id !== undefined) {
+      if (
+        typeof handler === "function" &&
+        (handler as any).__zynth_worklet_id !== undefined
+      ) {
         assign("handler", (handler as any).__zynth_worklet_id);
       }
     }
@@ -762,7 +846,7 @@ export function createAndroidHost(): Host {
 
   const findAvailableNodeInPool = (
     contextId: string,
-    type: HostNode["type"],
+    type: HostNode["type"]
   ): number | null => {
     const context = RECYCLING_CONTEXTS.get(contextId);
     if (!context) return null;
@@ -828,11 +912,19 @@ export function createAndroidHost(): Host {
       if (props?.__zynthExiting && typeof props.__zynthExiting === "object") {
         exitTransitions.set(
           id,
-          props.__zynthExiting as Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">,
+          props.__zynthExiting as Omit<
+            NativeTransitionConfig,
+            "nodeId" | "animationId" | "phase"
+          >
         );
       }
       if (props?.style) {
-        const op: BatchOperation = { type: "setProp", nodeId: id, name: "style", value: props.style as Style };
+        const op: BatchOperation = {
+          type: "setProp",
+          nodeId: id,
+          name: "style",
+          value: props.style as Style,
+        };
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (typeof props?.onPress === "function") {
@@ -842,23 +934,48 @@ export function createAndroidHost(): Host {
         enqueueOperation(() => ui.setHandler(id!, "onLayout", props.onLayout));
       }
       if (props?.accessibilityLabel) {
-        const op: BatchOperation = { type: "setProp", nodeId: id, name: "accessibilityLabel", value: props.accessibilityLabel };
+        const op: BatchOperation = {
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityLabel",
+          value: props.accessibilityLabel,
+        };
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (props?.accessibilityHint) {
-        const op: BatchOperation = { type: "setProp", nodeId: id, name: "accessibilityHint", value: props.accessibilityHint };
+        const op: BatchOperation = {
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityHint",
+          value: props.accessibilityHint,
+        };
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (props?.accessibilityRole) {
-        const op: BatchOperation = { type: "setProp", nodeId: id, name: "accessibilityRole", value: props.accessibilityRole };
+        const op: BatchOperation = {
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityRole",
+          value: props.accessibilityRole,
+        };
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (props?.pointerEvents) {
-        const op: BatchOperation = { type: "setProp", nodeId: id, name: "pointerEvents", value: props.pointerEvents };
+        const op: BatchOperation = {
+          type: "setProp",
+          nodeId: id,
+          name: "pointerEvents",
+          value: props.pointerEvents,
+        };
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (props?.testID) {
-        const op: BatchOperation = { type: "setProp", nodeId: id, name: "testID", value: props.testID };
+        const op: BatchOperation = {
+          type: "setProp",
+          nodeId: id,
+          name: "testID",
+          value: props.testID,
+        };
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (type === "text-input" || type === "secure-text-input") {
@@ -869,7 +986,11 @@ export function createAndroidHost(): Host {
     },
     createText(value) {
       const id: number = ui.createNode("text");
-      const setTextOp: BatchOperation = { type: "setText", nodeId: id, value: value ?? "" };
+      const setTextOp: BatchOperation = {
+        type: "setText",
+        nodeId: id,
+        value: value ?? "",
+      };
       if (!tryEnqueueBatch(setTextOp)) enqueueBatchOp(setTextOp);
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
@@ -882,23 +1003,42 @@ export function createAndroidHost(): Host {
       if (value === undefined && name !== "style") return;
       if (name === "__zynthExiting") {
         if (value && typeof value === "object") {
-          exitTransitions.set(node.id, value as Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase">);
+          exitTransitions.set(
+            node.id,
+            value as Omit<
+              NativeTransitionConfig,
+              "nodeId" | "animationId" | "phase"
+            >
+          );
         } else {
           exitTransitions.delete(node.id);
         }
         return;
       }
       if (name === "style") {
-        const op: BatchOperation = { type: "setProp", nodeId: node.id, name: "style", value: value || {} };
+        const op: BatchOperation = {
+          type: "setProp",
+          nodeId: node.id,
+          name: "style",
+          value: value || {},
+        };
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
         schedule();
         return;
       }
       if (name === "controller") return;
       if (name === "handler") {
-        if (typeof value === "function" && (value as any).__zynth_worklet_id !== undefined) {
+        if (
+          typeof value === "function" &&
+          (value as any).__zynth_worklet_id !== undefined
+        ) {
           const workletId = (value as any).__zynth_worklet_id;
-          const op: BatchOperation = { type: "setProp", nodeId: node.id, name: "handler", value: workletId };
+          const op: BatchOperation = {
+            type: "setProp",
+            nodeId: node.id,
+            name: "handler",
+            value: workletId,
+          };
           if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
           schedule();
           return;
@@ -909,7 +1049,12 @@ export function createAndroidHost(): Host {
           return;
         }
         if (value == null) {
-          const op: BatchOperation = { type: "setProp", nodeId: node.id, name: "handler", value: 0 };
+          const op: BatchOperation = {
+            type: "setProp",
+            nodeId: node.id,
+            name: "handler",
+            value: 0,
+          };
           if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
           schedule();
         }
@@ -920,13 +1065,22 @@ export function createAndroidHost(): Host {
         schedule();
         return;
       }
-      const op: BatchOperation = { type: "setProp", nodeId: node.id, name, value };
+      const op: BatchOperation = {
+        type: "setProp",
+        nodeId: node.id,
+        name,
+        value,
+      };
       if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       schedule();
     },
     setText(node, value) {
       TEXTS.set(node.id, value ?? "");
-      const op: BatchOperation = { type: "setText", nodeId: node.id, value: value ?? "" };
+      const op: BatchOperation = {
+        type: "setText",
+        nodeId: node.id,
+        value: value ?? "",
+      };
       if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       schedule();
     },
@@ -1030,7 +1184,9 @@ export function createAndroidHost(): Host {
         };
       }
       if (batchStack.length) {
-        batchStack[batchStack.length - 1].operations.push(...context.operations);
+        batchStack[batchStack.length - 1].operations.push(
+          ...context.operations
+        );
         return;
       }
       if (context.operations.length > 0) {
@@ -1040,24 +1196,34 @@ export function createAndroidHost(): Host {
           ops: context.operations,
         });
       }
-      runFlush();
+      // ALWAYS schedule a microtask instead of flushing synchronously.
+      // This allows SolidJS effects/renders triggered by the batch to contribute 
+      // their own operations to the same flush.
+      schedule();
     },
     enableRecycling(containerId: number, config: RecyclingConfig): string {
       const contextId = `recycling-${containerId}-${nextContextId++}`;
-      RECYCLING_CONTEXTS.set(contextId, { id: contextId, config, pool: new Map(), activeBindings: new Map() });
+      RECYCLING_CONTEXTS.set(contextId, {
+        id: contextId,
+        config,
+        pool: new Map(),
+        activeBindings: new Map(),
+      });
       CONTAINER_TO_CONTEXT.set(containerId, contextId);
       const containerChildren = CHILDREN.get(containerId) || [];
       for (const childId of containerChildren) {
         if (isMarkerId(childId)) continue;
         const childType = TYPES.get(childId);
-        if (childType === config.itemType) NODE_TO_CONTEXT.set(childId, contextId);
+        if (childType === config.itemType)
+          NODE_TO_CONTEXT.set(childId, contextId);
       }
       return contextId;
     },
     disableRecycling(contextId: string) {
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) return;
-      for (const [nodeId] of context.activeBindings) returnNodeToPool(contextId, nodeId);
+      for (const [nodeId] of context.activeBindings)
+        returnNodeToPool(contextId, nodeId);
       for (const [, nodeIds] of context.pool) {
         for (const nodeId of nodeIds) {
           const parent = PARENTS.get(nodeId);
@@ -1074,7 +1240,12 @@ export function createAndroidHost(): Host {
       if (!RECYCLING_CONTEXTS.has(contextId)) return;
       returnNodeToPool(contextId, node.id);
     },
-    acquireNode(contextId: string, type: HostNode["type"], itemKey: string, itemIndex: number): HostNode | null {
+    acquireNode(
+      contextId: string,
+      type: HostNode["type"],
+      itemKey: string,
+      itemIndex: number
+    ): HostNode | null {
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) return null;
       let nodeId = findAvailableNodeInPool(contextId, type);
@@ -1090,21 +1261,36 @@ export function createAndroidHost(): Host {
       context.activeBindings.set(newNode.id, { itemKey, itemIndex });
       return newNode;
     },
-    updateNodeBinding(node: HostNode, itemKey: string, itemIndex: number, props: Record<string, any>) {
+    updateNodeBinding(
+      node: HostNode,
+      itemKey: string,
+      itemIndex: number,
+      props: Record<string, any>
+    ) {
       const contextId = NODE_TO_CONTEXT.get(node.id);
       if (!contextId) return;
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) return;
       context.activeBindings.set(node.id, { itemKey, itemIndex });
       if (props.style !== undefined) {
-        enqueueBatchOp({ type: "setProp", nodeId: node.id, name: "style", value: props.style || {} });
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: node.id,
+          name: "style",
+          value: props.style || {},
+        });
       }
       for (const [key, value] of Object.entries(props)) {
         if (key === "style") continue;
         if (typeof value === "function") {
           enqueueOperation(() => ui.setHandler(node.id, key, value));
         } else if (value !== undefined) {
-          enqueueBatchOp({ type: "setProp", nodeId: node.id, name: key, value });
+          enqueueBatchOp({
+            type: "setProp",
+            nodeId: node.id,
+            name: key,
+            value,
+          });
         }
       }
       schedule();
