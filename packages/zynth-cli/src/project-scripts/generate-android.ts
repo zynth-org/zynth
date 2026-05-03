@@ -384,6 +384,10 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       extras.startupMetricsEnabledBuildConfig ?? "false"
     )
     .replace(
+      /\{\{\s*ZYNTH_ANDROID_DEBUG_OVERLAY\s*\}\}/g,
+      extras.androidDebugOverlayBuildConfig ?? "false"
+    )
+    .replace(
       /\{\{\s*ZYNTH_ANDROID_MINIFY_ENABLED\s*\}\}/g,
       extras.androidMinifyEnabledBuildConfig ?? "false"
     )
@@ -886,6 +890,9 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const startupMetricsEnabledBuildConfig = config.androidStartupMetricsEnabled
     ? "\"true\""
     : "\"false\"";
+  const androidDebugOverlayBuildConfig = config.androidDebugOverlayEnabled
+    ? "true"
+    : "false";
   const androidMinifyEnabledBuildConfig = config.androidMinifyEnabled
     ? "true"
     : "false";
@@ -987,6 +994,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         devServerUrlBuildConfig,
         devServerTokenBuildConfig,
         startupMetricsEnabledBuildConfig,
+        androidDebugOverlayBuildConfig,
         androidMinifyEnabledBuildConfig,
         androidShrinkResourcesBuildConfig,
       });

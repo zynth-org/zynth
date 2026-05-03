@@ -125,7 +125,7 @@ internal fun ZynthUIManager.handleFrame() {
   }
   val endNs = System.nanoTime()
   lastFrameMs = (endNs - startNs) / 1_000_000.0
-  lastLayoutMs = lastFrameMs
+  lastLayoutMs = layoutNs / 1_000_000.0
 
   val overBudget = lastFrameMs > 14.0
   // Log.d(

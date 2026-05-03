@@ -95,6 +95,9 @@ class MainActivity : AppCompatActivity() {
     if (startupMetricsEnabled) {
       System.setProperty("ZYNTH_STARTUP_METRICS", "true")
     }
+    if (BuildConfig.ZYNTH_ANDROID_DEBUG_OVERLAY) {
+      System.setProperty("ZYNTH_ANDROID_DEBUG_OVERLAY", "true")
+    }
 
     if (!devServerUrl.isNullOrBlank()) {
       System.setProperty("ZYNTH_DEV_SERVER_URL", devServerUrl)

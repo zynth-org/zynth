@@ -80,6 +80,7 @@ struct RuntimeState {
   jclass jsBridgeClass = nullptr;
   jclass devtoolsClass = nullptr;
   jclass nativeOverlayClass = nullptr;
+  jclass performanceOverlayClass = nullptr;
   jmethodID createNode = nullptr;
   jmethodID createNodeWithId = nullptr;
   jmethodID dropNode = nullptr;
@@ -113,6 +114,7 @@ struct RuntimeState {
   jmethodID devtoolsEmit = nullptr;
   jmethodID devtoolsIsConnected = nullptr;
   jmethodID nativeOverlayHandleRaw = nullptr;
+  jmethodID performanceOverlayRecordYoga = nullptr;
   jobject moduleRegistry = nullptr;
   jclass moduleRegistryClass = nullptr;
   jmethodID moduleCall = nullptr;
@@ -456,6 +458,22 @@ void emitDevtoolsEvent(RuntimeState *state,
     // Never allow diagnostics forwarding to crash the runtime.
     return;
   }
+}
+
+void recordNativeYogaTelemetry(RuntimeState *state, const zynth::ZynthCommitTelemetry &telemetry) {
+  if (!state) return;
+  if (!state->performanceOverlayClass || !state->performanceOverlayRecordYoga) return;
+  JNIEnv *env = getEnv();
+  if (!env) return;
+  const double yogaMs = (telemetry.yogaMutateUs + telemetry.yogaCalculateUs) / 1000.0;
+  const double yogaCalculateMs = telemetry.yogaCalculateUs / 1000.0;
+  const double measureMs = telemetry.measureCallbackUs / 1000.0;
+  env->CallStaticVoidMethod(
+      state->performanceOverlayClass,
+      state->performanceOverlayRecordYoga,
+      static_cast<jdouble>(yogaMs),
+      static_cast<jdouble>(yogaCalculateMs),
+      static_cast<jdouble>(measureMs));
 }
 
 void installCrashSignalHandlers() {
@@ -1973,6 +1991,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             state->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
             state->currentTelemetry = nullptr;
             g_currentLayoutState = nullptr;
+            recordNativeYogaTelemetry(state, telemetry);
 
             // Phase 4: Kotlin Layout Transaction
             if (stringClass && state->applyMountTransaction) {
@@ -2449,6 +2468,13 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       gNativeOverlayClass = static_cast<jclass>(env->NewGlobalRef(state->nativeOverlayClass));
       gNativeOverlayHandleRawMethod = state->nativeOverlayHandleRaw;
     }
+  }
+  jclass performanceOverlayClass = env->FindClass("com/zynth/kit/runtime/ZynthNativePerformanceOverlay");
+  if (performanceOverlayClass) {
+    state->performanceOverlayClass = static_cast<jclass>(env->NewGlobalRef(performanceOverlayClass));
+    env->DeleteLocalRef(performanceOverlayClass);
+    state->performanceOverlayRecordYoga =
+        env->GetStaticMethodID(state->performanceOverlayClass, "recordNativeYogaPass", "(DDD)V");
   }
   jclass stringCls = env->FindClass("java/lang/String");
   if (stringCls) {

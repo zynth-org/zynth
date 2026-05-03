@@ -37,6 +37,7 @@ android {
     buildConfigField("String", "ZYNTH_DEV_SERVER_URL", {{ZYNTH_DEV_SERVER_URL}})
     buildConfigField("String", "ZYNTH_DEV_SERVER_TOKEN", {{ZYNTH_DEV_SERVER_TOKEN}})
     buildConfigField("boolean", "ZYNTH_STARTUP_METRICS_ENABLED", {{ZYNTH_STARTUP_METRICS_ENABLED}})
+    buildConfigField("boolean", "ZYNTH_ANDROID_DEBUG_OVERLAY", {{ZYNTH_ANDROID_DEBUG_OVERLAY}})
   }
 
   buildTypes {
