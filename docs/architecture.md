@@ -91,6 +91,8 @@ To maximize performance, we do not cross the JSI boundary for every single prope
 2.  **Flushing**: We use `queueMicrotask` (or `requestAnimationFrame`) to flush this queue at the end of the JavaScript event loop tick.
 3.  **Transmission**: The entire batch is serialized (or passed as a JSI array) to the native side in a single call (`__ui.applyBatch`), drastically reducing bridge overhead.
 
+On Android, the host now coordinates `requestAnimationFrame`-driven flushes with native layout/event dispatch. The JS host can temporarily suspend its own flush loop while native mount/layout callbacks are re-entering JavaScript, then resume once the native frame is complete. This preserves a single atomic frame even during scroll-heavy scenarios and prevents the fragmented one-op flush storms that previously made `requestAnimationFrame` unsafe on Android.
+
 ### View Recycling
 
 Zynth implements a custom view recycling system in JavaScript (similar to `RecyclerView` or `UITableView`) for its `FlatList` component.
@@ -202,12 +204,22 @@ Zynth uses [Yoga](https://yogalayout.dev/) (the same layout engine as React Nati
 - Styles like `flex`, `padding`, `margin` are applied directly to the `YGNode`.
 - Layout is calculated on a background thread (or the UI thread, depending on platform strategy) before rendering frames.
 
+On Android, the native renderer host is now the authoritative owner of Yoga topology for commit application. This includes defensive handling for same-parent child reorders: before a node is re-inserted, its Yoga parentage is normalized so VirtualList recycling and window shifts do not attempt to insert an already-parented Yoga child. That change is what made `requestAnimationFrame`-driven list scrolling stable under heavy virtualization.
+
 ### Threading Model
 
 1.  **JS Thread**: Runs the SolidJS graph, business logic, and networking.
 2.  **UI Thread (Main)**: Handles rendering, touch events, and animations.
 
 Zynth ensures that heavy JS work does not block the UI thread, except when synchronous layout measurement is explicitly requested.
+
+#### Android runtime note
+
+Android now treats the Hermes runtime thread as a long-lived Java-owned `HandlerThread`. JNI lookups from JSI host functions attach only when needed and never use per-call RAII detachment on that thread. This is important for `requestAnimationFrame`, timers, shared values, and native batch application because ART will abort if a Java-owned thread is detached incorrectly. In practice, this gives Android the same safe `requestAnimationFrame` scheduling model that iOS already had for scroll-driven UI work.
+
+#### VirtualList stability note
+
+VirtualList now keeps a more stable mounted window during slow drags. Instead of shrinking or shifting the render range on every tiny scroll delta, it keeps the current range while the visible rows remain comfortably inside the mounted window. That reduces unnecessary spacer churn, avoids subtle vertical flicker, and dramatically cuts the number of layout passes generated during gentle scrolling.
 
 ## Notes about Navigation
 

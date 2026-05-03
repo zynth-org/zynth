@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <dlfcn.h>
+#include <fbjni/fbjni.h>
 #include <jsi/jsi.h>
 
 #include <algorithm>
@@ -48,10 +49,13 @@ RegisterInstallerFn gRegisterInstaller = nullptr;
 RegisterSharedSignalCallbackFn gRegisterSharedSignalCallback = nullptr;
 
 JNIEnv *getEnv() {
-  if (!gVm) return nullptr;
+  if (!gVm) return facebook::jni::Environment::current();
   JNIEnv *env = nullptr;
-  if (gVm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) {
-    if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) return nullptr;
+  if (gVm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) == JNI_OK) {
+    return env;
+  }
+  if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+    return nullptr;
   }
   return env;
 }
@@ -361,7 +365,7 @@ class ZynthAnimateRuntime {
   void install() {
     auto createSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "createSharedValue"), 1,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
           if (!gCreateSharedSignal || count < 1 || !args[0].isNumber()) {
             return Value::undefined();
           }
@@ -371,7 +375,7 @@ class ZynthAnimateRuntime {
 
     auto getSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "getSharedValue"), 1,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
           if (!gGetSharedSignal || count < 1 || !args[0].isNumber()) {
             return Value::undefined();
           }
@@ -383,7 +387,7 @@ class ZynthAnimateRuntime {
 
     auto setSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "setSharedValue"), 2,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
           if (!gSetSharedSignal || count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
             return Value::undefined();
           }
@@ -456,8 +460,8 @@ class ZynthAnimateRuntime {
 
     auto cancelSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "cancelSharedValue"), 1,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
-          if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+          if (count < 1 || !args[0].isObject()) return Value::undefined();
           int id = static_cast<int>(args[0].asNumber());
           {
             std::lock_guard<std::mutex> lock(mutex);
@@ -538,8 +542,8 @@ class ZynthAnimateRuntime {
 
     auto removeStyleMapper = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "removeStyleMapper"), 1,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
-          if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+          if (count < 1 || !args[0].isObject()) return Value::undefined();
           int mapperId = static_cast<int>(args[0].asNumber());
           std::lock_guard<std::mutex> lock(mutex);
           styleMappers.erase(mapperId);

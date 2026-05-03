@@ -268,17 +268,17 @@ done:
       uint64_t commitId,
       ZynthCommit &commit) {
 
-    const size_t opCount = byteLength / sizeof(double);
-    if (opCount == 0 || byteLength % sizeof(double) != 0) {
+    if (byteLength == 0 || (byteLength % sizeof(double) != 0)) {
       commit.clear();
       commit.commitId = commitId;
       commit.telemetry.commitId = commitId;
       return true;
     }
 
+    const size_t opCount = byteLength / sizeof(double);
     // The buffer may not be aligned for double access, so copy to aligned storage
     std::vector<double> ops(opCount);
-    std::memcpy(ops.data(), data, byteLength);
+    std::memcpy(ops.data(), data, opCount * sizeof(double));
 
     return decode(ops.data(), opCount, strings, commitId, commit);
   }

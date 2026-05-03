@@ -1421,9 +1421,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       val copied = acquireByteBuffer(byteLength)
       copied.put(source)
       copied.rewind()
+      // Copy strings to prevent JNI reference corruption on background threads
+      val copiedStrings = strings.clone()
       val latch = java.util.concurrent.CountDownLatch(1)
       runOnMain { 
-        applyMountTransactionInternal(copied, opCount, strings)
+        applyMountTransactionInternal(copied, opCount, copiedStrings)
         releaseByteBuffer(copied)
         latch.countDown()
       }
@@ -1444,8 +1446,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       val copied = acquireByteBuffer(byteLength)
       copied.put(source)
       copied.rewind()
+      // Copy strings to prevent JNI reference corruption on background threads
+      val copiedStrings = strings.clone()
       runOnMain { 
-        applyMountTransactionInternal(copied, opCount, strings)
+        applyMountTransactionInternal(copied, opCount, copiedStrings)
         releaseByteBuffer(copied)
       }
       return
@@ -1535,6 +1539,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
             val width = read(i++).toFloat()
             val height = read(i++).toFloat()
             
+            // Safety guard: Ignore NaN or Infinity layout values to prevent Skia crashes
+            if (left.isNaN() || left.isInfinite() || 
+                top.isNaN() || top.isInfinite() || 
+                width.isNaN() || width.isInfinite() || 
+                height.isNaN() || height.isInfinite()) {
+              continue@opLoop
+            }
+
             val view = nodes[nodeId]
             if (view != null) {
               val rLeft = left.toInt()
@@ -1564,6 +1576,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       }
     } finally {
       endBatch("applyMountTransaction")
+      dispatchLayoutEvents()
     }
   }
 

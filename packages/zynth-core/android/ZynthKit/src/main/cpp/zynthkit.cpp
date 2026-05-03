@@ -22,9 +22,6 @@
 #include <atomic>
 #include <cstring>
 #include <cstdint>
-#include <signal.h>
-#include <thread>
-#include <unistd.h>
 #include <vector>
 #include <limits>
 #include <algorithm>
@@ -34,9 +31,7 @@ using namespace facebook::jsi;
 
 namespace {
 JavaVM *gVm = nullptr;
-int gCrashPipe[2] = {-1, -1};
 std::atomic<bool> gCrashHandlerInstalled{false};
-std::atomic<bool> gCrashThreadStarted{false};
 jclass gDevtoolsClass = nullptr;
 jmethodID gDevtoolsEmitMethod = nullptr;
 jclass gNativeOverlayClass = nullptr;
@@ -228,7 +223,17 @@ void removeHandlersForNode(facebook::hermes::HermesRuntime *runtime, int nodeId)
 }
 
 JNIEnv *getEnv() {
-  return facebook::jni::Environment::current();
+  if (!gVm) return facebook::jni::Environment::current();
+  JNIEnv *env = nullptr;
+  if (gVm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) == JNI_OK) {
+    return env;
+  }
+  // Do not pair this with ThreadScope/DetachCurrentThread: the JS runtime runs
+  // on a Java HandlerThread, and ART aborts if a Java-owned thread is detached.
+  if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+    return nullptr;
+  }
+  return env;
 }
 
 void callSetProp(JNIEnv *env, RuntimeState *state, jint nodeId, const std::string &name,
@@ -453,87 +458,11 @@ void emitDevtoolsEvent(RuntimeState *state,
   }
 }
 
-const char *signalName(int sig) {
-  switch (sig) {
-    case SIGSEGV:
-      return "SIGSEGV";
-    case SIGABRT:
-      return "SIGABRT";
-    case SIGBUS:
-      return "SIGBUS";
-    case SIGILL:
-      return "SIGILL";
-    case SIGFPE:
-      return "SIGFPE";
-    default:
-      return "SIGNAL";
-  }
-}
-
-void crashSignalHandler(int sig, siginfo_t *, void *) {
-  if (gCrashPipe[1] != -1) {
-    char buf[64];
-    int len = snprintf(buf, sizeof(buf), "%s(%d)\n", signalName(sig), sig);
-    if (len > 0) {
-      write(gCrashPipe[1], buf, static_cast<size_t>(len));
-    }
-  }
-  signal(sig, SIG_DFL);
-  raise(sig);
-}
-
-void startCrashWatcherThread() {
-  if (gCrashThreadStarted.exchange(true)) return;
-  std::thread([]() {
-    if (gVm == nullptr) return;
-    JNIEnv *env = nullptr;
-    if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) return;
-    char buf[128];
-    while (true) {
-      ssize_t readBytes = read(gCrashPipe[0], buf, sizeof(buf) - 1);
-      if (readBytes <= 0) {
-        break;
-      }
-      buf[readBytes] = '\0';
-      if ((!gDevtoolsClass || !gDevtoolsEmitMethod) &&
-          (!gNativeOverlayClass || !gNativeOverlayHandleRawMethod)) {
-        continue;
-      }
-      std::string data(buf);
-      std::string payload =
-          std::string("{\"topic\":\"crash/native\",\"level\":\"error\",\"tag\":\"crash\",\"data\":\"") +
-          jsonEscape(data) + "\"}";
-      if (gDevtoolsClass && gDevtoolsEmitMethod) {
-        jstring jPayload = env->NewStringUTF(payload.c_str());
-        env->CallStaticVoidMethod(gDevtoolsClass, gDevtoolsEmitMethod, jPayload);
-        env->DeleteLocalRef(jPayload);
-      }
-      if (gNativeOverlayClass && gNativeOverlayHandleRawMethod) {
-        jstring jPayload = env->NewStringUTF(payload.c_str());
-        env->CallStaticVoidMethod(gNativeOverlayClass, gNativeOverlayHandleRawMethod, jPayload);
-        env->DeleteLocalRef(jPayload);
-      }
-    }
-    gVm->DetachCurrentThread();
-  }).detach();
-}
-
 void installCrashSignalHandlers() {
-  if (gCrashHandlerInstalled.exchange(true)) return;
-  if (pipe(gCrashPipe) != 0) {
-    return;
-  }
-  startCrashWatcherThread();
-  struct sigaction action;
-  memset(&action, 0, sizeof(action));
-  action.sa_sigaction = crashSignalHandler;
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = SA_SIGINFO | SA_ONSTACK;
-  sigaction(SIGSEGV, &action, nullptr);
-  sigaction(SIGABRT, &action, nullptr);
-  sigaction(SIGBUS, &action, nullptr);
-  sigaction(SIGILL, &action, nullptr);
-  sigaction(SIGFPE, &action, nullptr);
+  // Let ART/debuggerd own fatal signal handling. Zynth's previous crash
+  // watcher used JNI from crash-adjacent paths and could mask the real fault
+  // behind recursive ART/Binder aborts during scroll stress.
+  gCrashHandlerInstalled.store(true);
 }
 
 void installConsole(Runtime &rt, RuntimeState *state) {
@@ -2021,18 +1950,20 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 preLayoutOps.push_back(op.textStringIndex);
               }
 
-              jobject jBuffer = env->NewDirectByteBuffer(
-                  preLayoutOps.data(),
-                  static_cast<jlong>(preLayoutOps.size() * sizeof(double)));
-              if (jBuffer) {
-                if (state->applyMountTransactionSync) {
-                  env->CallVoidMethod(state->uiManager, state->applyMountTransactionSync,
-                                      jBuffer, static_cast<jint>(preLayoutOps.size()), jStrings);
-                } else {
-                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
-                                      jBuffer, static_cast<jint>(preLayoutOps.size()), jStrings);
+              if (!preLayoutOps.empty()) {
+                jobject jBuffer = env->NewDirectByteBuffer(
+                    preLayoutOps.data(),
+                    static_cast<jlong>(preLayoutOps.size() * sizeof(double)));
+                if (jBuffer) {
+                  if (state->applyMountTransactionSync) {
+                    env->CallVoidMethod(state->uiManager, state->applyMountTransactionSync,
+                                        jBuffer, static_cast<jint>(preLayoutOps.size()), jStrings);
+                  } else {
+                    env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                        jBuffer, static_cast<jint>(preLayoutOps.size()), jStrings);
+                  }
+                  env->DeleteLocalRef(jBuffer);
                 }
-                env->DeleteLocalRef(jBuffer);
               }
             }
 
@@ -2058,13 +1989,15 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 postLayoutOps.push_back(op.height);
               }
 
-              jobject jBuffer = env->NewDirectByteBuffer(
-                  postLayoutOps.data(),
-                  static_cast<jlong>(postLayoutOps.size() * sizeof(double)));
-              if (jBuffer) {
-                env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
-                                    jBuffer, static_cast<jint>(postLayoutOps.size()), jStrings);
-                env->DeleteLocalRef(jBuffer);
+              if (!postLayoutOps.empty()) {
+                jobject jBuffer = env->NewDirectByteBuffer(
+                    postLayoutOps.data(),
+                    static_cast<jlong>(postLayoutOps.size() * sizeof(double)));
+                if (jBuffer) {
+                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                      jBuffer, static_cast<jint>(postLayoutOps.size()), jStrings);
+                  env->DeleteLocalRef(jBuffer);
+                }
               }
             }
             
@@ -3068,9 +3001,19 @@ static void invokeLayoutEventsBatchInternal(
       dispatchEntries.push_back(std::move(entry));
     }
   }
+  
+  Runtime &rt = *runtime;
+  
+  // Suspend host batching flushes in JS to prevent 1-op fragmentation
+  try {
+    Object global = rt.global();
+    if (global.hasProperty(rt, "__setNativeBatching")) {
+      global.getPropertyAsFunction(rt, "__setNativeBatching").call(rt, true);
+    }
+  } catch (...) {}
+
   for (const auto &entry : dispatchEntries) {
     if (!entry.handler) continue;
-    Runtime &rt = *runtime;
     Object payloadObj(rt);
     Object nativeEvent(rt);
     Object layout(rt);
@@ -3092,6 +3035,15 @@ static void invokeLayoutEventsBatchInternal(
       continue;
     }
   }
+  
+  // Resume host batching
+  try {
+    Object global = rt.global();
+    if (global.hasProperty(rt, "__setNativeBatching")) {
+      global.getPropertyAsFunction(rt, "__setNativeBatching").call(rt, false);
+    }
+  } catch (...) {}
+
   env->ReleaseDoubleArrayElements(payload, data, JNI_ABORT);
 }
 
