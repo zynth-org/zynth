@@ -80,26 +80,8 @@ const DEFAULT_WINDOW_SIZE = 5;
 const DEFAULT_ESTIMATED_ITEM = 56;
 const EPSILON = 0.001;
 
-type VirtualListDebugGlobal = {
-  __ZYNTH_VLIST_DEBUG__?: boolean;
-};
-
-type VirtualListDebugStats = {
-  layoutEvents: number;
-  measurementUpdates: number;
-  rangeChanges: number;
-  rowLayoutEvents: number;
-  scrollEvents: number;
-  viewportChanges: number;
-};
-
 const hasNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
-
-const isVirtualListDebugEnabled = (): boolean => {
-  const debugGlobal = globalThis as unknown as VirtualListDebugGlobal;
-  return debugGlobal.__ZYNTH_VLIST_DEBUG__ === true;
-};
 
 const clamp = (value: number, min: number, max: number): number => {
   if (value < min) return min;
@@ -341,18 +323,11 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   let edgeStartToken = -1;
   let lastColumns = -1;
   let lastHeader = 0;
+  let lastLeadingSpacer = 0;
+  let lastTrailingSpacer = 0;
   let lastInitialScrollIndex: number | undefined;
   let initialScrollApplied = false;
   let measurementFlushScheduled = false;
-  let debugLastReport = 0;
-  const debugStats: VirtualListDebugStats = {
-    layoutEvents: 0,
-    measurementUpdates: 0,
-    rangeChanges: 0,
-    rowLayoutEvents: 0,
-    scrollEvents: 0,
-    viewportChanges: 0,
-  };
 
   const syncMeasurementStats = () => {
     measuredRowCount = 0;
@@ -484,33 +459,6 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     Math.max(0, totalContentLength() - axisViewportLength())
   );
 
-  const reportDebugStats = (reason: string) => {
-    if (!isVirtualListDebugEnabled()) return;
-    const now = Date.now();
-    if (now - debugLastReport < 500) return;
-    debugLastReport = now;
-    const range = untrack(renderRange);
-    const snapshot = {
-      ...debugStats,
-      averageRowLength: untrack(averageRowLength),
-      getItemLayout: props.getItemLayout !== undefined,
-      reason,
-      renderRange: `${range.first}-${range.last}`,
-      rowCount: untrack(rowCount),
-      scrollOffset: untrack(scrollOffset),
-      totalContentLength: untrack(totalContentLength),
-      viewport: untrack(axisViewportLength),
-      visibleRows: range.last >= range.first ? range.last - range.first + 1 : 0,
-    };
-    debugStats.layoutEvents = 0;
-    debugStats.measurementUpdates = 0;
-    debugStats.rangeChanges = 0;
-    debugStats.rowLayoutEvents = 0;
-    debugStats.scrollEvents = 0;
-    debugStats.viewportChanges = 0;
-    console.log("[ZynthVirtualListDebug]", snapshot);
-  };
-
   const findRowAtOffset = (offset: number): number => {
     const totalRows = rowCount();
     if (totalRows <= 0) return -1;
@@ -592,13 +540,35 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const extraAfter =
       halfWindowRows + overscanRows + (velocity > 1 ? directionalRows : 0);
 
-    return normalizeRange(
+    const next = normalizeRange(
       {
         first: first - extraBefore,
         last: last + extraAfter,
       },
       totalRows
     );
+
+    if (
+      currentRange.last >= currentRange.first &&
+      currentRange.first >= 0 &&
+      currentRange.last < totalRows
+    ) {
+      const guardRows = Math.max(1, Math.min(overscanRows, 4));
+      const hasVisibleRows =
+        first >= currentRange.first && last <= currentRange.last;
+      const hasHeadroom =
+        first >= currentRange.first + guardRows &&
+        last <= currentRange.last - guardRows;
+      const currentSize = currentRange.last - currentRange.first + 1;
+      const nextSize = next.last - next.first + 1;
+      const windowDidNotShrinkMuch = currentSize <= nextSize + guardRows * 2;
+
+      if (hasVisibleRows && hasHeadroom && windowDidNotShrinkMuch) {
+        return currentRange;
+      }
+    }
+
+    return next;
   };
 
   const readAxisOffsetFromEvent = (event: ScrollEvent): number =>
@@ -611,37 +581,37 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const nextWidth = event.nativeEvent.layout.width;
     const nextHeight = event.nativeEvent.layout.height;
     if (!hasNumber(nextWidth) || !hasNumber(nextHeight)) return;
+    
     const current = viewportSize();
-    if (current.width !== nextWidth || current.height !== nextHeight) {
-      debugStats.viewportChanges += 1;
+    // Use a small threshold to avoid sub-pixel layout loops
+    if (Math.abs(current.width - nextWidth) < 1.0 && Math.abs(current.height - nextHeight) < 1.0) {
+      return;
     }
     setViewportSize({ width: nextWidth, height: nextHeight });
   };
 
   const handleListLayout = (event: LayoutChangeEvent) => {
-    debugStats.layoutEvents += 1;
     updateViewportFromLayout(event);
-    reportDebugStats("listLayout");
     props.onLayout?.(event);
   };
 
   const handleScroll = (event: ScrollEvent) => {
-    debugStats.scrollEvents += 1;
     const nextOffset = readAxisOffsetFromEvent(event);
-    setScrollOffset(nextOffset);
+    const prevOffset = untrack(scrollOffset);
+    if (Math.abs(prevOffset - nextOffset) >= 0.5) {
+      setScrollOffset(nextOffset);
+    }
     setScrollVelocity(readAxisVelocityFromEvent(event));
 
     const nextWidth = event.layoutMeasurement.width;
     const nextHeight = event.layoutMeasurement.height;
     if (hasNumber(nextWidth) && hasNumber(nextHeight)) {
       const current = viewportSize();
-      if (current.width !== nextWidth || current.height !== nextHeight) {
-        debugStats.viewportChanges += 1;
+      if (Math.abs(current.width - nextWidth) >= 1.0 || Math.abs(current.height - nextHeight) >= 1.0) {
         setViewportSize({ width: nextWidth, height: nextHeight });
       }
     }
 
-    reportDebugStats("scroll");
     props.onScroll?.(event);
   };
 
@@ -650,6 +620,11 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       ? event.nativeEvent.layout.width
       : event.nativeEvent.layout.height;
     if (!hasNumber(next)) return;
+    
+    const current = headerLength();
+    if (Math.abs(current - next) < 1.0) {
+      return;
+    }
     setHeaderLength(Math.max(0, next));
   };
 
@@ -658,12 +633,15 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       ? event.nativeEvent.layout.width
       : event.nativeEvent.layout.height;
     if (!hasNumber(next)) return;
+
+    const current = footerLength();
+    if (Math.abs(current - next) < 1.0) {
+      return;
+    }
     setFooterLength(Math.max(0, next));
   };
 
   const handleRowLayout = (rowIndex: number, event: LayoutChangeEvent) => {
-    debugStats.rowLayoutEvents += 1;
-    reportDebugStats("rowLayout");
     if (props.getItemLayout) return;
     const layout = event.nativeEvent.layout;
     const nextLength = isHorizontal() ? layout.width : layout.height;
@@ -675,7 +653,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       offset: 0,
     };
     const previous = rowMetrics.get(rowIndex);
-    if (previous && Math.abs(previous.length - metric.length) < 0.5) {
+    if (previous && Math.abs(previous.length - metric.length) < 1.0) {
       return;
     }
 
@@ -690,7 +668,6 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (rowIndex > highestMeasuredRowIndex) {
       highestMeasuredRowIndex = rowIndex;
     }
-    debugStats.measurementUpdates += 1;
     scheduleMeasurementCommit();
   };
 
@@ -843,16 +820,26 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const current = untrack(renderRange);
     const next = computeWindowStep(current);
     if (!isRangeEqual(current, next)) {
-      debugStats.rangeChanges += 1;
+      const addedRows = countAddedRows(current, next);
       withHostBatch(
         {
           kind: "update",
           scope: "virtual-list-window",
-          extras: { atomic: true },
+          extras: {
+            addedRows,
+            atomic: true,
+            first: next.first,
+            last: next.last,
+            previousFirst: current.first,
+            previousLast: current.last,
+            rowCount: rowCount(),
+            scrollOffset: scrollOffset(),
+            totalRowsLength: totalRowsLength(),
+            viewport: axisViewportLength(),
+          },
         },
         () => setRenderRange(next)
       );
-      reportDebugStats("rangeChange");
     }
   });
 
@@ -929,7 +916,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const rows = visibleRowIndices();
     if (rows.length <= 0) return 0;
     const firstRow = getApproxRow(rows[0]);
-    return Math.max(0, firstRow.offset);
+    const next = Math.max(0, firstRow.offset);
+    
+    // Stability guard: ignore sub-pixel shifts in spacers
+    if (Math.abs(lastLeadingSpacer - next) < 1.0) {
+      return lastLeadingSpacer;
+    }
+    lastLeadingSpacer = next;
+    return next;
   });
 
   const trailingSpacerLength = createMemo(() => {
@@ -938,7 +932,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (rows.length <= 0) return Math.max(0, totalRowsLength());
     const lastRow = getApproxRow(rows[rows.length - 1]);
     const renderedEnd = lastRow.offset + lastRow.length;
-    return Math.max(0, totalRowsLength() - renderedEnd);
+    const next = Math.max(0, totalRowsLength() - renderedEnd);
+
+    // Stability guard: ignore sub-pixel shifts in spacers
+    if (Math.abs(lastTrailingSpacer - next) < 1.0) {
+      return lastTrailingSpacer;
+    }
+    lastTrailingSpacer = next;
+    return next;
   });
 
   const scrollViewStyle = createMemo<StyleProp>(() => {

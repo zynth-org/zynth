@@ -6,6 +6,7 @@
 
 #include <yoga/Yoga.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -267,19 +268,34 @@ public:
     child.parentId = parentId;
 
     // Phase 3: Update Yoga tree topology
+    //
+    // Yoga requires a child to be detached before insertion, including simple
+    // same-parent reorders. Virtualized lists hit that path constantly.
+    YGNodeRef targetYogaParent = nullptr;
     if (inlineTextChild) {
+      if (child.yoga && YGNodeGetParent(child.yoga)) {
+        YGNodeRemoveChild(YGNodeGetParent(child.yoga), child.yoga);
+      }
       markMeasuredNodeDirty(*parent);
     } else if (parent != nullptr && parent->yoga && child.yoga) {
-      YGNodeInsertChild(parent->yoga, child.yoga, static_cast<uint32_t>(idx));
+      targetYogaParent = parent->yoga;
     } else if (parentIsSurfaceRoot && child.yoga && surfaceIt->second.rootYoga) {
-      YGNodeInsertChild(surfaceIt->second.rootYoga, child.yoga, static_cast<uint32_t>(idx));
+      targetYogaParent = surfaceIt->second.rootYoga;
     } else if (parentId <= 0 && child.yoga) {
       // If parentId <= 0, attach to surface root
       int32_t surfaceId = child.surfaceId;
       auto surfIt = surfaces_.find(surfaceId);
       if (surfIt != surfaces_.end() && surfIt->second.rootYoga) {
-        YGNodeInsertChild(surfIt->second.rootYoga, child.yoga, static_cast<uint32_t>(idx));
+        targetYogaParent = surfIt->second.rootYoga;
       }
+    }
+    if (targetYogaParent && child.yoga) {
+      if (YGNodeGetParent(child.yoga)) {
+        YGNodeRemoveChild(YGNodeGetParent(child.yoga), child.yoga);
+      }
+      const uint32_t yogaIndex =
+          std::min<uint32_t>(static_cast<uint32_t>(idx), YGNodeGetChildCount(targetYogaParent));
+      YGNodeInsertChild(targetYogaParent, child.yoga, yogaIndex);
     }
 
     // Propagate surface from parent
