@@ -47,15 +47,27 @@ public:
   }
 
   /**
-   * @brief Calculate layout for all dirty surfaces and update the native tree frames.
+   * @brief Calculate layout for all dirty surfaces and extract only the frames
+   *        that were actually affected by this commit's mutations.
+   *
+   * Previous implementation did a full DFS over the entire Yoga tree to check
+   * `hasNewLayout` on every node — O(n) per commit regardless of how many
+   * nodes actually changed.  With 258 nodes during mid-scroll, that alone
+   * produced 20–30 ms layout spikes.
+   *
+   * New approach:
+   * 1. Run `YGNodeCalculateLayout` from the surface root (unchanged — Yoga's
+   *    internal dirty tracking still skips clean subtrees).
+   * 2. Build a targeted set of nodes that *could* have new layouts based on
+   *    the commit's topology and property mutations.
+   * 3. Walk ancestors of dirty nodes to capture parent reflows.
+   * 4. Extract frames only for nodes in the targeted set — O(Δ) instead of O(n).
    */
   void calculateLayoutForDirtySurfaces(ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
     ZynthPhaseTimer timer(telemetry.yogaCalculateUs);
     
     const auto& dirtySurfaces = host_->dirtySurfaces();
     for (int32_t surfaceId : dirtySurfaces) {
-      // Find surface
-      // We need to iterate over surfaces in host, let's assume we can get it
       auto surfIt = host_->surfaces_.find(surfaceId);
       if (surfIt == host_->surfaces_.end()) {
         __android_log_print(ANDROID_LOG_WARN, "ZynthYoga", "Surface %d NOT FOUND in host!", surfaceId);
@@ -68,18 +80,107 @@ public:
       
       auto& surface = surfIt->second;
       
-      // Calculate layout
+      // Calculate layout — Yoga skips clean subtrees internally
       YGNodeCalculateLayout(surface.rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
-      
-      // Extract frames
-      extractFrames(surface.rootYoga, telemetry, commit);
     }
+    
+    // Extract frames only for nodes mutated in this commit
+    extractFramesForMutatedNodes(telemetry, commit);
     
     // Clear dirty
     host_->clearDirtySurfaces();
   }
 
 private:
+  /**
+   * @brief Build a set of nodes that were directly mutated, expand it to
+   *        include ancestors (since parent dimensions may reflow), then
+   *        extract only those frames.
+   */
+  void extractFramesForMutatedNodes(ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
+    // Seed: all nodes that were directly affected by this commit
+    std::unordered_set<int32_t> dirtyNodes;
+    dirtyNodes.reserve(
+        commit.inserts.size() * 2 + commit.removes.size() +
+        commit.creates.size() + commit.layoutProps.size());
+
+    for (const auto& op : commit.inserts) {
+      dirtyNodes.insert(op.childId);
+      dirtyNodes.insert(op.parentId);
+    }
+    for (const auto& op : commit.removes) {
+      dirtyNodes.insert(op.parentId);
+    }
+    for (const auto& op : commit.creates) {
+      dirtyNodes.insert(op.nodeId);
+    }
+    for (const auto& op : commit.layoutProps) {
+      dirtyNodes.insert(op.nodeId);
+    }
+    for (const auto& op : commit.textProps) {
+      dirtyNodes.insert(op.nodeId);
+    }
+    for (const auto& op : commit.textMutations) {
+      dirtyNodes.insert(op.nodeId);
+    }
+
+    // Expand: walk ancestors so we capture parent reflows (e.g. spacer height
+    // change causes the scroll container's total height to change).
+    std::vector<int32_t> seeds(dirtyNodes.begin(), dirtyNodes.end());
+    for (int32_t nodeId : seeds) {
+      int32_t current = nodeId;
+      while (current > 0) {
+        auto* record = host_->getNode(current);
+        if (!record) break;
+        current = record->parentId;
+        if (current <= 0) break;
+        if (!dirtyNodes.insert(current).second) break; // already visited
+      }
+    }
+
+    // Also include direct children of dirty parents — a parent reflow may
+    // shift children even if the children themselves weren't mutated.
+    std::vector<int32_t> parentSeeds(dirtyNodes.begin(), dirtyNodes.end());
+    for (int32_t nodeId : parentSeeds) {
+      auto* record = host_->getNode(nodeId);
+      if (!record) continue;
+      for (int32_t childId : record->children) {
+        dirtyNodes.insert(childId);
+      }
+    }
+
+    // Extract frames only for nodes in the dirty set
+    for (int32_t nodeId : dirtyNodes) {
+      auto* record = host_->getNode(nodeId);
+      if (!record || !record->yoga) continue;
+      if (!YGNodeGetHasNewLayout(record->yoga)) continue;
+
+      float left = YGNodeLayoutGetLeft(record->yoga);
+      float top = YGNodeLayoutGetTop(record->yoga);
+      float width = YGNodeLayoutGetWidth(record->yoga);
+      float height = YGNodeLayoutGetHeight(record->yoga);
+
+      // Diff against last known frame
+      if (record->lastFrame.left != left ||
+          record->lastFrame.top != top ||
+          record->lastFrame.width != width ||
+          record->lastFrame.height != height) {
+        record->lastFrame.left = left;
+        record->lastFrame.top = top;
+        record->lastFrame.width = width;
+        record->lastFrame.height = height;
+        record->lastFrame.changed = true;
+
+        telemetry.changedFrameCount++;
+        commit.layoutFrames.push_back({nodeId, left, top, width, height});
+      }
+      YGNodeSetHasNewLayout(record->yoga, false);
+    }
+  }
+
+  /**
+   * @brief Legacy full-tree frame extraction. Retained for fallback/debugging.
+   */
   void extractFrames(YGNodeRef node, ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
     if (!node) return;
     
@@ -93,12 +194,10 @@ private:
         float width = YGNodeLayoutGetWidth(node);
         float height = YGNodeLayoutGetHeight(node);
         
-        // Check diff
         if (record->lastFrame.left != left ||
             record->lastFrame.top != top ||
             record->lastFrame.width != width ||
             record->lastFrame.height != height) {
-          
           record->lastFrame.left = left;
           record->lastFrame.top = top;
           record->lastFrame.width = width;
@@ -106,8 +205,6 @@ private:
           record->lastFrame.changed = true;
           
           telemetry.changedFrameCount++;
-          
-          // Phase 4: Emit to mount transaction
           commit.layoutFrames.push_back({nodeId, left, top, width, height});
         }
       }

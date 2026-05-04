@@ -81,7 +81,7 @@ const DEFAULT_ESTIMATED_ITEM = 56;
 const DEFAULT_DYNAMIC_ESTIMATED_ITEM = 88;
 const DEFAULT_DYNAMIC_WINDOW_SIZE = 2;
 const DEFAULT_MAX_DYNAMIC_WINDOW_ROWS = 60;
-const DEFAULT_MAX_TO_RENDER_PER_BATCH = 10;
+const DEFAULT_MAX_TO_RENDER_PER_BATCH = 4;
 const DEFAULT_UPDATE_CELLS_BATCHING_PERIOD = 0;
 const SCROLL_IDLE_DELAY_MS = 120;
 const DEBUG_LOG_INTERVAL_MS = 120;
@@ -387,6 +387,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   let rangeUpdateTimer: ReturnType<typeof setTimeout> | null = null;
   let scrollIdleTimer: ReturnType<typeof setTimeout> | null = null;
   let isScrollActive = false;
+  let rangeRafPending = false;
   let debugSeq = 0;
   let lastScrollDebugAt = 0;
   let lastMeasurementDebugAt = 0;
@@ -666,8 +667,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const directionalRows =
       Math.abs(velocity) > 1
         ? Math.min(
-            isDynamicList ? 10 : 24,
-            Math.max(6, Math.ceil(Math.abs(velocity) / Math.max(160, average)))
+            isDynamicList ? 4 : 24,
+            Math.max(2, Math.ceil(Math.abs(velocity) / Math.max(160, average)))
           )
         : 0;
     const extraBefore =
@@ -771,6 +772,11 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       scrollIdleTimer = null;
     }
     isScrollActive = false;
+    // Flush any deferred measurements as a single batch when scroll ends,
+    // preventing cascading re-layout passes from individual commit trickle.
+    if (measurementFlushPending) {
+      commitMeasurementVersion();
+    }
   };
 
   const updateViewportFromLayout = (event: LayoutChangeEvent) => {
@@ -899,7 +905,6 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     }
 
     if (!hasNumber(nextLength) || nextLength <= 0) {
-      console.log("[VirtualList] handleRowLayout rejected:", { rowIndex, layout });
       return;
     }
 
@@ -1140,6 +1145,23 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
         DEFAULT_UPDATE_CELLS_BATCHING_PERIOD;
       if (addedRows > 0 && batchingPeriod > 0) {
         scheduleRenderRangeCommit();
+        return;
+      }
+      // During active scroll, coalesce range commits to at most one per
+      // animation frame.  This prevents multiple synchronous Yoga layout
+      // passes when scrollOffset fires faster than the display refresh.
+      if (isScrollActive && typeof requestAnimationFrame === "function") {
+        if (!rangeRafPending) {
+          rangeRafPending = true;
+          requestAnimationFrame(() => {
+            rangeRafPending = false;
+            const latest = untrack(renderRange);
+            const latestNext = computeWindowStep(latest);
+            if (!isRangeEqual(latest, latestNext)) {
+              commitRenderRange(latest, latestNext);
+            }
+          });
+        }
         return;
       }
       commitRenderRange(current, next);

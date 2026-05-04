@@ -1891,96 +1891,119 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             }
 
             if (stringClass && state->applyMountTransaction) {
-              std::vector<double> preLayoutOps;
-              preLayoutOps.reserve(commit.totalOpCount() * 5);
+              // Split pre-layout into TWO transactions:
+              // 1. SYNC: measurement-critical ops (creates, setText, text props)
+              //    Must complete before Yoga layout so TextView has correct content.
+              // 2. ASYNC: visual-only ops (insertChild, removeChild, dropNode, visual props)
+              //    Can be posted to main thread without blocking JS.
+              std::vector<double> syncOps;
+              std::vector<double> asyncOps;
+              syncOps.reserve(commit.creates.size() * 4 + commit.textMutations.size() * 3 +
+                              commit.textProps.size() * 5);
+              asyncOps.reserve(commit.totalOpCount() * 5);
               
-              // 3 = insertChild
+              // ASYNC: insertChild (visual only — Yoga tree already updated in C++)
               for (const auto& op : commit.inserts) {
-                preLayoutOps.push_back(3);
-                preLayoutOps.push_back(op.parentId);
-                preLayoutOps.push_back(op.childId);
-                preLayoutOps.push_back(op.index);
+                asyncOps.push_back(3);
+                asyncOps.push_back(op.parentId);
+                asyncOps.push_back(op.childId);
+                asyncOps.push_back(op.index);
               }
-              // 4 = removeChild
+              // ASYNC: removeChild
               for (const auto& op : commit.removes) {
-                preLayoutOps.push_back(4);
-                preLayoutOps.push_back(op.parentId);
-                preLayoutOps.push_back(op.childId);
+                asyncOps.push_back(4);
+                asyncOps.push_back(op.parentId);
+                asyncOps.push_back(op.childId);
               }
-              // 5 = dropNode
+              // ASYNC: dropNode
               for (const auto& op : commit.drops) {
-                preLayoutOps.push_back(5);
-                preLayoutOps.push_back(op.nodeId);
+                asyncOps.push_back(5);
+                asyncOps.push_back(op.nodeId);
               }
-              // 7 = createNode
+              // SYNC: createNode — Kotlin must create the View before measurement
               for (const auto& op : commit.creates) {
-                preLayoutOps.push_back(7);
-                preLayoutOps.push_back(op.nodeId);
-                preLayoutOps.push_back(op.typeStringIndex);
-                preLayoutOps.push_back(op.hasMeasure ? 1.0 : 0.0);
+                syncOps.push_back(7);
+                syncOps.push_back(op.nodeId);
+                syncOps.push_back(op.typeStringIndex);
+                syncOps.push_back(op.hasMeasure ? 1.0 : 0.0);
               }
-              // 8 = setSurface
+              // ASYNC: setSurface
               for (const auto& op : commit.surfaces) {
-                preLayoutOps.push_back(8);
-                preLayoutOps.push_back(op.surfaceId);
+                asyncOps.push_back(8);
+                asyncOps.push_back(op.surfaceId);
               }
               
-              auto pushProp = [&](const zynth::ZynthPropMutation& op) {
-                preLayoutOps.push_back(1); // 1 = setProp
-                preLayoutOps.push_back(op.nodeId);
+              auto pushPropTo = [&](std::vector<double>& target, const zynth::ZynthPropMutation& op) {
+                target.push_back(1); // 1 = setProp
+                target.push_back(op.nodeId);
                 if (op.prop == zynth::ZynthPropId::Unknown) {
-                  preLayoutOps.push_back(static_cast<double>(op.keyToken));
+                  target.push_back(static_cast<double>(op.keyToken));
                 } else {
-                  preLayoutOps.push_back(static_cast<double>(-static_cast<int32_t>(op.prop)));
+                  target.push_back(static_cast<double>(-static_cast<int32_t>(op.prop)));
                 }
-                preLayoutOps.push_back(static_cast<double>(op.value.kind));
+                target.push_back(static_cast<double>(op.value.kind));
                 if (op.value.kind == zynth::ZynthValueKind::Bool) {
-                  preLayoutOps.push_back(op.value.number);
+                  target.push_back(op.value.number);
                 } else if (op.value.kind == zynth::ZynthValueKind::String) {
-                  preLayoutOps.push_back(static_cast<double>(op.value.stringIndex));
+                  target.push_back(static_cast<double>(op.value.stringIndex));
                 } else {
-                  preLayoutOps.push_back(op.value.number);
+                  target.push_back(op.value.number);
                 }
               };
               
+              // ASYNC: viewProps (backgroundColor, opacity, transform, etc.)
               for (const auto& op : commit.viewProps) {
-                pushProp(op);
+                pushPropTo(asyncOps, op);
               }
+              // SYNC: textProps (fontSize, fontFamily, fontWeight — affect measurement)
               for (const auto& op : commit.textProps) {
-                pushProp(op);
+                pushPropTo(syncOps, op);
               }
+              // ASYNC: descriptorProps (component-specific, not measurement-critical)
               for (const auto& op : commit.descriptorProps) {
-                pushProp(op);
+                pushPropTo(asyncOps, op);
               }
               
-              // Phase 3A-1: Dual-routed props
-              // Display and Overflow affect both Yoga layout and native View visibility/clipping.
+              // ASYNC: Dual-routed layout props (display, overflow)
               for (const auto& op : commit.layoutProps) {
                 if (op.prop == zynth::ZynthPropId::Display || op.prop == zynth::ZynthPropId::Overflow) {
-                  pushProp(op);
+                  pushPropTo(asyncOps, op);
                 }
               }
               
-              // 2 = setText
+              // SYNC: setText — Kotlin TextView needs text content for measurement
               for (const auto& op : commit.textMutations) {
-                preLayoutOps.push_back(2);
-                preLayoutOps.push_back(op.nodeId);
-                preLayoutOps.push_back(op.textStringIndex);
+                syncOps.push_back(2);
+                syncOps.push_back(op.nodeId);
+                syncOps.push_back(op.textStringIndex);
               }
 
-              if (!preLayoutOps.empty()) {
-                jobject jBuffer = env->NewDirectByteBuffer(
-                    preLayoutOps.data(),
-                    static_cast<jlong>(preLayoutOps.size() * sizeof(double)));
-                if (jBuffer) {
+              // Dispatch ASYNC visual ops first (non-blocking)
+              if (!asyncOps.empty()) {
+                jobject jAsyncBuffer = env->NewDirectByteBuffer(
+                    asyncOps.data(),
+                    static_cast<jlong>(asyncOps.size() * sizeof(double)));
+                if (jAsyncBuffer) {
+                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                      jAsyncBuffer, static_cast<jint>(asyncOps.size()), jStrings);
+                  env->DeleteLocalRef(jAsyncBuffer);
+                }
+              }
+
+              // Dispatch SYNC measurement-critical ops (blocking)
+              if (!syncOps.empty()) {
+                jobject jSyncBuffer = env->NewDirectByteBuffer(
+                    syncOps.data(),
+                    static_cast<jlong>(syncOps.size() * sizeof(double)));
+                if (jSyncBuffer) {
                   if (state->applyMountTransactionSync) {
                     env->CallVoidMethod(state->uiManager, state->applyMountTransactionSync,
-                                        jBuffer, static_cast<jint>(preLayoutOps.size()), jStrings);
+                                        jSyncBuffer, static_cast<jint>(syncOps.size()), jStrings);
                   } else {
                     env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
-                                        jBuffer, static_cast<jint>(preLayoutOps.size()), jStrings);
+                                        jSyncBuffer, static_cast<jint>(syncOps.size()), jStrings);
                   }
-                  env->DeleteLocalRef(jBuffer);
+                  env->DeleteLocalRef(jSyncBuffer);
                 }
               }
             }

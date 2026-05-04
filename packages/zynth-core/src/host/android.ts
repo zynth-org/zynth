@@ -486,24 +486,7 @@ export function createAndroidHost(): Host {
         for (const op of ops) {
           counts[op.type] += 1;
         }
-        console.log("VirtualList host flush", {
-          extras: meta.extras ?? null,
-          host: {
-            childrenMaps: CHILDREN.size,
-            parentLinks: PARENTS.size,
-            pendingDrops: pendingDrops.size,
-            pendingRemovals: pendingRemovals.size,
-            readyForDestruction: readyForDestruction.size,
-            rescuedRemovals: rescuedRemovals.size,
-            textNodes: TEXTS.size,
-            trackedNodes: TYPES.size,
-            trackedNativeNodes: Array.from(TYPES.keys()).filter(
-              (id) => !isMarkerId(id)
-            ).length,
-          },
-          ops: counts,
-          totalOps: ops.length,
-        });
+        // Removed noise logs for production performance.
       };
 
       const flushAccumulator = () => {
