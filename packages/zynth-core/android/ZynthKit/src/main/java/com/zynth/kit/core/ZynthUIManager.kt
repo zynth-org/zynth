@@ -221,7 +221,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   internal val touchListeners = HashMap<Int, View.OnTouchListener>()
   internal val layoutNodes = ConcurrentHashMap.newKeySet<Int>()
-  internal val layoutPending = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutDirtyNodes = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val layoutTransitionFrames = HashMap<Int, android.graphics.Rect>()
@@ -1036,7 +1035,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (name == "onLayout") {
       val isNewLayoutNode = layoutNodes.add(id)
       if (isNewLayoutNode) {
-        layoutPending.add(id)
         requestLayout("setHandler:onLayout")
       }
       traceOp("setHandler", node?.type, startNs)
@@ -1565,7 +1563,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                 
                 if (layoutNodes.contains(nodeId)) {
                   noteLayoutDebug("mountFrame:onLayoutNode")
-                  layoutEventBuffer.add(LayoutEvent(nodeId, left.toDouble(), top.toDouble(), width.toDouble(), height.toDouble()))
+                  layoutEventBuffer.add(LayoutEvent(nodeId, pxToDp(left), pxToDp(top), pxToDp(width), pxToDp(height)))
                   needsLayout = true
                 }
               }

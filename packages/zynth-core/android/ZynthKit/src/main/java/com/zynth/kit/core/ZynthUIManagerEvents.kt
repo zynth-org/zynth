@@ -227,14 +227,17 @@ internal fun ZynthUIManager.maybeDispatchDoublePress(id: Int, event: MotionEvent
 
 internal fun ZynthUIManager.dispatchLayoutEvents() {
   if (layoutNodes.isEmpty()) return
-  if (layoutPending.isEmpty() && layoutDirtyNodes.isEmpty()) return
+  if (layoutDirtyNodes.isEmpty() && layoutEventBuffer.isEmpty()) return
   noteLayoutDebug("dispatchLayoutEvents")
   
-  layoutEventBuffer.clear()
   val ids = LinkedHashSet<Int>()
-  ids.addAll(layoutPending)
   ids.addAll(layoutDirtyNodes)
   layoutDirtyNodes.removeAll(ids)
+  
+  val alreadyBuffered = HashSet<Int>()
+  for (event in layoutEventBuffer) {
+    alreadyBuffered.add(event.id)
+  }
   
   for (id in ids) {
     val view = nodes[id] ?: continue
@@ -245,19 +248,24 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
       previous.top != frame.top ||
       previous.width() != frame.width() ||
       previous.height() != frame.height()
-    val force = layoutPending.contains(id)
-    if (!force && !changed) continue
+    
+    if (!changed) {
+      continue
+    }
+    
     layoutFrames[id] = frame
-    layoutPending.remove(id)
-    layoutEventBuffer.add(
-      ZynthUIManager.LayoutEvent(
-        id,
-        pxToDp(frame.left.toFloat()),
-        pxToDp(frame.top.toFloat()),
-        pxToDp(frame.width().toFloat()),
-        pxToDp(frame.height().toFloat())
+    
+    if (!alreadyBuffered.contains(id)) {
+      layoutEventBuffer.add(
+        ZynthUIManager.LayoutEvent(
+          id,
+          pxToDp(frame.left.toFloat()),
+          pxToDp(frame.top.toFloat()),
+          pxToDp(frame.width().toFloat()),
+          pxToDp(frame.height().toFloat())
+        )
       )
-    )
+    }
   }
   
   if (layoutEventBuffer.isNotEmpty()) {
@@ -377,8 +385,7 @@ internal fun ZynthUIManager.destroyNode(id: Int) {
     lastPressTimestamps.remove(nodeId)
     pressLocalPoints.remove(nodeId)
     pressScreenPoints.remove(nodeId)
-    layoutNodes.remove(nodeId)
-    layoutPending.remove(nodeId)
+    layoutFrames.remove(nodeId)
     layoutDirtyNodes.remove(nodeId)
     layoutFrames.remove(nodeId)
     layoutTransitionFrames.remove(nodeId)

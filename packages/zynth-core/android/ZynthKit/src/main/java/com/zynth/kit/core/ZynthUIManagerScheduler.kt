@@ -47,7 +47,7 @@ internal fun ZynthUIManager.logLayoutDebugIfNeeded(reason: String) {
   }
   Log.d(
     "ZynthLayoutDebug",
-    "reason=$reason needsLayout=$needsLayout dirtySurfaces=${dirtySurfaces.size} layoutNodes=${layoutNodes.size} layoutPending=${layoutPending.size} layoutDirty=${layoutDirtyNodes.size} bufferedEvents=${layoutEventBuffer.size} counts=$counts"
+    "reason=$reason needsLayout=$needsLayout dirtySurfaces=${dirtySurfaces.size} layoutNodes=${layoutNodes.size} layoutDirty=${layoutDirtyNodes.size} bufferedEvents=${layoutEventBuffer.size} counts=$counts"
   )
   layoutDebugLastLogMs = now
 }

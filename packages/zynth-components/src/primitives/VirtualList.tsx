@@ -80,7 +80,7 @@ const DEFAULT_WINDOW_SIZE = 5;
 const DEFAULT_ESTIMATED_ITEM = 56;
 const DEFAULT_DYNAMIC_ESTIMATED_ITEM = 88;
 const DEFAULT_DYNAMIC_WINDOW_SIZE = 2;
-const DEFAULT_MAX_DYNAMIC_WINDOW_ROWS = 36;
+const DEFAULT_MAX_DYNAMIC_WINDOW_ROWS = 60;
 const DEFAULT_MAX_TO_RENDER_PER_BATCH = 10;
 const DEFAULT_UPDATE_CELLS_BATCHING_PERIOD = 0;
 const SCROLL_IDLE_DELAY_MS = 120;
@@ -420,6 +420,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   };
 
   const logVirtualList = (reason: string, extra?: Record<string, unknown>) => {
+    const shouldLog = false;
+    if (!shouldLog) return;
     debugSeq += 1;
     console.log("[VirtualList]", {
       extra: extra ?? null,
@@ -642,6 +644,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
 
     const average = Math.max(1, averageRowLength());
     const isDynamicList = !props.getItemLayout;
+    const hasDynamicMeasurements = isDynamicList && measuredRowCount > 0;
     const targetWindow = Math.max(
       1,
       Math.min(
@@ -759,9 +762,6 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     scrollIdleTimer = setTimeout(() => {
       scrollIdleTimer = null;
       isScrollActive = false;
-      if (measurementFlushPending) {
-        scheduleMeasurementCommit(true);
-      }
     }, SCROLL_IDLE_DELAY_MS);
   };
 
@@ -771,9 +771,6 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       scrollIdleTimer = null;
     }
     isScrollActive = false;
-    if (measurementFlushPending) {
-      scheduleMeasurementCommit();
-    }
   };
 
   const updateViewportFromLayout = (event: LayoutChangeEvent) => {
