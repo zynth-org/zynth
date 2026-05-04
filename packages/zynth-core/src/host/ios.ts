@@ -601,7 +601,7 @@ export function createIOSHost(): Host {
 
     for (const [name, handler] of Object.entries(eventHandlers)) {
       if (typeof handler === "function") {
-        enqueueOperation(() => ui.setHandler(id, name, handler));
+        if (!isSuppressed()) ui.setHandler(id, name, handler);
       }
     }
   };
@@ -682,10 +682,10 @@ export function createIOSHost(): Host {
         }
       }
       if (typeof props?.onPress === "function") {
-        enqueueOperation(() => ui.setHandler(id!, "onPress", props.onPress));
+        if (!isSuppressed()) ui.setHandler(id!, "onPress", props.onPress);
       }
       if (typeof props?.onLayout === "function") {
-        enqueueOperation(() => ui.setHandler(id!, "onLayout", props.onLayout));
+        if (!isSuppressed()) ui.setHandler(id!, "onLayout", props.onLayout);
       }
       if (props?.accessibilityLabel) {
         const op: BatchOperation = {
@@ -809,7 +809,7 @@ export function createIOSHost(): Host {
       }
       if (name === "handler") {
         if (typeof value === "function") {
-          enqueueOperation(() => ui.setHandler(node.id, name, value));
+          if (!isSuppressed()) ui.setHandler(node.id, name, value);
           schedule();
           return;
         }
@@ -820,7 +820,7 @@ export function createIOSHost(): Host {
         return;
       }
       if (typeof value === "function") {
-        enqueueOperation(() => ui.setHandler(node.id, name, value));
+        if (!isSuppressed()) ui.setHandler(node.id, name, value);
         schedule();
         return;
       }
@@ -1090,7 +1090,7 @@ export function createIOSHost(): Host {
       for (const [key, value] of Object.entries(props)) {
         if (key === "style") continue;
         if (typeof value === "function") {
-          enqueueOperation(() => ui.setHandler(node.id, key, value));
+          if (!isSuppressed()) ui.setHandler(node.id, key, value);
         } else if (value !== undefined) {
           if (
             tryEnqueueBatch({

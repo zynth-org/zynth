@@ -78,6 +78,14 @@ const EMPTY_RANGE: Range = { first: 0, last: -1 };
 const DEFAULT_INITIAL_RENDER = 10;
 const DEFAULT_WINDOW_SIZE = 5;
 const DEFAULT_ESTIMATED_ITEM = 56;
+const DEFAULT_DYNAMIC_ESTIMATED_ITEM = 88;
+const DEFAULT_DYNAMIC_WINDOW_SIZE = 2;
+const DEFAULT_MAX_DYNAMIC_WINDOW_ROWS = 36;
+const DEFAULT_MAX_TO_RENDER_PER_BATCH = 10;
+const DEFAULT_UPDATE_CELLS_BATCHING_PERIOD = 0;
+const SCROLL_IDLE_DELAY_MS = 120;
+const DEBUG_LOG_INTERVAL_MS = 120;
+const DEBUG_MEASUREMENT_LOG_INTERVAL_MS = 250;
 const EPSILON = 0.001;
 
 const hasNumber = (value: unknown): value is number =>
@@ -101,6 +109,9 @@ const normalizeRange = (range: Range, itemCount: number): Range => {
   return { first, last };
 };
 
+const rangeSize = (range: Range): number =>
+  range.last < range.first ? 0 : range.last - range.first + 1;
+
 const countAddedRows = (previous: Range, next: Range): number => {
   if (next.last < next.first) return 0;
   if (previous.last < previous.first) {
@@ -114,6 +125,50 @@ const countAddedRows = (previous: Range, next: Range): number => {
   );
   return next.last - next.first + 1 - overlap;
 };
+
+const limitRangeExpansion = (
+  previous: Range,
+  next: Range,
+  maxAddedRows: number
+): Range => {
+  if (maxAddedRows <= 0) return next;
+  if (rangeSize(previous) === 0) return next;
+  if (next.last < previous.first || next.first > previous.last) return next;
+
+  const addedRows = countAddedRows(previous, next);
+  if (addedRows <= maxAddedRows) return next;
+
+  const overlapFirst = Math.max(previous.first, next.first);
+  const overlapLast = Math.min(previous.last, next.last);
+  let first = overlapFirst;
+  let last = overlapLast;
+  let remaining = maxAddedRows;
+
+  const beforeNeeded = Math.max(0, overlapFirst - next.first);
+  const afterNeeded = Math.max(0, next.last - overlapLast);
+  const preferAfter = afterNeeded >= beforeNeeded;
+
+  if (preferAfter && afterNeeded > 0) {
+    const after = Math.min(afterNeeded, remaining);
+    last += after;
+    remaining -= after;
+  }
+
+  if (beforeNeeded > 0 && remaining > 0) {
+    const before = Math.min(beforeNeeded, remaining);
+    first -= before;
+    remaining -= before;
+  }
+
+  if (!preferAfter && afterNeeded > 0 && remaining > 0) {
+    const after = Math.min(afterNeeded, remaining);
+    last += after;
+  }
+
+  return { first, last };
+};
+
+const nowMs = (): number => Date.now();
 
 const resolvePadding = (
   style?: StyleProp
@@ -328,6 +383,51 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   let lastInitialScrollIndex: number | undefined;
   let initialScrollApplied = false;
   let measurementFlushScheduled = false;
+  let measurementFlushPending = false;
+  let rangeUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+  let scrollIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  let isScrollActive = false;
+  let debugSeq = 0;
+  let lastScrollDebugAt = 0;
+  let lastMeasurementDebugAt = 0;
+  let lastBlankDebugAt = 0;
+  let lastSpacerDebugAt = 0;
+
+  const getDebugSnapshot = () => {
+    const range = untrack(renderRange);
+    return {
+      averageRowLength: Number(untrack(averageRowLength).toFixed(2)),
+      dataLength: props.data.length,
+      footerLength: Number(untrack(footerLength).toFixed(2)),
+      headerLength: Number(untrack(headerLength).toFixed(2)),
+      highestMeasuredRowIndex,
+      isScrollActive,
+      leadingSpacer: Number(lastLeadingSpacer.toFixed(2)),
+      maxScrollOffset: Number(untrack(maxScrollOffset).toFixed(2)),
+      measuredRowCount,
+      measurementFlushPending,
+      measurementFlushScheduled,
+      range,
+      rangeRows: rangeSize(range),
+      rowCount: untrack(rowCount),
+      scrollOffset: Number(untrack(scrollOffset).toFixed(2)),
+      scrollVelocity: Number(untrack(scrollVelocity).toFixed(2)),
+      totalContentLength: Number(untrack(totalContentLength).toFixed(2)),
+      totalRowsLength: Number(untrack(totalRowsLength).toFixed(2)),
+      trailingSpacer: Number(lastTrailingSpacer.toFixed(2)),
+      viewport: Number(untrack(axisViewportLength).toFixed(2)),
+    };
+  };
+
+  const logVirtualList = (reason: string, extra?: Record<string, unknown>) => {
+    debugSeq += 1;
+    console.log("[VirtualList]", {
+      extra: extra ?? null,
+      reason,
+      seq: debugSeq,
+      snapshot: getDebugSnapshot(),
+    });
+  };
 
   const syncMeasurementStats = () => {
     measuredRowCount = 0;
@@ -349,15 +449,36 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     setMeasurementVersion((value) => value + 1);
   };
 
-  const scheduleMeasurementCommit = () => {
+  const commitMeasurementVersion = () => {
+    if (!measurementFlushPending) return;
+    if (!props.getItemLayout && measuredRowCount <= 0) {
+      measurementFlushPending = false;
+      return;
+    }
+    measurementFlushPending = false;
+    logVirtualList("measurement-commit");
+    setMeasurementVersion((value) => value + 1);
+  };
+
+  const scheduleMeasurementCommit = (allowDuringScroll = false) => {
+    measurementFlushPending = true;
+    if (isScrollActive && !allowDuringScroll) {
+      const now = nowMs();
+      if (now - lastMeasurementDebugAt >= DEBUG_MEASUREMENT_LOG_INTERVAL_MS) {
+        lastMeasurementDebugAt = now;
+        logVirtualList("measurement-deferred-during-scroll");
+      }
+      return;
+    }
     if (measurementFlushScheduled) return;
     measurementFlushScheduled = true;
     const flush = () => {
       measurementFlushScheduled = false;
-      setMeasurementVersion((value) => value + 1);
+      if (isScrollActive && !allowDuringScroll) return;
+      commitMeasurementVersion();
     };
-    if (typeof queueMicrotask === "function") {
-      queueMicrotask(flush);
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(flush);
       return;
     }
     setTimeout(flush, 0);
@@ -369,8 +490,11 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     return Math.max(1, props.numColumns ?? 1);
   });
   const estimatedRowLength = createMemo(() => {
-    const base = props.estimatedItemSize ?? DEFAULT_ESTIMATED_ITEM;
-    return hasNumber(base) && base > 0 ? base : DEFAULT_ESTIMATED_ITEM;
+    const fallback = props.getItemLayout
+      ? DEFAULT_ESTIMATED_ITEM
+      : DEFAULT_DYNAMIC_ESTIMATED_ITEM;
+    const base = props.estimatedItemSize ?? fallback;
+    return hasNumber(base) && base > 0 ? base : fallback;
   });
   const averageRowLength = createMemo(() => {
     measurementVersion();
@@ -517,9 +641,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (last < first) last = first;
 
     const average = Math.max(1, averageRowLength());
+    const isDynamicList = !props.getItemLayout;
     const targetWindow = Math.max(
       1,
-      Math.min(9, props.windowSize ?? DEFAULT_WINDOW_SIZE)
+      Math.min(
+        9,
+        props.windowSize ??
+          (isDynamicList ? DEFAULT_DYNAMIC_WINDOW_SIZE : DEFAULT_WINDOW_SIZE)
+      )
     );
     const visibleRowCount = Math.max(1, last - first + 1);
     const windowRows = Math.max(
@@ -533,7 +662,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const overscanRows = Math.max(0, Math.min(12, props.overscan ?? 2));
     const directionalRows =
       Math.abs(velocity) > 1
-        ? Math.min(6, Math.ceil(Math.abs(velocity) / 400))
+        ? Math.min(
+            isDynamicList ? 10 : 24,
+            Math.max(6, Math.ceil(Math.abs(velocity) / Math.max(160, average)))
+          )
         : 0;
     const extraBefore =
       halfWindowRows + overscanRows + (velocity < -1 ? directionalRows : 0);
@@ -547,6 +679,48 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       },
       totalRows
     );
+    const boundedNext =
+      !isDynamicList || rangeSize(next) <= DEFAULT_MAX_DYNAMIC_WINDOW_ROWS
+        ? next
+        : normalizeRange(
+            velocity > 1
+              ? {
+                  first: next.last - DEFAULT_MAX_DYNAMIC_WINDOW_ROWS + 1,
+                  last: next.last,
+                }
+              : {
+                  first: next.first,
+                  last: next.first + DEFAULT_MAX_DYNAMIC_WINDOW_ROWS - 1,
+                },
+            totalRows
+          );
+    if (
+      !isRangeEqual(next, boundedNext) &&
+      !isRangeEqual(currentRange, boundedNext)
+    ) {
+      logVirtualList("window-bounded", {
+        boundedNext,
+        next,
+        velocity,
+      });
+    }
+    const limitedNext = limitRangeExpansion(
+      currentRange,
+      boundedNext,
+      Math.max(
+        1,
+        Math.floor(
+          props.maxToRenderPerBatch ?? DEFAULT_MAX_TO_RENDER_PER_BATCH
+        )
+      )
+    );
+    if (!isRangeEqual(boundedNext, limitedNext)) {
+      logVirtualList("window-expansion-limited", {
+        boundedNext,
+        currentRange,
+        limitedNext,
+      });
+    }
 
     if (
       currentRange.last >= currentRange.first &&
@@ -560,7 +734,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
         first >= currentRange.first + guardRows &&
         last <= currentRange.last - guardRows;
       const currentSize = currentRange.last - currentRange.first + 1;
-      const nextSize = next.last - next.first + 1;
+      const nextSize = limitedNext.last - limitedNext.first + 1;
       const windowDidNotShrinkMuch = currentSize <= nextSize + guardRows * 2;
 
       if (hasVisibleRows && hasHeadroom && windowDidNotShrinkMuch) {
@@ -568,7 +742,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       }
     }
 
-    return next;
+    return limitedNext;
   };
 
   const readAxisOffsetFromEvent = (event: ScrollEvent): number =>
@@ -576,6 +750,31 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
 
   const readAxisVelocityFromEvent = (event: ScrollEvent): number =>
     isHorizontal() ? event.velocity?.x ?? 0 : event.velocity?.y ?? 0;
+
+  const markScrollActive = () => {
+    isScrollActive = true;
+    if (scrollIdleTimer) {
+      clearTimeout(scrollIdleTimer);
+    }
+    scrollIdleTimer = setTimeout(() => {
+      scrollIdleTimer = null;
+      isScrollActive = false;
+      if (measurementFlushPending) {
+        scheduleMeasurementCommit(true);
+      }
+    }, SCROLL_IDLE_DELAY_MS);
+  };
+
+  const markScrollIdle = () => {
+    if (scrollIdleTimer) {
+      clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = null;
+    }
+    isScrollActive = false;
+    if (measurementFlushPending) {
+      scheduleMeasurementCommit();
+    }
+  };
 
   const updateViewportFromLayout = (event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width;
@@ -596,6 +795,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   };
 
   const handleScroll = (event: ScrollEvent) => {
+    markScrollActive();
     const nextOffset = readAxisOffsetFromEvent(event);
     const prevOffset = untrack(scrollOffset);
     if (Math.abs(prevOffset - nextOffset) >= 0.5) {
@@ -612,7 +812,58 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       }
     }
 
+    const now = nowMs();
+    if (now - lastScrollDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+      lastScrollDebugAt = now;
+      logVirtualList("scroll", {
+        eventContentSize: event.contentSize,
+        eventOffset: event.contentOffset,
+        eventViewport: event.layoutMeasurement,
+        nextOffset,
+      });
+    }
+
     props.onScroll?.(event);
+  };
+
+  const handleScrollBeginDrag = (event: ScrollEvent) => {
+    markScrollActive();
+    logVirtualList("scroll-begin-drag", {
+      eventOffset: event.contentOffset,
+      velocity: event.velocity,
+    });
+    props.onScrollBeginDrag?.(event);
+  };
+
+  const handleScrollEndDrag = (event: ScrollEvent) => {
+    if (!event.velocity || Math.abs(readAxisVelocityFromEvent(event)) < 1) {
+      markScrollIdle();
+    } else {
+      markScrollActive();
+    }
+    logVirtualList("scroll-end-drag", {
+      eventOffset: event.contentOffset,
+      velocity: event.velocity,
+    });
+    props.onScrollEndDrag?.(event);
+  };
+
+  const handleMomentumScrollBegin = (event: ScrollEvent) => {
+    markScrollActive();
+    logVirtualList("momentum-begin", {
+      eventOffset: event.contentOffset,
+      velocity: event.velocity,
+    });
+    props.onMomentumScrollBegin?.(event);
+  };
+
+  const handleMomentumScrollEnd = (event: ScrollEvent) => {
+    markScrollIdle();
+    logVirtualList("momentum-end", {
+      eventOffset: event.contentOffset,
+      velocity: event.velocity,
+    });
+    props.onMomentumScrollEnd?.(event);
   };
 
   const handleHeaderLayout = (event: LayoutChangeEvent) => {
@@ -644,8 +895,16 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   const handleRowLayout = (rowIndex: number, event: LayoutChangeEvent) => {
     if (props.getItemLayout) return;
     const layout = event.nativeEvent.layout;
-    const nextLength = isHorizontal() ? layout.width : layout.height;
-    if (!hasNumber(nextLength) || nextLength <= 0) return;
+    let nextLength = isHorizontal() ? layout.width : layout.height;
+    
+    if (nextLength < 0) {
+      nextLength = Math.abs(nextLength);
+    }
+
+    if (!hasNumber(nextLength) || nextLength <= 0) {
+      console.log("[VirtualList] handleRowLayout rejected:", { rowIndex, layout });
+      return;
+    }
 
     const metric: RowMetric = {
       index: rowIndex,
@@ -667,6 +926,16 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     }
     if (rowIndex > highestMeasuredRowIndex) {
       highestMeasuredRowIndex = rowIndex;
+    }
+    const now = nowMs();
+    if (now - lastMeasurementDebugAt >= DEBUG_MEASUREMENT_LOG_INTERVAL_MS) {
+      lastMeasurementDebugAt = now;
+      logVirtualList("row-measured", {
+        isUpdate: previous !== undefined,
+        nextLength,
+        previousLength: previous?.length ?? null,
+        rowIndex,
+      });
     }
     scheduleMeasurementCommit();
   };
@@ -803,12 +1072,60 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     }
   });
 
+  const commitRenderRange = (previous: Range, next: Range) => {
+    const addedRows = countAddedRows(previous, next);
+    logVirtualList("range-commit", {
+      addedRows,
+      next,
+      previous,
+      removedRows: Math.max(0, rangeSize(previous) - rangeSize(next) + addedRows),
+    });
+    withHostBatch(
+      {
+        kind: "update",
+        scope: "virtual-list-window",
+        extras: {
+          addedRows,
+          atomic: true,
+          first: next.first,
+          last: next.last,
+          previousFirst: previous.first,
+          previousLast: previous.last,
+          rowCount: rowCount(),
+          scrollOffset: scrollOffset(),
+          totalRowsLength: totalRowsLength(),
+          viewport: axisViewportLength(),
+        },
+      },
+      () => setRenderRange(next)
+    );
+  };
+
+  const scheduleRenderRangeCommit = () => {
+    if (rangeUpdateTimer) return;
+    const delay = Math.max(
+      0,
+      props.updateCellsBatchingPeriod ?? DEFAULT_UPDATE_CELLS_BATCHING_PERIOD
+    );
+    logVirtualList("range-commit-scheduled", { delay });
+    rangeUpdateTimer = setTimeout(() => {
+      rangeUpdateTimer = null;
+      const current = untrack(renderRange);
+      const next = computeWindowStep(current);
+      if (!isRangeEqual(current, next)) {
+        commitRenderRange(current, next);
+      }
+    }, delay);
+  };
+
   createEffect(() => {
     props.data.length;
     props.disableVirtualization;
     props.initialNumToRender;
     props.initialScrollIndex;
+    props.maxToRenderPerBatch;
     props.overscan;
+    props.updateCellsBatchingPeriod;
     props.windowSize;
     axisViewportLength();
     headerLength();
@@ -821,25 +1138,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const next = computeWindowStep(current);
     if (!isRangeEqual(current, next)) {
       const addedRows = countAddedRows(current, next);
-      withHostBatch(
-        {
-          kind: "update",
-          scope: "virtual-list-window",
-          extras: {
-            addedRows,
-            atomic: true,
-            first: next.first,
-            last: next.last,
-            previousFirst: current.first,
-            previousLast: current.last,
-            rowCount: rowCount(),
-            scrollOffset: scrollOffset(),
-            totalRowsLength: totalRowsLength(),
-            viewport: axisViewportLength(),
-          },
-        },
-        () => setRenderRange(next)
-      );
+      const batchingPeriod =
+        props.updateCellsBatchingPeriod ??
+        DEFAULT_UPDATE_CELLS_BATCHING_PERIOD;
+      if (addedRows > 0 && batchingPeriod > 0) {
+        scheduleRenderRangeCommit();
+        return;
+      }
+      commitRenderRange(current, next);
     }
   });
 
@@ -899,6 +1205,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   });
 
   onCleanup(() => {
+    if (rangeUpdateTimer) {
+      clearTimeout(rangeUpdateTimer);
+      rangeUpdateTimer = null;
+    }
+    if (scrollIdleTimer) {
+      clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = null;
+    }
     if (props.ref) {
       props.ref(null);
     }
@@ -909,6 +1223,26 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (range.last < range.first) return [] as number[];
     const count = range.last - range.first + 1;
     return Array.from({ length: count }, (_, index) => range.first + index);
+  });
+
+  createEffect(() => {
+    const rows = visibleRowIndices();
+    const totalRows = rowCount();
+    const viewport = axisViewportLength();
+    const offset = scrollOffset();
+    const range = renderRange();
+    if (props.data.length > 0 && viewport > 0 && rows.length === 0) {
+      const now = nowMs();
+      if (now - lastBlankDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+        lastBlankDebugAt = now;
+        logVirtualList("blank-visible-rows", {
+          offset,
+          range,
+          totalRows,
+          viewport,
+        });
+      }
+    }
   });
 
   const leadingSpacerLength = createMemo(() => {
@@ -922,7 +1256,17 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (Math.abs(lastLeadingSpacer - next) < 1.0) {
       return lastLeadingSpacer;
     }
+    const previous = lastLeadingSpacer;
     lastLeadingSpacer = next;
+    const now = nowMs();
+    if (now - lastSpacerDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+      lastSpacerDebugAt = now;
+      logVirtualList("leading-spacer-change", {
+        next,
+        previous,
+        rows,
+      });
+    }
     return next;
   });
 
@@ -938,7 +1282,17 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (Math.abs(lastTrailingSpacer - next) < 1.0) {
       return lastTrailingSpacer;
     }
+    const previous = lastTrailingSpacer;
     lastTrailingSpacer = next;
+    const now = nowMs();
+    if (now - lastSpacerDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+      lastSpacerDebugAt = now;
+      logVirtualList("trailing-spacer-change", {
+        next,
+        previous,
+        rows,
+      });
+    }
     return next;
   });
 
@@ -1011,12 +1365,12 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       minimumZoomScale={props.minimumZoomScale}
       onContentSizeChange={props.onContentSizeChange}
       onLayout={handleListLayout}
-      onMomentumScrollBegin={props.onMomentumScrollBegin}
-      onMomentumScrollEnd={props.onMomentumScrollEnd}
+      onMomentumScrollBegin={handleMomentumScrollBegin}
+      onMomentumScrollEnd={handleMomentumScrollEnd}
       onRefresh={props.onRefresh}
       onScroll={handleScroll}
-      onScrollBeginDrag={props.onScrollBeginDrag}
-      onScrollEndDrag={props.onScrollEndDrag}
+      onScrollBeginDrag={handleScrollBeginDrag}
+      onScrollEndDrag={handleScrollEndDrag}
       overScrollBehavior={props.overScrollBehavior}
       pinchGestureEnabled={props.pinchGestureEnabled}
       ref={assignRef}
