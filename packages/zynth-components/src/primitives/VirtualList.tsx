@@ -1322,8 +1322,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
 
   const contentContainerStyle = createMemo<StyleProp>(() => {
     const base: Style = isHorizontal()
-      ? { alignItems: "stretch", flexDirection: "row" }
-      : { flexGrow: 1 };
+      ? { alignItems: "stretch", flexDirection: "row", height: "100%" }
+      : { flexGrow: 1, width: "100%" };
     return compactStyles(base, props.contentContainerStyle) ?? base;
   });
 
@@ -1333,9 +1333,9 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
 
   const innerContentStyle = createMemo<Style>(() => {
     if (isHorizontal()) {
-      return { alignItems: "stretch", flexDirection: "row" };
+      return { alignItems: "stretch", flexDirection: "row", height: "100%" };
     }
-    return { alignItems: "stretch" };
+    return { alignItems: "stretch", width: "100%" };
   });
 
   const manualContentSize = createMemo(() => {
@@ -1345,9 +1345,15 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       : padding.top + padding.bottom;
     const axisLength = totalContentLength() + axisPadding;
     if (isHorizontal()) {
-      return { height: 0, width: axisLength };
+      return { height: "100%", width: axisLength } as unknown as {
+        height: number;
+        width: number;
+      };
     }
-    return { height: axisLength, width: 0 };
+    return { height: axisLength, width: "100%" } as unknown as {
+      height: number;
+      width: number;
+    };
   });
 
   const renderSeparatorForRow = (rowIndex: number) => {
