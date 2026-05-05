@@ -11,88 +11,94 @@
     "className": "ZynthRuntime-IoArrowBackOutline",
     "unicode": "&#59906;"
   },
-  "RiArrowsArrowLeftLine": {
+  "RiArrowsArrowDownSLine": {
     "encodedCode": "\\ea03",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiArrowsArrowLeftLine",
+    "className": "ZynthRuntime-RiArrowsArrowDownSLine",
     "unicode": "&#59907;"
   },
-  "RiArrowsArrowLeftSLine": {
+  "RiArrowsArrowLeftLine": {
     "encodedCode": "\\ea04",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiArrowsArrowLeftSLine",
+    "className": "ZynthRuntime-RiArrowsArrowLeftLine",
     "unicode": "&#59908;"
   },
-  "RiArrowsArrowRightSLine": {
+  "RiArrowsArrowLeftSLine": {
     "encodedCode": "\\ea05",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiArrowsArrowRightSLine",
+    "className": "ZynthRuntime-RiArrowsArrowLeftSLine",
     "unicode": "&#59909;"
   },
-  "RiArrowsArrowUpSLine": {
+  "RiArrowsArrowRightSLine": {
     "encodedCode": "\\ea06",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiArrowsArrowUpSLine",
+    "className": "ZynthRuntime-RiArrowsArrowRightSLine",
     "unicode": "&#59910;"
   },
-  "RiDevelopmentTerminalBoxLine": {
+  "RiArrowsArrowUpSLine": {
     "encodedCode": "\\ea07",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiDevelopmentTerminalBoxLine",
+    "className": "ZynthRuntime-RiArrowsArrowUpSLine",
     "unicode": "&#59911;"
   },
-  "RiDocumentFileCopyLine": {
+  "RiDevelopmentTerminalBoxLine": {
     "encodedCode": "\\ea08",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiDocumentFileCopyLine",
+    "className": "ZynthRuntime-RiDevelopmentTerminalBoxLine",
     "unicode": "&#59912;"
   },
-  "RiSystemAlertLine": {
+  "RiDocumentFileCopyLine": {
     "encodedCode": "\\ea09",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemAlertLine",
+    "className": "ZynthRuntime-RiDocumentFileCopyLine",
     "unicode": "&#59913;"
   },
-  "RiSystemCloseLine": {
+  "RiSystemAlertLine": {
     "encodedCode": "\\ea0a",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemCloseLine",
+    "className": "ZynthRuntime-RiSystemAlertLine",
     "unicode": "&#59914;"
   },
-  "RiSystemDeleteBin2Line": {
+  "RiSystemCloseLine": {
     "encodedCode": "\\ea0b",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemDeleteBin2Line",
+    "className": "ZynthRuntime-RiSystemCloseLine",
     "unicode": "&#59915;"
   },
-  "RiSystemEyeCloseLine": {
+  "RiSystemDeleteBin2Line": {
     "encodedCode": "\\ea0c",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemEyeCloseLine",
+    "className": "ZynthRuntime-RiSystemDeleteBin2Line",
     "unicode": "&#59916;"
   },
-  "RiSystemEyeLine": {
+  "RiSystemEyeCloseLine": {
     "encodedCode": "\\ea0d",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemEyeLine",
+    "className": "ZynthRuntime-RiSystemEyeCloseLine",
     "unicode": "&#59917;"
   },
-  "RiSystemRefreshLine": {
+  "RiSystemEyeLine": {
     "encodedCode": "\\ea0e",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemRefreshLine",
+    "className": "ZynthRuntime-RiSystemEyeLine",
     "unicode": "&#59918;"
   },
-  "RiSystemSearchLine": {
+  "RiSystemRefreshLine": {
     "encodedCode": "\\ea0f",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemSearchLine",
+    "className": "ZynthRuntime-RiSystemRefreshLine",
     "unicode": "&#59919;"
   },
-  "RiUserFacesUserLine": {
+  "RiSystemSearchLine": {
     "encodedCode": "\\ea10",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiUserFacesUserLine",
+    "className": "ZynthRuntime-RiSystemSearchLine",
     "unicode": "&#59920;"
+  },
+  "RiUserFacesUserLine": {
+    "encodedCode": "\\ea11",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiUserFacesUserLine",
+    "unicode": "&#59921;"
   }
 }

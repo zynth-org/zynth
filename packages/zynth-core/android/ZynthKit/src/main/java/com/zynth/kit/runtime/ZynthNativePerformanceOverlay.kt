@@ -38,9 +38,10 @@ internal object ZynthNativePerformanceOverlay {
   private const val PERF_OVERRUNS_VALUE_TAG = 94_010
   private const val PERF_PASSES_VALUE_TAG = 94_011
   private const val PERF_LAST_YOGA_VALUE_TAG = 94_012
+  private const val RUNTIME_FONT_ASSET = "fonts/ZynthRuntime.ttf"
+  private const val CHEVRON_GLYPH = "\uEA07"
   private const val OVERLAY_WIDTH_DP = 330
-  private const val OVERLAY_HEIGHT_DP = 62
-  private const val OVERLAY_EXPANDED_HEIGHT_DP = 166
+  private const val OVERLAY_TAP_HEIGHT_DP = 44
   private const val FPS_WARN_OFFSET = 6
   private const val FPS_RECOVER_OFFSET = 3
   private const val FPS_WARN_SAMPLES = 3
@@ -92,6 +93,7 @@ internal object ZynthNativePerformanceOverlay {
   private var performanceWindowConsumedFrames: Long = 0L
   private var performanceOverlayAllowed: Boolean = false
   private var performanceYogaSampleCount: Long = 0L
+  private var chevronTypeface: Typeface? = null
 
   private var isDebuggable: Boolean = false
 
@@ -335,7 +337,7 @@ internal object ZynthNativePerformanceOverlay {
           withAlpha(Color.parseColor("#6B7280"), 0.46f),
           dp(18).toFloat(),
         )
-        layoutParams = FrameLayout.LayoutParams(dp(OVERLAY_WIDTH_DP), dp(OVERLAY_HEIGHT_DP)).apply {
+        layoutParams = FrameLayout.LayoutParams(dp(OVERLAY_WIDTH_DP), FrameLayout.LayoutParams.WRAP_CONTENT).apply {
           gravity = Gravity.TOP or Gravity.START
           marginStart = dp(16)
           topMargin = topInset + dp(10)
@@ -348,7 +350,7 @@ internal object ZynthNativePerformanceOverlay {
               performanceDragStartY = event.rawY - view.y
               performanceTouchDownRawX = event.rawX
               performanceTouchDownRawY = event.rawY
-              performanceChevronPressed = event.x >= view.width - dp(52) && event.y <= dp(OVERLAY_HEIGHT_DP)
+              performanceChevronPressed = event.x >= view.width - dp(52) && event.y <= dp(OVERLAY_TAP_HEIGHT_DP)
               true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -382,14 +384,16 @@ internal object ZynthNativePerformanceOverlay {
       val header = LinearLayout(root.context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(OVERLAY_TAP_HEIGHT_DP)
       }
       val chevron = TextView(root.context).apply {
         id = PERF_CHEVRON_TAG
-        text = "v"
+        text = CHEVRON_GLYPH
         setTextColor(Color.parseColor("#E5E7EB"))
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
         gravity = Gravity.CENTER
-        typeface = Typeface.DEFAULT_BOLD
+        includeFontPadding = false
+        typeface = chevronTypeface(root.context)
       }
       header.addView(ram, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
       header.addView(views, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -694,28 +698,40 @@ internal object ZynthNativePerformanceOverlay {
 
   private fun applyPerformanceOverlayExpandedState(view: View?) {
     val overlay = view as? ViewGroup ?: return
-    overlay.findViewById<TextView>(PERF_CHEVRON_TAG)?.text =
-      if (performanceOverlayExpanded) "^" else "v"
+    overlay.findViewById<TextView>(PERF_CHEVRON_TAG)?.apply {
+      text = CHEVRON_GLYPH
+      scaleY = if (performanceOverlayExpanded) 1f else -1f
+      typeface = chevronTypeface(context)
+    }
     overlay.findViewById<View>(PERF_DETAILS_TAG)?.visibility =
       if (performanceOverlayExpanded) View.VISIBLE else View.GONE
-    val targetHeight = dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
     val params = overlay.layoutParams
-    if (params != null && params.height != targetHeight) {
-      params.height = targetHeight
+    if (params != null && params.height != ViewGroup.LayoutParams.WRAP_CONTENT) {
+      params.height = ViewGroup.LayoutParams.WRAP_CONTENT
       overlay.layoutParams = params
     }
     val width = if (overlay.width > 0) overlay.width else dp(OVERLAY_WIDTH_DP)
     val left = overlay.left
     val top = overlay.top
     val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
-    val heightSpec = View.MeasureSpec.makeMeasureSpec(targetHeight, View.MeasureSpec.EXACTLY)
+    val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     overlay.measure(widthSpec, heightSpec)
-    overlay.layout(left, top, left + width, top + targetHeight)
+    overlay.layout(left, top, left + width, top + overlay.measuredHeight)
     clampPerformanceOverlayPosition(overlay)
   }
 
   private fun formatMs(value: Double): String {
     return "%.2fms".format(value)
+  }
+
+  private fun chevronTypeface(context: Context): Typeface {
+    val cached = chevronTypeface
+    if (cached != null) return cached
+    val loaded = runCatching {
+      Typeface.createFromAsset(context.assets, RUNTIME_FONT_ASSET)
+    }.getOrNull() ?: Typeface.DEFAULT_BOLD
+    chevronTypeface = loaded
+    return loaded
   }
 
   private fun clampPerformanceOverlayPosition(view: View) {
@@ -726,7 +742,7 @@ internal object ZynthNativePerformanceOverlay {
     val rootWidth = if (root.width > 0) root.width else root.resources.displayMetrics.widthPixels
     val rootHeight = if (root.height > 0) root.height else root.resources.displayMetrics.heightPixels
     val viewWidth = if (view.width > 0) view.width else dp(OVERLAY_WIDTH_DP)
-    val viewHeight = if (view.height > 0) view.height else dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
+    val viewHeight = if (view.height > 0) view.height else view.measuredHeight.coerceAtLeast(dp(OVERLAY_TAP_HEIGHT_DP))
     val minX = dp(8).toFloat()
     val maxX = (rootWidth - viewWidth - dp(8)).toFloat().coerceAtLeast(minX)
     val minY = (topInset + dp(8)).toFloat()
@@ -793,13 +809,12 @@ internal object ZynthNativePerformanceOverlay {
       return
     }
     val width = dp(OVERLAY_WIDTH_DP)
-    val height = dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
     val left = dp(16)
     val top = topInset + dp(10)
     val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
-    val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+    val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     view.measure(widthSpec, heightSpec)
-    view.layout(left, top, left + width, top + height)
+    view.layout(left, top, left + width, top + view.measuredHeight)
     if (view.x == 0f && view.y == 0f) {
       view.x = left.toFloat()
       view.y = top.toFloat()

@@ -2,20 +2,21 @@
 export const runtimeGlyphMap: Record<string, string> = {
   "BiRegularDotsVertical": "",
   "IoArrowBackOutline": "",
-  "RiArrowsArrowLeftLine": "",
-  "RiArrowsArrowLeftSLine": "",
-  "RiArrowsArrowRightSLine": "",
-  "RiArrowsArrowUpSLine": "",
-  "RiDevelopmentTerminalBoxLine": "",
-  "RiDocumentFileCopyLine": "",
-  "RiSystemAlertLine": "",
-  "RiSystemCloseLine": "",
-  "RiSystemDeleteBin2Line": "",
-  "RiSystemEyeCloseLine": "",
-  "RiSystemEyeLine": "",
-  "RiSystemRefreshLine": "",
-  "RiSystemSearchLine": "",
-  "RiUserFacesUserLine": ""
+  "RiArrowsArrowDownSLine": "",
+  "RiArrowsArrowLeftLine": "",
+  "RiArrowsArrowLeftSLine": "",
+  "RiArrowsArrowRightSLine": "",
+  "RiArrowsArrowUpSLine": "",
+  "RiDevelopmentTerminalBoxLine": "",
+  "RiDocumentFileCopyLine": "",
+  "RiSystemAlertLine": "",
+  "RiSystemCloseLine": "",
+  "RiSystemDeleteBin2Line": "",
+  "RiSystemEyeCloseLine": "",
+  "RiSystemEyeLine": "",
+  "RiSystemRefreshLine": "",
+  "RiSystemSearchLine": "",
+  "RiUserFacesUserLine": ""
 };
 export const runtimeFontFamily = "ZynthRuntime";
 export const runtimeFontFile = "ZynthRuntime.ttf";

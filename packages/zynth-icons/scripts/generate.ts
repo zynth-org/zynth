@@ -460,10 +460,31 @@ async function copyRuntimeFontToComponents(ttfPath: string): Promise<void> {
   await mkdir(runtimeComponentsIosFontsDir, { recursive: true });
   await mkdir(runtimeComponentsAndroidFontsDir, { recursive: true });
   await Promise.all([
+    pruneRuntimeComponentFonts(runtimeComponentsFontsDir, fileName),
+    pruneRuntimeComponentFonts(runtimeComponentsIosFontsDir, fileName),
+    pruneRuntimeComponentFonts(runtimeComponentsAndroidFontsDir, fileName),
+  ]);
+  await Promise.all([
     copyFile(ttfPath, join(runtimeComponentsFontsDir, fileName)),
     copyFile(ttfPath, join(runtimeComponentsIosFontsDir, fileName)),
     copyFile(ttfPath, join(runtimeComponentsAndroidFontsDir, fileName)),
   ]);
+}
+
+async function pruneRuntimeComponentFonts(
+  dir: string,
+  keepFileName: string
+): Promise<void> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (entry) => {
+      if (!entry.isFile()) return;
+      if (!entry.name.startsWith("ZynthRuntime")) return;
+      if (!entry.name.endsWith(".ttf")) return;
+      if (entry.name === keepFileName) return;
+      await unlink(join(dir, entry.name));
+    })
+  );
 }
 
 async function emitRuntimeGlyphMap(

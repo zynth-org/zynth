@@ -80,6 +80,15 @@ static const NSUInteger ZynthPerfWarnSamples = 3;
 static const NSUInteger ZynthPerfRecoverSamples = 2;
 static const CGFloat ZynthPerfOverlayCollapsedHeight = 62.0;
 static const CGFloat ZynthPerfOverlayExpandedHeight = 142.0;
+static NSString *const ZynthPerfChevronGlyph = @"\uEA07";
+
+static UIFont *ZynthPerfRuntimeGlyphFont(CGFloat size) {
+  UIFont *font = [UIFont fontWithName:@"ZynthRuntime" size:size];
+  if (font != nil) {
+    return font;
+  }
+  return [UIFont systemFontOfSize:size weight:UIFontWeightBold];
+}
 
 @implementation ZynthNativePerformanceOverlayManager
 
@@ -304,9 +313,9 @@ static const CGFloat ZynthPerfOverlayExpandedHeight = 142.0;
 	    UIView *uiColumn = [self performanceMetricColumnWithTitle:@"UI" valueLabel:&uiValue valueColor:[UIColor colorWithRed:0.30 green:0.86 blue:0.57 alpha:1.0]];
 	    UIView *jsColumn = [self performanceMetricColumnWithTitle:@"JS" valueLabel:&jsValue valueColor:[UIColor colorWithRed:0.34 green:0.91 blue:0.63 alpha:1.0]];
 	    UILabel *chevronLabel = [[UILabel alloc] init];
-	    chevronLabel.text = @"v";
+	    chevronLabel.text = ZynthPerfChevronGlyph;
 	    chevronLabel.textColor = [UIColor colorWithWhite:0.90 alpha:1.0];
-	    chevronLabel.font = [UIFont systemFontOfSize:18.0 weight:UIFontWeightBold];
+	    chevronLabel.font = ZynthPerfRuntimeGlyphFont(18.0);
 	    chevronLabel.textAlignment = NSTextAlignmentCenter;
 
 	    [row addArrangedSubview:ramColumn];
@@ -588,7 +597,10 @@ static const CGFloat ZynthPerfOverlayExpandedHeight = 142.0;
 - (void)applyPerformanceOverlayExpandedState {
   UIView *overlay = self.performanceOverlay;
   if (!overlay) return;
-  self.performanceChevronLabel.text = self.performanceOverlayExpanded ? @"^" : @"v";
+  self.performanceChevronLabel.text = ZynthPerfChevronGlyph;
+  self.performanceChevronLabel.font = ZynthPerfRuntimeGlyphFont(18.0);
+  self.performanceChevronLabel.transform =
+    self.performanceOverlayExpanded ? CGAffineTransformIdentity : CGAffineTransformMakeScale(1.0, -1.0);
   self.performanceBudgetDetailsStack.hidden = !self.performanceOverlayExpanded;
   CGRect frame = overlay.frame;
   frame.size.height = self.performanceOverlayExpanded ? ZynthPerfOverlayExpandedHeight : ZynthPerfOverlayCollapsedHeight;
