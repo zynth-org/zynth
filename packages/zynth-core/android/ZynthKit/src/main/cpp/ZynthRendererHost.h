@@ -158,7 +158,9 @@ public:
     record.surfaceId = surfaceId;
     record.typeName = typeName;
     record.typeId = internType(typeName);
-    record.hasMeasureFunc = hasMeasure || (typeName == "text" || typeName == "textInput");
+    record.hasMeasureFunc =
+        hasMeasure || typeName == "text" || typeName == "textInput" ||
+        typeName == "text-input" || typeName == "secure-text-input";
     
     // Phase 3: Allocate native Yoga node
     record.yoga = YGNodeNewWithConfig(yogaConfig_);

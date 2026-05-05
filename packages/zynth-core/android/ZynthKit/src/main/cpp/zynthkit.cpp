@@ -1892,22 +1892,36 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
 
             if (stringClass && state->applyMountTransaction) {
               // Split pre-layout into TWO transactions:
-              // 1. SYNC: measurement-critical ops (creates, setText, text props)
-              //    Must complete before Yoga layout so TextView has correct content.
-              // 2. ASYNC: visual-only ops (insertChild, removeChild, dropNode, visual props)
+              // 1. SYNC: measurement-critical topology, text props, and measured
+              //    component props. Must complete before Yoga layout.
+              // 2. ASYNC: visual-only ops (removeChild, dropNode, visual props).
               //    Can be posted to main thread without blocking JS.
               std::vector<double> syncOps;
               std::vector<double> asyncOps;
-              syncOps.reserve(commit.creates.size() * 4 + commit.textMutations.size() * 3 +
-                              commit.textProps.size() * 5);
+              syncOps.reserve(commit.surfaces.size() * 2 + commit.creates.size() * 4 +
+                              commit.inserts.size() * 4 + commit.textMutations.size() * 3 +
+                              commit.textProps.size() * 5 + commit.descriptorProps.size() * 5 +
+                              commit.layoutProps.size() * 5);
               asyncOps.reserve(commit.totalOpCount() * 5);
               
-              // ASYNC: insertChild (visual only — Yoga tree already updated in C++)
+              // SYNC: setSurface - createNode must inherit the correct active surface
+              for (const auto& op : commit.surfaces) {
+                syncOps.push_back(8);
+                syncOps.push_back(op.surfaceId);
+              }
+              // SYNC: createNode - Kotlin must create the View before measurement
+              for (const auto& op : commit.creates) {
+                syncOps.push_back(7);
+                syncOps.push_back(op.nodeId);
+                syncOps.push_back(op.typeStringIndex);
+                syncOps.push_back(op.hasMeasure ? 1.0 : 0.0);
+              }
+              // SYNC: insertChild - insertion before createNode is dropped by Kotlin
               for (const auto& op : commit.inserts) {
-                asyncOps.push_back(3);
-                asyncOps.push_back(op.parentId);
-                asyncOps.push_back(op.childId);
-                asyncOps.push_back(op.index);
+                syncOps.push_back(3);
+                syncOps.push_back(op.parentId);
+                syncOps.push_back(op.childId);
+                syncOps.push_back(op.index);
               }
               // ASYNC: removeChild
               for (const auto& op : commit.removes) {
@@ -1920,19 +1934,6 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 asyncOps.push_back(5);
                 asyncOps.push_back(op.nodeId);
               }
-              // SYNC: createNode — Kotlin must create the View before measurement
-              for (const auto& op : commit.creates) {
-                syncOps.push_back(7);
-                syncOps.push_back(op.nodeId);
-                syncOps.push_back(op.typeStringIndex);
-                syncOps.push_back(op.hasMeasure ? 1.0 : 0.0);
-              }
-              // ASYNC: setSurface
-              for (const auto& op : commit.surfaces) {
-                asyncOps.push_back(8);
-                asyncOps.push_back(op.surfaceId);
-              }
-              
               auto pushPropTo = [&](std::vector<double>& target, const zynth::ZynthPropMutation& op) {
                 target.push_back(1); // 1 = setProp
                 target.push_back(op.nodeId);
@@ -1955,39 +1956,38 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
               for (const auto& op : commit.viewProps) {
                 pushPropTo(asyncOps, op);
               }
-              // SYNC: textProps (fontSize, fontFamily, fontWeight — affect measurement)
+              // SYNC: textProps (fontSize, fontFamily, fontWeight - affect measurement)
               for (const auto& op : commit.textProps) {
                 pushPropTo(syncOps, op);
               }
-              // ASYNC: descriptorProps (component-specific, not measurement-critical)
+              // SYNC for measured components: TextInput value/defaultValue/multiline
+              // affect native measurement. ASYNC for visual-only descriptor props.
               for (const auto& op : commit.descriptorProps) {
-                pushPropTo(asyncOps, op);
+                auto* record = state->rendererHost.getNode(op.nodeId);
+                pushPropTo(record && record->hasMeasureFunc ? syncOps : asyncOps, op);
               }
               
               // ASYNC: Dual-routed layout props (display, overflow)
+              // SYNC: Dual-routed padding props (padding affects Kotlin text measurement)
               for (const auto& op : commit.layoutProps) {
                 if (op.prop == zynth::ZynthPropId::Display || op.prop == zynth::ZynthPropId::Overflow) {
                   pushPropTo(asyncOps, op);
+                } else if (op.prop == zynth::ZynthPropId::Padding ||
+                           op.prop == zynth::ZynthPropId::PaddingHorizontal ||
+                           op.prop == zynth::ZynthPropId::PaddingVertical ||
+                           op.prop == zynth::ZynthPropId::PaddingTop ||
+                           op.prop == zynth::ZynthPropId::PaddingRight ||
+                           op.prop == zynth::ZynthPropId::PaddingBottom ||
+                           op.prop == zynth::ZynthPropId::PaddingLeft) {
+                  pushPropTo(syncOps, op);
                 }
               }
               
-              // SYNC: setText — Kotlin TextView needs text content for measurement
+              // SYNC: setText - Kotlin TextView needs text content for measurement
               for (const auto& op : commit.textMutations) {
                 syncOps.push_back(2);
                 syncOps.push_back(op.nodeId);
                 syncOps.push_back(op.textStringIndex);
-              }
-
-              // Dispatch ASYNC visual ops first (non-blocking)
-              if (!asyncOps.empty()) {
-                jobject jAsyncBuffer = env->NewDirectByteBuffer(
-                    asyncOps.data(),
-                    static_cast<jlong>(asyncOps.size() * sizeof(double)));
-                if (jAsyncBuffer) {
-                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
-                                      jAsyncBuffer, static_cast<jint>(asyncOps.size()), jStrings);
-                  env->DeleteLocalRef(jAsyncBuffer);
-                }
               }
 
               // Dispatch SYNC measurement-critical ops (blocking)
@@ -2004,6 +2004,18 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                                         jSyncBuffer, static_cast<jint>(syncOps.size()), jStrings);
                   }
                   env->DeleteLocalRef(jSyncBuffer);
+                }
+              }
+
+              // Dispatch ASYNC visual ops after sync topology exists.
+              if (!asyncOps.empty()) {
+                jobject jAsyncBuffer = env->NewDirectByteBuffer(
+                    asyncOps.data(),
+                    static_cast<jlong>(asyncOps.size() * sizeof(double)));
+                if (jAsyncBuffer) {
+                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                      jAsyncBuffer, static_cast<jint>(asyncOps.size()), jStrings);
+                  env->DeleteLocalRef(jAsyncBuffer);
                 }
               }
             }

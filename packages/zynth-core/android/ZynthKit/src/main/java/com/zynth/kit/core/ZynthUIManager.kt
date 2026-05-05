@@ -1289,15 +1289,24 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
 
     if (view is TextView) {
-      val pl = view.paddingLeft
-      val pt = view.paddingTop
-      val pr = view.paddingRight
-      val pb = view.paddingBottom
+      val originalPl = view.paddingLeft
+      val originalPt = view.paddingTop
+      val originalPr = view.paddingRight
+      val originalPb = view.paddingBottom
+      
       view.setPadding(0, 0, 0, 0)
+      
+      val activePl = view.paddingLeft
+      val activePt = view.paddingTop
+      val activePr = view.paddingRight
+      val activePb = view.paddingBottom
+      
       view.measure(widthSpec, heightSpec)
-      val mw = view.measuredWidth.toFloat()
-      val mh = view.measuredHeight.toFloat()
-      view.setPadding(pl, pt, pr, pb)
+      
+      val mw = (view.measuredWidth.toFloat() - activePl - activePr).coerceAtLeast(0f)
+      val mh = (view.measuredHeight.toFloat() - activePt - activePb).coerceAtLeast(0f)
+      
+      view.setPadding(originalPl, originalPt, originalPr, originalPb)
       
       val mwBits = mw.toRawBits().toLong()
       val mhBits = mh.toRawBits().toLong()
@@ -2033,6 +2042,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   ) {
     if (descriptor == null || node == null || value == null) return
     if (!isStylePropForDescriptor(name)) return
+    
     val style = styleFromProp(name, value) ?: return
     descriptor.onStyleApplied(node, style)
   }

@@ -885,7 +885,9 @@ export function createAndroidHost(): Host {
         }
       }
       if (id === null) {
-        id = ui.createNode(type);
+        const hasMeasureFunc =
+          type === "text-input" || type === "secure-text-input";
+        id = ui.createNode(type, hasMeasureFunc);
       }
       const node = { id, type } as HostNode;
       if (registry && !recycled) registry.register(node, id);
