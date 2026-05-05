@@ -1,7 +1,7 @@
 import type { ZynthNativeEmitterBridge } from "./nativeEmitter";
 
 export type ZynthUIBridge = {
-  createNode(type: string): number;
+  createNode(type: string, hasMeasure?: boolean): number;
   setProp(id: number, name: string, value: any): void;
   setText(id: number, text: string): void;
   insertChild(parent: number, child: number, index: number): void;

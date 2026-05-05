@@ -17,6 +17,7 @@ class SwitchComponentRegistrar : ZynthComponentRegistrar {
     registry.register(
       ZynthComponentDescriptor(
         type = "switch-view",
+        hasMeasureFunc = true,
         createView = { context: Context, nodeId: Int ->
           ZynthSwitchView(context).apply {
             this.nodeId = nodeId
@@ -30,24 +31,25 @@ class SwitchComponentRegistrar : ZynthComponentRegistrar {
           val switchView = node.view as? ZynthSwitchView ?: return@ZynthComponentDescriptor
           switchView.nodeId = node.id
           
-          // Set up the value change listener
           switchView.listener = object : ZynthSwitchView.Listener {
             override fun onValueChange(nodeId: Int, value: Boolean) {
               manager.dispatchEvent(nodeId, "onValueChange", JSONObject().put("value", value))
             }
           }
           
-          // Set up measurement handler for proper layout
           manager.getLayoutEngine().setMeasureHandler(node.id) { input ->
+            // Use a safe upper bound for measurement to prevent infinite growth
+            val maxAllowedSize = 2000f 
+            
             val widthValue = when {
               input.width.isNaN() -> 0
-              input.width.isInfinite() -> Int.MAX_VALUE / 2
-              else -> input.width.roundToInt()
+              input.width.isInfinite() -> maxAllowedSize.toInt()
+              else -> input.width.roundToInt().coerceAtMost(maxAllowedSize.toInt())
             }
             val heightValue = when {
               input.height.isNaN() -> 0
-              input.height.isInfinite() -> Int.MAX_VALUE / 2
-              else -> input.height.roundToInt()
+              input.height.isInfinite() -> maxAllowedSize.toInt()
+              else -> input.height.roundToInt().coerceAtMost(maxAllowedSize.toInt())
             }
             
             val widthSpec = when (input.widthMode) {
@@ -62,8 +64,10 @@ class SwitchComponentRegistrar : ZynthComponentRegistrar {
             }
             
             switchView.measure(widthSpec, heightSpec)
-            val measuredWidth = switchView.measuredWidth.coerceAtLeast(1)
-            val measuredHeight = switchView.measuredHeight.coerceAtLeast(1)
+            
+            // Return measured dimensions, capped to a sane maximum to prevent container explosion
+            val measuredWidth = switchView.measuredWidth.coerceIn(1, maxAllowedSize.toInt())
+            val measuredHeight = switchView.measuredHeight.coerceIn(1, maxAllowedSize.toInt())
             
             measuredWidth.toFloat() to measuredHeight.toFloat()
           }
