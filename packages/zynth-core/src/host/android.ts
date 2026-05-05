@@ -310,6 +310,34 @@ export function createAndroidHost(): Host {
       return null;
     };
 
+    const PERCENT_OR_AUTO_PROPS = new Set([
+      "width",
+      "height",
+      "minWidth",
+      "minHeight",
+      "maxWidth",
+      "maxHeight",
+      "flexBasis",
+      "top",
+      "right",
+      "bottom",
+      "left",
+      "padding",
+      "paddingHorizontal",
+      "paddingVertical",
+      "paddingTop",
+      "paddingRight",
+      "paddingBottom",
+      "paddingLeft",
+      "margin",
+      "marginHorizontal",
+      "marginVertical",
+      "marginTop",
+      "marginRight",
+      "marginBottom",
+      "marginLeft",
+    ]);
+
     const encodeProp = (nodeId: number, name: string, value: any) => {
       const propId = PROP_TO_ID[name];
       const keyToken = propId !== undefined ? -propId : addString(name);
@@ -325,6 +353,20 @@ export function createAndroidHost(): Host {
           encoded.push(1, nodeId, keyToken, 3, value ? 1 : 0);
           return;
         case "string":
+          if (PERCENT_OR_AUTO_PROPS.has(name)) {
+            const trimmed = value.trim();
+            if (trimmed === "auto") {
+              encoded.push(1, nodeId, keyToken, 5, 0);
+              return;
+            }
+            if (trimmed.endsWith("%")) {
+              const percent = Number(trimmed.slice(0, -1));
+              if (Number.isFinite(percent)) {
+                encoded.push(1, nodeId, keyToken, 4, percent);
+                return;
+              }
+            }
+          }
           encoded.push(1, nodeId, keyToken, 2, addString(value));
           return;
         case "object":

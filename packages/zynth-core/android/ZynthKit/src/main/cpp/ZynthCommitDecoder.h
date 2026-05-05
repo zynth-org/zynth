@@ -5,6 +5,7 @@
 #include "ZynthRendererTelemetry.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -86,65 +87,80 @@ public:
             mut.value.number = payload;
           } else if (mut.value.kind == ZynthValueKind::String) {
             mut.value.stringIndex = static_cast<uint32_t>(payload);
-            
-            // Map known Yoga enums if they are strings
-            if (mut.prop == ZynthPropId::JustifyContent || 
-                mut.prop == ZynthPropId::AlignItems || 
-                mut.prop == ZynthPropId::AlignSelf || 
-                mut.prop == ZynthPropId::AlignContent ||
-                mut.prop == ZynthPropId::FlexDirection ||
-                mut.prop == ZynthPropId::FlexWrap ||
-                mut.prop == ZynthPropId::Position ||
-                mut.prop == ZynthPropId::Display ||
-                mut.prop == ZynthPropId::Overflow) {
-                
-                if (mut.value.stringIndex < strings.size()) {
-                    const std::string& str = strings[mut.value.stringIndex];
-                    double enumVal = -1.0;
-                    
-                    if (mut.prop == ZynthPropId::JustifyContent) {
-                        if (str == "flex-start") enumVal = 0.0;
-                        else if (str == "center") enumVal = 1.0;
-                        else if (str == "flex-end") enumVal = 2.0;
-                        else if (str == "space-between") enumVal = 3.0;
-                        else if (str == "space-around") enumVal = 4.0;
-                        else if (str == "space-evenly") enumVal = 5.0;
-                    } else if (mut.prop == ZynthPropId::AlignItems || mut.prop == ZynthPropId::AlignSelf || mut.prop == ZynthPropId::AlignContent) {
-                        if (str == "auto") enumVal = 0.0;
-                        else if (str == "flex-start") enumVal = 1.0;
-                        else if (str == "center") enumVal = 2.0;
-                        else if (str == "flex-end") enumVal = 3.0;
-                        else if (str == "stretch") enumVal = 4.0;
-                        else if (str == "baseline") enumVal = 5.0;
-                        else if (str == "space-between") enumVal = 6.0;
-                        else if (str == "space-around") enumVal = 7.0;
-                    } else if (mut.prop == ZynthPropId::FlexDirection) {
-                        if (str == "column") enumVal = 0.0;
-                        else if (str == "column-reverse") enumVal = 1.0;
-                        else if (str == "row") enumVal = 2.0;
-                        else if (str == "row-reverse") enumVal = 3.0;
-                    } else if (mut.prop == ZynthPropId::FlexWrap) {
-                        if (str == "nowrap") enumVal = 0.0;
-                        else if (str == "wrap") enumVal = 1.0;
-                        else if (str == "wrap-reverse") enumVal = 2.0;
-                    } else if (mut.prop == ZynthPropId::Position) {
-                        if (str == "static") enumVal = 0.0;
-                        else if (str == "relative") enumVal = 1.0;
-                        else if (str == "absolute") enumVal = 2.0;
-                    } else if (mut.prop == ZynthPropId::Display) {
-                        if (str == "flex") enumVal = 0.0;
-                        else if (str == "none") enumVal = 1.0;
-                    } else if (mut.prop == ZynthPropId::Overflow) {
-                        if (str == "visible") enumVal = 0.0;
-                        else if (str == "hidden") enumVal = 1.0;
-                        else if (str == "scroll") enumVal = 2.0;
-                    }
-                    
-                    if (enumVal != -1.0) {
-                        mut.value.kind = ZynthValueKind::Number;
-                        mut.value.number = enumVal;
-                    }
+
+            if (mut.value.stringIndex < strings.size()) {
+              const std::string& str = strings[mut.value.stringIndex];
+
+              // Safety net for callers still transporting typed layout values as strings.
+              if (str == "auto") {
+                mut.value.kind = ZynthValueKind::Auto;
+                mut.value.number = 0.0;
+              } else if (!str.empty() && str.back() == '%') {
+                const std::string numeric = str.substr(0, str.size() - 1);
+                char* endPtr = nullptr;
+                const double percent = std::strtod(numeric.c_str(), &endPtr);
+                if (endPtr != numeric.c_str() && endPtr && *endPtr == '\0') {
+                  mut.value.kind = ZynthValueKind::Percent;
+                  mut.value.number = percent;
                 }
+              }
+
+              // Map known Yoga enums if they are strings
+              if (mut.value.kind == ZynthValueKind::String &&
+                  (mut.prop == ZynthPropId::JustifyContent || 
+                   mut.prop == ZynthPropId::AlignItems || 
+                   mut.prop == ZynthPropId::AlignSelf || 
+                   mut.prop == ZynthPropId::AlignContent ||
+                   mut.prop == ZynthPropId::FlexDirection ||
+                   mut.prop == ZynthPropId::FlexWrap ||
+                   mut.prop == ZynthPropId::Position ||
+                   mut.prop == ZynthPropId::Display ||
+                   mut.prop == ZynthPropId::Overflow)) {
+                double enumVal = -1.0;
+                
+                if (mut.prop == ZynthPropId::JustifyContent) {
+                    if (str == "flex-start") enumVal = 0.0;
+                    else if (str == "center") enumVal = 1.0;
+                    else if (str == "flex-end") enumVal = 2.0;
+                    else if (str == "space-between") enumVal = 3.0;
+                    else if (str == "space-around") enumVal = 4.0;
+                    else if (str == "space-evenly") enumVal = 5.0;
+                } else if (mut.prop == ZynthPropId::AlignItems || mut.prop == ZynthPropId::AlignSelf || mut.prop == ZynthPropId::AlignContent) {
+                    if (str == "auto") enumVal = 0.0;
+                    else if (str == "flex-start") enumVal = 1.0;
+                    else if (str == "center") enumVal = 2.0;
+                    else if (str == "flex-end") enumVal = 3.0;
+                    else if (str == "stretch") enumVal = 4.0;
+                    else if (str == "baseline") enumVal = 5.0;
+                    else if (str == "space-between") enumVal = 6.0;
+                    else if (str == "space-around") enumVal = 7.0;
+                } else if (mut.prop == ZynthPropId::FlexDirection) {
+                    if (str == "column") enumVal = 0.0;
+                    else if (str == "column-reverse") enumVal = 1.0;
+                    else if (str == "row") enumVal = 2.0;
+                    else if (str == "row-reverse") enumVal = 3.0;
+                } else if (mut.prop == ZynthPropId::FlexWrap) {
+                    if (str == "nowrap") enumVal = 0.0;
+                    else if (str == "wrap") enumVal = 1.0;
+                    else if (str == "wrap-reverse") enumVal = 2.0;
+                } else if (mut.prop == ZynthPropId::Position) {
+                    if (str == "static") enumVal = 0.0;
+                    else if (str == "relative") enumVal = 1.0;
+                    else if (str == "absolute") enumVal = 2.0;
+                } else if (mut.prop == ZynthPropId::Display) {
+                    if (str == "flex") enumVal = 0.0;
+                    else if (str == "none") enumVal = 1.0;
+                } else if (mut.prop == ZynthPropId::Overflow) {
+                    if (str == "visible") enumVal = 0.0;
+                    else if (str == "hidden") enumVal = 1.0;
+                    else if (str == "scroll") enumVal = 2.0;
+                }
+                
+                if (enumVal != -1.0) {
+                    mut.value.kind = ZynthValueKind::Number;
+                    mut.value.number = enumVal;
+                }
+              }
             }
           } else if (mut.value.kind == ZynthValueKind::Bool) {
             mut.value.number = payload;
