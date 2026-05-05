@@ -80,6 +80,22 @@ export const Text: ParentComponent<TextProps> = (props) => {
     return children ?? "";
   });
 
+  const directTextContent = createMemo(() => {
+    if (props.text != null) return props.text;
+    const children = coalescedChildren();
+    if (typeof children === "string" || typeof children === "number") {
+      return String(children);
+    }
+    if (
+      Array.isArray(children) &&
+      children.length === 1 &&
+      (typeof children[0] === "string" || typeof children[0] === "number")
+    ) {
+      return String(children[0]);
+    }
+    return undefined;
+  });
+
   return (
     <text
       style={
@@ -87,10 +103,10 @@ export const Text: ParentComponent<TextProps> = (props) => {
           ? undefined
           : (resolvedStyle() as JSX.Element)) as JSX.Element
       }
-      text={props.text}
+      text={directTextContent()}
       ref={refProp as unknown as any}
     >
-      {coalescedChildren()}
+      {directTextContent() === undefined ? coalescedChildren() : undefined}
     </text>
   );
 };
