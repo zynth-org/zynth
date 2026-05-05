@@ -6,6 +6,7 @@ import android.graphics.drawable.ColorDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.View.MeasureSpec
 import android.widget.FrameLayout
 import android.widget.PopupWindow
 import androidx.dynamicanimation.animation.DynamicAnimation
@@ -336,6 +337,11 @@ class ZynthPopoverView(context: Context) : FrameLayout(context) {
         LayoutParams.WRAP_CONTENT,
       ),
     )
+    val unspecifiedMeasureSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+    content.measure(unspecifiedMeasureSpec, unspecifiedMeasureSpec)
+    content.layout(0, 0, content.measuredWidth, content.measuredHeight)
+    card.measure(unspecifiedMeasureSpec, unspecifiedMeasureSpec)
+    card.layout(0, 0, card.measuredWidth, card.measuredHeight)
     return card
   }
 
