@@ -204,6 +204,9 @@ class ZynthSwitchView(context: Context) : FrameLayout(context) {
     } else {
       materialSwitch.thumbTintList = null
     }
+
+    materialSwitch.refreshDrawableState()
+    materialSwitch.invalidate()
   }
 
   private fun parseColor(colorStr: String): Int? {

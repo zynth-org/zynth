@@ -9,13 +9,16 @@ export interface SwitchProps {
   value?: boolean;
   onValueChange?: (value: boolean) => void;
   disabled?: boolean;
-  trackColor?: string;
+  /** Track tint. Pass a string for the on state, or per-state colors. */
+  trackColor?: string | { false?: string; true?: string };
+  /** Thumb tint. Pass a string for both states, or per-state colors. */
+  thumbColor?: string | { false?: string; true?: string };
   style?: Style;
   testID?: string;
 }
 
 export const Switch: Component<SwitchProps> = (props) => {
-  const [local, others] = splitProps(props, [
+  const [local] = splitProps(props, [
     "label",
     "helperText",
     "style",
@@ -23,9 +26,28 @@ export const Switch: Component<SwitchProps> = (props) => {
     "onValueChange",
     "disabled",
     "trackColor",
+    "thumbColor",
     "testID",
   ]);
   const theme = useUITheme();
+  const resolvedTrackColor = () => {
+    const t = theme();
+    return (
+      local.trackColor ?? {
+        false: t.colors.border,
+        true: t.colors.accent,
+      }
+    );
+  };
+  const resolvedThumbColor = () => {
+    const t = theme();
+    return (
+      local.thumbColor ?? {
+        false: t.colors.textSubtle,
+        true: t.colors.surface,
+      }
+    );
+  };
 
   return (
     <View style={{ gap: theme().spacing.xs, ...(local.style as object) }}>
@@ -62,7 +84,8 @@ export const Switch: Component<SwitchProps> = (props) => {
           value={local.value}
           onValueChange={local.onValueChange}
           disabled={local.disabled}
-          trackColor={local.trackColor ?? theme().colors.accent}
+          trackColor={resolvedTrackColor()}
+          thumbColor={resolvedThumbColor()}
           testID={local.testID}
         />
       </View>
