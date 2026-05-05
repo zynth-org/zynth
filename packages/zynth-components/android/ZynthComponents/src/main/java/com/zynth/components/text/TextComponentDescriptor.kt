@@ -62,15 +62,6 @@ private fun rebuildComposedText(manager: ZynthUIManager, rootId: Int, styleKey: 
   val density = manager.getRootView().resources.displayMetrics.density
   val composer = TextComposer(density, styleKey) { id -> manager.getNodeState(id) }
   val composed = composer.compose(root)
-  if (DEBUG_TEXT) {
-    val text = composed.text.toString()
-    val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
-    val family = composed.effectiveStyle?.fontFamily
-    Log.d(
-      "ZynthText",
-      "rebuild root=${root.id} len=${text.length} sample=[$sample] family=$family",
-    )
-  }
   val previous = textView.text?.toString() ?: ""
   val next = composed.text.toString()
   // Always apply composed text so span-only style changes (color/weight/lineHeight/etc.)
@@ -195,10 +186,6 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
               return@ZynthComponentDescriptor true
             }
             node.cachedText = text
-            if (DEBUG_TEXT) {
-              val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
-              Log.d("ZynthText", "setProp text node=${node.id} len=${text.length} sample=[$sample]")
-            }
             updateComposedText(node, textStyleKey, textManagerKey)
             val durationMs = (SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
             if (durationMs > 4) {
@@ -281,16 +268,8 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           val cachedTypeface = family?.let { FontRegistry.getTypeface(it) }
           val baseTypeface = when {
             family == null -> Typeface.DEFAULT
-            cachedTypeface != null -> {
-              if (DEBUG_TEXT) {
-                Log.d("ZynthText", "Using cached typeface for family: $family")
-              }
-              cachedTypeface
-            }
+            cachedTypeface != null -> cachedTypeface
             else -> {
-              if (DEBUG_TEXT) {
-                Log.w("ZynthText", "FontRegistry miss for family: $family, falling back to system")
-              }
               Typeface.create(family, styleInt)
             }
           }

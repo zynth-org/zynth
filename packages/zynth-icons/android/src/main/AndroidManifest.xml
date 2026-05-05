@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <provider
+      android:name="dev.zynth.icons.ZynthIconsInitProvider"
+      android:authorities="${applicationId}.zynth-icons-init"
+      android:exported="false"
+      android:initOrder="100" />
+  </application>
+</manifest>
