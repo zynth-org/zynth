@@ -59,6 +59,11 @@ class ZynthAppearanceModule(
         return AppearanceState(colorScheme = resolveScheme(config))
     }
 
+    fun onConfigurationChanged(newConfig: Configuration) {
+        android.util.Log.d("ZynthAppearance", "activityConfigurationChanged uiMode=${newConfig.uiMode}")
+        updateState(newConfig, force = false)
+    }
+
     private fun resolveScheme(config: Configuration): String {
         val nightMode = config.uiMode and Configuration.UI_MODE_NIGHT_MASK
         return if (nightMode == Configuration.UI_MODE_NIGHT_YES) "dark" else "light"

@@ -181,6 +181,11 @@ class MainActivity : AppCompatActivity() {
     setIntent(intent)
   }
 
+  override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+    super.onConfigurationChanged(newConfig)
+{{ACTIVITY_ON_CONFIGURATION_CHANGED_HOOKS}}
+  }
+
   private fun persistDevConfig(
     devServerUrl: String?,
     devServerToken: String?,

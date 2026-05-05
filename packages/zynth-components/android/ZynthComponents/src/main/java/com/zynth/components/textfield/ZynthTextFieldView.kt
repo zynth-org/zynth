@@ -1,6 +1,7 @@
 package com.zynth.components.textfield
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.text.Editable
 import android.text.InputFilter
@@ -48,6 +49,8 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
   private var currentBackgroundColor: Int? = null
   private var currentBorderRadius: Float? = null  // null means use M3 default
   private var hasCustomBorderColor: Boolean = false
+  private var currentPlaceholderColor: Int? = null
+  private var currentTextColor: Int? = null
   private var currentBorderWidth: Float? = null  // null means use M3 default
 
   interface Listener {
@@ -61,6 +64,12 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
     private const val TAG = "ZynthTextFieldView"
     private const val MIN_HEIGHT_DP = 56 // Material 3 minimum height for filled text field
     private const val DEFAULT_CORNER_RADIUS_DP = 4f // Material 3 default corner radius
+    private const val DEFAULT_FILLED_BACKGROUND = 0xFFF7F7F8.toInt()
+    private const val DEFAULT_TEXT_COLOR = 0xFF111827.toInt()
+    private const val DEFAULT_HINT_COLOR = 0xFF6B7280.toInt()
+    private const val DEFAULT_STROKE_COLOR = 0xFFD1D5DB.toInt()
+    private const val DEFAULT_FOCUSED_STROKE_COLOR = 0xFF2563EB.toInt()
+    private const val DEFAULT_DISABLED_STROKE_COLOR = 0xFFE5E7EB.toInt()
   }
 
   init {
@@ -82,6 +91,7 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
 
     textInputLayout.addView(textInputEditText)
     addView(textInputLayout, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+    applyDefaultLightPalette()
 
     // Set up text change listener
     textInputEditText.addTextChangedListener(object : TextWatcher {
@@ -283,6 +293,7 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
         textInputLayout.setBoxCornerRadii(radiusPx, radiusPx, radiusPx, radiusPx)
         // Set background color (transparent by default for outlined, or custom if set)
         textInputLayout.boxBackgroundColor = currentBackgroundColor ?: Color.TRANSPARENT
+        applyDefaultLightPalette()
       }
       "none" -> {
         // For "none" variant, we need to completely remove all M3 styling
@@ -295,18 +306,13 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
         textInputLayout.setBoxCornerRadii(0f, 0f, 0f, 0f)
         // Apply current background to EditText with rounded corners if needed
         applyEditTextBackground()
+        applyDefaultLightPalette()
       }
       else -> { // "filled" is default
         textInputLayout.boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_FILLED
         // Reset EditText background - let TextInputLayout handle it
         textInputEditText.background = null
-        // Only set background color if explicitly provided by the user
-        // Otherwise, let Material 3 handle its default background (don't interfere!)
-        if (currentBackgroundColor != null) {
-          textInputLayout.boxBackgroundColor = currentBackgroundColor!!
-        }
-        // Note: We intentionally do NOT set defaultFilledBackgroundColor here
-        // because TextInputLayout already has the correct default from the theme
+        textInputLayout.boxBackgroundColor = currentBackgroundColor ?: DEFAULT_FILLED_BACKGROUND
         
         // Apply custom border radius if set (filled mode has rounded top, flat bottom by default)
         currentBorderRadius?.let { radius ->
@@ -314,8 +320,51 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
           // Keep M3's top-only rounded corners for filled variant
           textInputLayout.setBoxCornerRadii(radiusPx, radiusPx, 0f, 0f)
         }
+        applyDefaultLightPalette()
       }
     }
+  }
+
+  private fun applyDefaultLightPalette() {
+    if (currentTextColor == null) {
+      textInputEditText.setTextColor(DEFAULT_TEXT_COLOR)
+    }
+
+    val hintColor = currentPlaceholderColor ?: DEFAULT_HINT_COLOR
+    textInputEditText.setHintTextColor(hintColor)
+    textInputLayout.hintTextColor = ColorStateList.valueOf(hintColor)
+    textInputLayout.defaultHintTextColor = ColorStateList.valueOf(hintColor)
+
+    if (!hasCustomBorderColor) {
+      setDefaultStrokeColors()
+    }
+
+    if (currentBackgroundColor == null) {
+      textInputLayout.boxBackgroundColor = when (currentVariant) {
+        "filled" -> DEFAULT_FILLED_BACKGROUND
+        else -> Color.TRANSPARENT
+      }
+      if (currentVariant == "none") {
+        applyEditTextBackground()
+      }
+    }
+  }
+
+  private fun setDefaultStrokeColors() {
+    val states = arrayOf(
+      intArrayOf(android.R.attr.state_focused),
+      intArrayOf(android.R.attr.state_hovered),
+      intArrayOf(-android.R.attr.state_enabled),
+      intArrayOf(),
+    )
+    val colors = intArrayOf(
+      DEFAULT_FOCUSED_STROKE_COLOR,
+      DEFAULT_STROKE_COLOR,
+      DEFAULT_DISABLED_STROKE_COLOR,
+      DEFAULT_STROKE_COLOR,
+    )
+    textInputLayout.setBoxStrokeColorStateList(ColorStateList(states, colors))
+    textInputLayout.boxStrokeColor = DEFAULT_STROKE_COLOR
   }
 
   private fun applyEditTextBackground() {
@@ -361,12 +410,13 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
           textInputLayout.setBoxCornerRadii(radiusPx, radiusPx, 0f, 0f)
         }
       }
+    } else {
+      applyDefaultLightPalette()
     }
-    // Note: We intentionally do nothing when color is null for filled/outlined
-    // This allows Material 3 to handle its default background color
   }
 
   fun setBorderRadius(radius: Float) {
+    background = null
     currentBorderRadius = radius
     val radiusPx = radius * density
     
@@ -388,6 +438,7 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
   }
 
   fun setBorderWidth(width: Float) {
+    background = null
     currentBorderWidth = width
     val widthPx = (width * density).roundToInt()
     textInputLayout.boxStrokeWidth = widthPx
@@ -395,6 +446,7 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
   }
 
   fun setBorderColor(colorString: String?) {
+    background = null
     val color = colorString?.let { parseColor(it) }
     hasCustomBorderColor = color != null
     
@@ -415,24 +467,24 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
       
       // Also set the focused stroke color explicitly
       textInputLayout.boxStrokeColor = color
+    } else {
+      setDefaultStrokeColors()
     }
   }
 
   fun setTextColor(colorString: String?) {
     val color = colorString?.let { parseColor(it) }
-    if (color != null) {
-      textInputEditText.setTextColor(color)
-    }
+    currentTextColor = color
+    textInputEditText.setTextColor(color ?: DEFAULT_TEXT_COLOR)
   }
 
   fun setPlaceholderColor(colorString: String?) {
     val color = colorString?.let { parseColor(it) }
-    if (color != null) {
-      // Set hint color on the TextInputLayout
-      textInputLayout.hintTextColor = android.content.res.ColorStateList.valueOf(color)
-      // Also set the default hint color for when not focused
-      textInputLayout.defaultHintTextColor = android.content.res.ColorStateList.valueOf(color)
-    }
+    currentPlaceholderColor = color
+    val resolvedColor = color ?: DEFAULT_HINT_COLOR
+    textInputEditText.setHintTextColor(resolvedColor)
+    textInputLayout.hintTextColor = ColorStateList.valueOf(resolvedColor)
+    textInputLayout.defaultHintTextColor = ColorStateList.valueOf(resolvedColor)
   }
 
   private fun parseColor(colorStr: String): Int? {

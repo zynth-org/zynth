@@ -568,6 +568,12 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       return
     }
 
+    if (node != null && descriptor?.applyProperty?.invoke(node, name, value.toString()) == true) {
+      maybeNotifyStyle(descriptor, node, name, value.toString())
+      traceOp("setProp", node.type, startNs)
+      return
+    }
+
     if (applyStyleProp(id, view, name, value)) {
       maybeNotifyStyle(descriptor, node, name, value.toString())
       traceOp("setProp", node?.type, startNs)

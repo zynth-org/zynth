@@ -161,7 +161,8 @@ public:
     record.hasMeasureFunc =
         hasMeasure || typeName == "text" || typeName == "textInput" ||
         typeName == "text-input" || typeName == "secure-text-input" ||
-        typeName == "switch-view" || typeName == "slider-view";
+        typeName == "text-field" || typeName == "switch-view" ||
+        typeName == "slider-view";
     
     // Phase 3: Allocate native Yoga node
     record.yoga = YGNodeNewWithConfig(yogaConfig_);

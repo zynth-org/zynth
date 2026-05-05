@@ -888,6 +888,7 @@ export function createAndroidHost(): Host {
         const hasMeasureFunc =
           type === "text-input" ||
           type === "secure-text-input" ||
+          type === "text-field" ||
           type === "switch-view" ||
           type === "slider-view";
         id = ui.createNode(type, hasMeasureFunc);
