@@ -26,11 +26,11 @@ import org.json.JSONObject
 internal object ZynthNativeErrorOverlay {
   private const val TAG = "ZynthNativeOverlay"
   private const val RUNTIME_FONT_ASSET = "fonts/ZynthRuntime.ttf"
-  private const val GLYPH_ARROW_RIGHT = "\uea05"
-  private const val GLYPH_TERMINAL = "\uea07"
-  private const val GLYPH_ALERT = "\uea09"
-  private const val GLYPH_CLOSE = "\uea0a"
-  private const val GLYPH_REFRESH = "\uea0e"
+  private const val GLYPH_ARROW_RIGHT = "\uea06"
+  private const val GLYPH_TERMINAL = "\uea08"
+  private const val GLYPH_ALERT = "\uea0a"
+  private const val GLYPH_CLOSE = "\uea0b"
+  private const val GLYPH_REFRESH = "\uea0f"
 
   private val mainHandler = Handler(Looper.getMainLooper())
   private var rootRef: WeakReference<ZynthRootView>? = null
