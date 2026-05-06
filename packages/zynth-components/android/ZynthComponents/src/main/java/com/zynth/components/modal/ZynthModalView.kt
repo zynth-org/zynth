@@ -7,11 +7,13 @@ import android.content.ContextWrapper
 import android.os.Build
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.core.view.WindowCompat
+import androidx.core.view.doOnPreDraw
 import com.zynth.kit.core.ZynthUIManager
 import org.json.JSONObject
 
@@ -210,11 +212,16 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
       )
 
       overlayView.isClickable = true
-      overlayView.setOnClickListener {
-        if (options.dismissOnOverlayPress) {
-          hostView.dispatchEvent("onRequestClose", JSONObject())
-          hostView.dismiss()
+      overlayView.setOnTouchListener { _, event ->
+        if (event.action == MotionEvent.ACTION_UP && options.dismissOnOverlayPress) {
+          val rawX = event.rawX.toInt()
+          val rawY = event.rawY.toInt()
+          if (!isTouchWithinContent(rawX, rawY)) {
+            hostView.dispatchEvent("onRequestClose", JSONObject())
+            hostView.dismiss()
+          }
         }
+        true
       }
 
       root.addView(overlayView)
@@ -227,7 +234,7 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
         attachContent()
         applyOverlayState()
         prepareEnterState()
-        animateIn()
+        scheduleEnterAnimation()
         hostView.dispatchEvent("onOpenChange", JSONObject().put("open", true))
       }
 
@@ -361,12 +368,26 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
       }
     }
 
+    private fun scheduleEnterAnimation() {
+      root.doOnPreDraw {
+        if (!isShowing || isAnimatingOut) return@doOnPreDraw
+        animateIn()
+      }
+    }
+
+    private fun primeContentForFirstDraw() {
+      replayLayoutTree(root, useCurrentBounds = false)
+      replayLayoutTree(contentContainer, useCurrentBounds = false)
+      replayLayoutTree(content, useCurrentBounds = true)
+    }
+
     private fun animateIn() {
       if (options.animation == ZynthModalAnimation.NONE) {
         hasCompletedEnterAnimation = true
         return
       }
       root.post {
+        primeContentForFirstDraw()
         val overlayAlpha = overlayTargetAlpha()
         val duration = when (options.animation) {
           ZynthModalAnimation.FADE -> 180L
@@ -408,6 +429,83 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
           ZynthModalAnimation.NONE -> Unit
         }
       }
+    }
+
+    private fun isTouchWithinContent(rawX: Int, rawY: Int): Boolean {
+      return hasVisibleContentAt(contentContainer, rawX, rawY, includeSelf = false)
+    }
+
+    private fun hasVisibleContentAt(
+      view: View,
+      rawX: Int,
+      rawY: Int,
+      includeSelf: Boolean,
+    ): Boolean {
+      if (view.visibility != View.VISIBLE || view.alpha <= 0f) return false
+      val location = IntArray(2)
+      view.getLocationOnScreen(location)
+      val left = location[0]
+      val top = location[1]
+      val right = left + view.width
+      val bottom = top + view.height
+      val isInsideBounds = rawX >= left && rawX < right && rawY >= top && rawY < bottom
+      if (!isInsideBounds) return false
+
+      if (view is ViewGroup) {
+        for (index in view.childCount - 1 downTo 0) {
+          val child = view.getChildAt(index) ?: continue
+          if (hasVisibleContentAt(child, rawX, rawY, includeSelf = true)) {
+            return true
+          }
+        }
+      }
+
+      return includeSelf && shouldTreatAsModalContent(view)
+    }
+
+    private fun replayLayoutTree(view: View, useCurrentBounds: Boolean) {
+      view.forceLayout()
+      val left = if (useCurrentBounds) view.left else 0
+      val top = if (useCurrentBounds) view.top else 0
+      val width = if (useCurrentBounds) {
+        (view.right - view.left).coerceAtLeast(0)
+      } else {
+        view.width.coerceAtLeast(0)
+      }
+      val height = if (useCurrentBounds) {
+        (view.bottom - view.top).coerceAtLeast(0)
+      } else {
+        view.height.coerceAtLeast(0)
+      }
+
+      if (width > 0 || height > 0) {
+        val widthSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
+        val heightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+        view.measure(widthSpec, heightSpec)
+        view.layout(left, top, left + width, top + height)
+      }
+
+      view.invalidate()
+
+      if (view is ViewGroup) {
+        for (index in 0 until view.childCount) {
+          replayLayoutTree(view.getChildAt(index), useCurrentBounds = true)
+        }
+      }
+    }
+
+    private fun shouldTreatAsModalContent(view: View): Boolean {
+      if (view is ViewGroup) {
+        if (view.background != null || view.foreground != null) return true
+        if (view.isClickable || view.isFocusable) return true
+
+        val parent = view.parent as? View
+        if (parent != null && view.width >= parent.width && view.height >= parent.height) {
+          return false
+        }
+      }
+
+      return true
     }
 
     private fun animateOut(onEnd: () -> Unit) {

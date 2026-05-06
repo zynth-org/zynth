@@ -100,28 +100,51 @@ private:
   void extractFramesForMutatedNodes(ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
     // Seed: all nodes that were directly affected by this commit
     std::unordered_set<int32_t> dirtyNodes;
+    std::unordered_set<int32_t> subtreeRoots;
+    std::unordered_set<int32_t> forcedNodes;
+
     dirtyNodes.reserve(
         commit.inserts.size() * 2 + commit.removes.size() +
         commit.creates.size() + commit.layoutProps.size());
+    subtreeRoots.reserve(
+        commit.inserts.size() + commit.removes.size() + commit.creates.size() +
+        commit.layoutProps.size() + commit.textProps.size() + commit.textMutations.size());
 
     for (const auto& op : commit.inserts) {
       dirtyNodes.insert(op.childId);
       dirtyNodes.insert(op.parentId);
+      subtreeRoots.insert(op.childId);
+      subtreeRoots.insert(op.parentId);
     }
     for (const auto& op : commit.removes) {
       dirtyNodes.insert(op.parentId);
+      subtreeRoots.insert(op.parentId);
     }
     for (const auto& op : commit.creates) {
       dirtyNodes.insert(op.nodeId);
+      subtreeRoots.insert(op.nodeId);
+      // New nodes must always emit frames
+      forcedNodes.insert(op.nodeId);
     }
     for (const auto& op : commit.layoutProps) {
       dirtyNodes.insert(op.nodeId);
+      subtreeRoots.insert(op.nodeId);
+      
+      // If display changed, we must force the entire subtree to emit frames.
+      // Yoga's internal dirty tracking might skip these if they were previously 
+      // laid out before being hidden, but the native views might have been
+      // recycled or their frames reset to 0.
+      if (op.prop == ZynthPropId::Display) {
+        forcedNodes.insert(op.nodeId);
+      }
     }
     for (const auto& op : commit.textProps) {
       dirtyNodes.insert(op.nodeId);
+      subtreeRoots.insert(op.nodeId);
     }
     for (const auto& op : commit.textMutations) {
       dirtyNodes.insert(op.nodeId);
+      subtreeRoots.insert(op.nodeId);
     }
 
     // Expand: walk ancestors so we capture parent reflows (e.g. spacer height
@@ -138,6 +161,44 @@ private:
       }
     }
 
+    // Expand: Propagate 'forced' state down the tree. If a parent is forced,
+    // all its descendants must also be forced to ensure they emit frames,
+    // even if their Yoga-calculated dimensions haven't changed.
+    std::vector<int32_t> forceStack(forcedNodes.begin(), forcedNodes.end());
+    while (!forceStack.empty()) {
+      int32_t nodeId = forceStack.back();
+      forceStack.pop_back();
+
+      auto* record = host_->getNode(nodeId);
+      if (!record) continue;
+
+      for (int32_t childId : record->children) {
+        if (forcedNodes.insert(childId).second) {
+          forceStack.push_back(childId);
+        }
+      }
+    }
+
+    // Expand: walk descendants of directly mutated roots to ensure they are
+    // all in the dirtyNodes set for frame extraction.
+    std::vector<int32_t> descendantStack(subtreeRoots.begin(), subtreeRoots.end());
+    // Also include forced nodes as subtree roots to be safe.
+    descendantStack.insert(descendantStack.end(), forcedNodes.begin(), forcedNodes.end());
+
+    while (!descendantStack.empty()) {
+      const int32_t nodeId = descendantStack.back();
+      descendantStack.pop_back();
+
+      auto* record = host_->getNode(nodeId);
+      if (!record) continue;
+
+      for (int32_t childId : record->children) {
+        if (dirtyNodes.insert(childId).second) {
+          descendantStack.push_back(childId);
+        }
+      }
+    }
+
     // Also include direct children of dirty parents — a parent reflow may
     // shift children even if the children themselves weren't mutated.
     std::vector<int32_t> parentSeeds(dirtyNodes.begin(), dirtyNodes.end());
@@ -149,19 +210,26 @@ private:
       }
     }
 
+    // Finally, ensure all forced nodes are considered dirty
+    for (int32_t nodeId : forcedNodes) {
+      dirtyNodes.insert(nodeId);
+    }
+
     // Extract frames only for nodes in the dirty set
     for (int32_t nodeId : dirtyNodes) {
       auto* record = host_->getNode(nodeId);
       if (!record || !record->yoga) continue;
-      if (!YGNodeGetHasNewLayout(record->yoga)) continue;
 
       float left = YGNodeLayoutGetLeft(record->yoga);
       float top = YGNodeLayoutGetTop(record->yoga);
       float width = YGNodeLayoutGetWidth(record->yoga);
       float height = YGNodeLayoutGetHeight(record->yoga);
 
+      bool force = forcedNodes.find(nodeId) != forcedNodes.end();
+
       // Diff against last known frame
-      if (record->lastFrame.left != left ||
+      if (force ||
+          record->lastFrame.left != left ||
           record->lastFrame.top != top ||
           record->lastFrame.width != width ||
           record->lastFrame.height != height) {
@@ -174,7 +242,9 @@ private:
         telemetry.changedFrameCount++;
         commit.layoutFrames.push_back({nodeId, left, top, width, height});
       }
-      YGNodeSetHasNewLayout(record->yoga, false);
+      if (YGNodeGetHasNewLayout(record->yoga)) {
+        YGNodeSetHasNewLayout(record->yoga, false);
+      }
     }
   }
 

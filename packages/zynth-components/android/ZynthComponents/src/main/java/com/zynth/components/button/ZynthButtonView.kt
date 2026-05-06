@@ -13,9 +13,9 @@ import android.view.MotionEvent
 import android.view.TouchDelegate
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
+import com.zynth.kit.core.ZynthLayoutView
 import org.json.JSONObject
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -34,7 +34,7 @@ private const val DEFAULT_MIN_TOUCH_DP = 44f
  * Child Views have touch events disabled (like pointerEvents="none") so all
  * touch interactions go to the underlying MaterialButton.
  */
-class ZynthButtonView(context: Context) : FrameLayout(context) {
+class ZynthButtonView(context: Context) : ZynthLayoutView(context) {
 
   interface Listener {
     fun onPressIn(nodeId: Int)

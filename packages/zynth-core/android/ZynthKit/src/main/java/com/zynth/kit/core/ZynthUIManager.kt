@@ -1566,13 +1566,18 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
               val rTop = top.toInt()
               val rRight = (left + width).toInt()
               val rBottom = (top + height).toInt()
+              val frameWidth = rRight - rLeft
+              val frameHeight = rBottom - rTop
               
               val rect = layoutFrames[nodeId] ?: android.graphics.Rect().also { layoutFrames[nodeId] = it }
               
               if (rect.left != rLeft || rect.top != rTop || rect.right != rRight || rect.bottom != rBottom) {
                 rect.set(rLeft, rTop, rRight, rBottom)
-                val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(rRight - rLeft, View.MeasureSpec.EXACTLY)
-                val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(rBottom - rTop, View.MeasureSpec.EXACTLY)
+                if (view is ZynthLayoutView) {
+                  view.updateYogaLayout(frameWidth, frameHeight)
+                }
+                val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(frameWidth, View.MeasureSpec.EXACTLY)
+                val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(frameHeight, View.MeasureSpec.EXACTLY)
                 view.measure(widthMeasureSpec, heightMeasureSpec)
                 view.layout(rLeft, rTop, rRight, rBottom)
                 
