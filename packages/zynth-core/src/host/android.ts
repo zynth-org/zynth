@@ -619,13 +619,11 @@ export function createAndroidHost(): Host {
               ui.flush();
             }, getExitDurationMs(exitTransition) + 17);
             exitRemovalTimers.set(childId, timer);
-          } else {
+          } else if (!rescued) {
             enqueueNativeRemove();
-            if (!rescued) {
-              // Move to readyForDestruction safety net.
-              // Will be fully destroyed in the NEXT flush if not rescued.
-              readyForDestruction.set(childId, parentId);
-            }
+            // Move to readyForDestruction safety net.
+            // Will be fully destroyed in the NEXT flush if not rescued.
+            readyForDestruction.set(childId, parentId);
           }
         }
         pendingRemovals.clear();
