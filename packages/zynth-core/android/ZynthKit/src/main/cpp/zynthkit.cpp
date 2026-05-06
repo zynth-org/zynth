@@ -846,22 +846,59 @@ extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
     float maxHeight,
     float flexBasis) {
   auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
-  if (!runtimeState || !runtimeState->uiManager || !runtimeState->applyAnimatedLayoutStyle) {
+  if (!runtimeState) {
     return;
   }
-  JNIEnv *env = getEnv();
-  if (!env) return;
-  env->CallVoidMethod(
-      runtimeState->uiManager,
-      runtimeState->applyAnimatedLayoutStyle,
-      nodeId,
-      width,
-      height,
-      minWidth,
-      minHeight,
-      maxWidth,
-      maxHeight,
-      flexBasis);
+
+  // 1. Update Native Yoga Styles immediately for high-performance UI thread animations
+  auto* nodeRecord = runtimeState->rendererHost.getNode(nodeId);
+  if (nodeRecord && nodeRecord->yoga) {
+    bool changed = false;
+    auto update = [&](zynth::ZynthPropId prop, float val) {
+      if (!std::isnan(val)) {
+        zynth::ZynthPropValue v;
+        v.kind = zynth::ZynthValueKind::Number;
+        v.number = val;
+        
+        zynth::ZynthPropMutation mut;
+        mut.nodeId = nodeId;
+        mut.prop = prop;
+        mut.value = v;
+        
+        runtimeState->yogaTree->applyProp(nodeRecord->yoga, mut);
+        changed = true;
+      }
+    };
+    
+    update(zynth::ZynthPropId::Width, width);
+    update(zynth::ZynthPropId::Height, height);
+    update(zynth::ZynthPropId::MinWidth, minWidth);
+    update(zynth::ZynthPropId::MinHeight, minHeight);
+    update(zynth::ZynthPropId::MaxWidth, maxWidth);
+    update(zynth::ZynthPropId::MaxHeight, maxHeight);
+    update(zynth::ZynthPropId::FlexBasis, flexBasis);
+    
+    if (changed) {
+      runtimeState->rendererHost.markSurfaceDirty(nodeRecord->surfaceId);
+    }
+  }
+
+  // 2. Notify Kotlin for any component side-effects
+  if (runtimeState->uiManager && runtimeState->applyAnimatedLayoutStyle) {
+    JNIEnv *env = getEnv();
+    if (!env) return;
+    env->CallVoidMethod(
+        runtimeState->uiManager,
+        runtimeState->applyAnimatedLayoutStyle,
+        nodeId,
+        width,
+        height,
+        minWidth,
+        minHeight,
+        maxWidth,
+        maxHeight,
+        flexBasis);
+  }
 }
 
 void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {

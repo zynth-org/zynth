@@ -606,7 +606,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       if (node != null) {
         node.layoutTransition = parseLayoutTransition(value)
         if (node.layoutTransition != null) {
-          layoutTransitionFrames[id] = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
+          // Only capture if already laid out, otherwise we'll animate from (0,0,0,0)
+          if (view.width > 0 || view.height > 0) {
+            layoutTransitionFrames[id] = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
+          }
         } else {
           layoutTransitionFrames.remove(id)
           node.layoutAnimator?.cancel()
@@ -1579,6 +1582,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                 val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(frameWidth, View.MeasureSpec.EXACTLY)
                 val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(frameHeight, View.MeasureSpec.EXACTLY)
                 view.measure(widthMeasureSpec, heightMeasureSpec)
+                
+                maybeStartLayoutTransition(nodeId, rLeft, rTop, rRight, rBottom)
                 view.layout(rLeft, rTop, rRight, rBottom)
                 
                 if (layoutNodes.contains(nodeId)) {

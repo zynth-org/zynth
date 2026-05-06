@@ -46,22 +46,80 @@ public:
     }
   }
 
+  void applyProp(YGNodeRef node, const ZynthPropMutation& mut) {
+    const auto& v = mut.value;
+    
+    // Helper to get auto/percent/point values
+    auto applyDimension = [&](auto ptFn, auto pctFn, auto autoFn) {
+      if (v.kind == ZynthValueKind::Number) ptFn(node, host_->dpToPx(static_cast<float>(v.number)));
+      else if (v.kind == ZynthValueKind::Percent) pctFn(node, static_cast<float>(v.number));
+      else if (v.kind == ZynthValueKind::Auto) autoFn(node);
+    };
+    
+    auto applyEdge = [&](YGEdge edge, auto ptFn, auto pctFn) {
+      if (v.kind == ZynthValueKind::Number) ptFn(node, edge, host_->dpToPx(static_cast<float>(v.number)));
+      else if (v.kind == ZynthValueKind::Percent) pctFn(node, edge, static_cast<float>(v.number));
+    };
+
+    auto noopAuto = [](YGNodeRef) {};
+
+    switch (mut.prop) {
+      case ZynthPropId::Width: applyDimension(YGNodeStyleSetWidth, YGNodeStyleSetWidthPercent, YGNodeStyleSetWidthAuto); break;
+      case ZynthPropId::Height: applyDimension(YGNodeStyleSetHeight, YGNodeStyleSetHeightPercent, YGNodeStyleSetHeightAuto); break;
+      case ZynthPropId::MinWidth: applyDimension(YGNodeStyleSetMinWidth, YGNodeStyleSetMinWidthPercent, noopAuto); break;
+      case ZynthPropId::MinHeight: applyDimension(YGNodeStyleSetMinHeight, YGNodeStyleSetMinHeightPercent, noopAuto); break;
+      case ZynthPropId::MaxWidth: applyDimension(YGNodeStyleSetMaxWidth, YGNodeStyleSetMaxWidthPercent, noopAuto); break;
+      case ZynthPropId::MaxHeight: applyDimension(YGNodeStyleSetMaxHeight, YGNodeStyleSetMaxHeightPercent, noopAuto); break;
+      case ZynthPropId::Flex: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlex(node, static_cast<float>(v.number)); break;
+      case ZynthPropId::FlexGrow: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlexGrow(node, static_cast<float>(v.number)); break;
+      case ZynthPropId::FlexShrink: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlexShrink(node, static_cast<float>(v.number)); break;
+      case ZynthPropId::FlexBasis: applyDimension(YGNodeStyleSetFlexBasis, YGNodeStyleSetFlexBasisPercent, YGNodeStyleSetFlexBasisAuto); break;
+      
+      case ZynthPropId::FlexDirection: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlexDirection(node, static_cast<YGFlexDirection>(v.number)); break;
+      case ZynthPropId::FlexWrap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlexWrap(node, static_cast<YGWrap>(v.number)); break;
+      case ZynthPropId::JustifyContent: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetJustifyContent(node, static_cast<YGJustify>(v.number)); break;
+      case ZynthPropId::AlignItems: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetAlignItems(node, static_cast<YGAlign>(v.number)); break;
+      case ZynthPropId::AlignSelf: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetAlignSelf(node, static_cast<YGAlign>(v.number)); break;
+      case ZynthPropId::AlignContent: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetAlignContent(node, static_cast<YGAlign>(v.number)); break;
+      
+      case ZynthPropId::Position: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetPositionType(node, static_cast<YGPositionType>(v.number)); break;
+      case ZynthPropId::Display: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetDisplay(node, static_cast<YGDisplay>(v.number)); break;
+      case ZynthPropId::Overflow: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetOverflow(node, static_cast<YGOverflow>(v.number)); break;
+      case ZynthPropId::AspectRatio: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetAspectRatio(node, static_cast<float>(v.number)); break;
+      
+      case ZynthPropId::Top: applyEdge(YGEdgeTop, YGNodeStyleSetPosition, YGNodeStyleSetPositionPercent); break;
+      case ZynthPropId::Right: applyEdge(YGEdgeRight, YGNodeStyleSetPosition, YGNodeStyleSetPositionPercent); break;
+      case ZynthPropId::Bottom: applyEdge(YGEdgeBottom, YGNodeStyleSetPosition, YGNodeStyleSetPositionPercent); break;
+      case ZynthPropId::Left: applyEdge(YGEdgeLeft, YGNodeStyleSetPosition, YGNodeStyleSetPositionPercent); break;
+
+      case ZynthPropId::Padding: applyEdge(YGEdgeAll, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
+      case ZynthPropId::PaddingHorizontal: applyEdge(YGEdgeHorizontal, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
+      case ZynthPropId::PaddingVertical: applyEdge(YGEdgeVertical, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
+      case ZynthPropId::PaddingTop: applyEdge(YGEdgeTop, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
+      case ZynthPropId::PaddingRight: applyEdge(YGEdgeRight, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
+      case ZynthPropId::PaddingBottom: applyEdge(YGEdgeBottom, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
+      case ZynthPropId::PaddingLeft: applyEdge(YGEdgeLeft, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
+
+      case ZynthPropId::Margin: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeAll); else applyEdge(YGEdgeAll, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
+      case ZynthPropId::MarginHorizontal: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeHorizontal); else applyEdge(YGEdgeHorizontal, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
+      case ZynthPropId::MarginVertical: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeVertical); else applyEdge(YGEdgeVertical, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
+      case ZynthPropId::MarginTop: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeTop); else applyEdge(YGEdgeTop, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
+      case ZynthPropId::MarginRight: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeRight); else applyEdge(YGEdgeRight, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
+      case ZynthPropId::MarginBottom: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeBottom); else applyEdge(YGEdgeBottom, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
+      case ZynthPropId::MarginLeft: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeLeft); else applyEdge(YGEdgeLeft, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
+
+      case ZynthPropId::Gap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterAll, host_->dpToPx(static_cast<float>(v.number))); break;
+      case ZynthPropId::RowGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterRow, host_->dpToPx(static_cast<float>(v.number))); break;
+      case ZynthPropId::ColumnGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterColumn, host_->dpToPx(static_cast<float>(v.number))); break;
+
+      default:
+        break;
+    }
+  }
+
   /**
    * @brief Calculate layout for all dirty surfaces and extract only the frames
    *        that were actually affected by this commit's mutations.
-   *
-   * Previous implementation did a full DFS over the entire Yoga tree to check
-   * `hasNewLayout` on every node — O(n) per commit regardless of how many
-   * nodes actually changed.  With 258 nodes during mid-scroll, that alone
-   * produced 20–30 ms layout spikes.
-   *
-   * New approach:
-   * 1. Run `YGNodeCalculateLayout` from the surface root (unchanged — Yoga's
-   *    internal dirty tracking still skips clean subtrees).
-   * 2. Build a targeted set of nodes that *could* have new layouts based on
-   *    the commit's topology and property mutations.
-   * 3. Walk ancestors of dirty nodes to capture parent reflows.
-   * 4. Extract frames only for nodes in the targeted set — O(Δ) instead of O(n).
    */
   void calculateLayoutForDirtySurfaces(ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
     ZynthPhaseTimer timer(telemetry.yogaCalculateUs);
@@ -131,9 +189,6 @@ private:
       subtreeRoots.insert(op.nodeId);
       
       // If display changed, we must force the entire subtree to emit frames.
-      // Yoga's internal dirty tracking might skip these if they were previously 
-      // laid out before being hidden, but the native views might have been
-      // recycled or their frames reset to 0.
       if (op.prop == ZynthPropId::Display) {
         forcedNodes.insert(op.nodeId);
       }
@@ -147,8 +202,7 @@ private:
       subtreeRoots.insert(op.nodeId);
     }
 
-    // Expand: walk ancestors so we capture parent reflows (e.g. spacer height
-    // change causes the scroll container's total height to change).
+    // Expand: walk ancestors so we capture parent reflows
     std::vector<int32_t> seeds(dirtyNodes.begin(), dirtyNodes.end());
     for (int32_t nodeId : seeds) {
       int32_t current = nodeId;
@@ -161,9 +215,7 @@ private:
       }
     }
 
-    // Expand: Propagate 'forced' state down the tree. If a parent is forced,
-    // all its descendants must also be forced to ensure they emit frames,
-    // even if their Yoga-calculated dimensions haven't changed.
+    // Expand: Propagate 'forced' state down the tree.
     std::vector<int32_t> forceStack(forcedNodes.begin(), forcedNodes.end());
     while (!forceStack.empty()) {
       int32_t nodeId = forceStack.back();
@@ -179,10 +231,8 @@ private:
       }
     }
 
-    // Expand: walk descendants of directly mutated roots to ensure they are
-    // all in the dirtyNodes set for frame extraction.
+    // Expand: walk descendants of directly mutated roots
     std::vector<int32_t> descendantStack(subtreeRoots.begin(), subtreeRoots.end());
-    // Also include forced nodes as subtree roots to be safe.
     descendantStack.insert(descendantStack.end(), forcedNodes.begin(), forcedNodes.end());
 
     while (!descendantStack.empty()) {
@@ -199,8 +249,7 @@ private:
       }
     }
 
-    // Also include direct children of dirty parents — a parent reflow may
-    // shift children even if the children themselves weren't mutated.
+    // Also include direct children of dirty parents
     std::vector<int32_t> parentSeeds(dirtyNodes.begin(), dirtyNodes.end());
     for (int32_t nodeId : parentSeeds) {
       auto* record = host_->getNode(nodeId);
@@ -283,77 +332,6 @@ private:
     
     for (uint32_t i = 0; i < YGNodeGetChildCount(node); ++i) {
       extractFrames(YGNodeGetChild(node, i), telemetry, commit);
-    }
-  }
-
-  void applyProp(YGNodeRef node, const ZynthPropMutation& mut) {
-    const auto& v = mut.value;
-    
-    // Helper to get auto/percent/point values
-    auto applyDimension = [&](auto ptFn, auto pctFn, auto autoFn) {
-      if (v.kind == ZynthValueKind::Number) ptFn(node, host_->dpToPx(static_cast<float>(v.number)));
-      else if (v.kind == ZynthValueKind::Percent) pctFn(node, static_cast<float>(v.number));
-      else if (v.kind == ZynthValueKind::Auto) autoFn(node);
-    };
-    
-    auto applyEdge = [&](YGEdge edge, auto ptFn, auto pctFn) {
-      if (v.kind == ZynthValueKind::Number) ptFn(node, edge, host_->dpToPx(static_cast<float>(v.number)));
-      else if (v.kind == ZynthValueKind::Percent) pctFn(node, edge, static_cast<float>(v.number));
-    };
-
-    auto noopAuto = [](YGNodeRef) {};
-
-    switch (mut.prop) {
-      case ZynthPropId::Width: applyDimension(YGNodeStyleSetWidth, YGNodeStyleSetWidthPercent, YGNodeStyleSetWidthAuto); break;
-      case ZynthPropId::Height: applyDimension(YGNodeStyleSetHeight, YGNodeStyleSetHeightPercent, YGNodeStyleSetHeightAuto); break;
-      case ZynthPropId::MinWidth: applyDimension(YGNodeStyleSetMinWidth, YGNodeStyleSetMinWidthPercent, noopAuto); break;
-      case ZynthPropId::MinHeight: applyDimension(YGNodeStyleSetMinHeight, YGNodeStyleSetMinHeightPercent, noopAuto); break;
-      case ZynthPropId::MaxWidth: applyDimension(YGNodeStyleSetMaxWidth, YGNodeStyleSetMaxWidthPercent, noopAuto); break;
-      case ZynthPropId::MaxHeight: applyDimension(YGNodeStyleSetMaxHeight, YGNodeStyleSetMaxHeightPercent, noopAuto); break;
-      case ZynthPropId::Flex: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlex(node, static_cast<float>(v.number)); break;
-      case ZynthPropId::FlexGrow: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlexGrow(node, static_cast<float>(v.number)); break;
-      case ZynthPropId::FlexShrink: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlexShrink(node, static_cast<float>(v.number)); break;
-      case ZynthPropId::FlexBasis: applyDimension(YGNodeStyleSetFlexBasis, YGNodeStyleSetFlexBasisPercent, YGNodeStyleSetFlexBasisAuto); break;
-      
-      case ZynthPropId::FlexDirection: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlexDirection(node, static_cast<YGFlexDirection>(v.number)); break;
-      case ZynthPropId::FlexWrap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetFlexWrap(node, static_cast<YGWrap>(v.number)); break;
-      case ZynthPropId::JustifyContent: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetJustifyContent(node, static_cast<YGJustify>(v.number)); break;
-      case ZynthPropId::AlignItems: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetAlignItems(node, static_cast<YGAlign>(v.number)); break;
-      case ZynthPropId::AlignSelf: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetAlignSelf(node, static_cast<YGAlign>(v.number)); break;
-      case ZynthPropId::AlignContent: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetAlignContent(node, static_cast<YGAlign>(v.number)); break;
-      
-      case ZynthPropId::Position: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetPositionType(node, static_cast<YGPositionType>(v.number)); break;
-      case ZynthPropId::Display: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetDisplay(node, static_cast<YGDisplay>(v.number)); break;
-      case ZynthPropId::Overflow: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetOverflow(node, static_cast<YGOverflow>(v.number)); break;
-      case ZynthPropId::AspectRatio: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetAspectRatio(node, static_cast<float>(v.number)); break;
-      
-      case ZynthPropId::Top: applyEdge(YGEdgeTop, YGNodeStyleSetPosition, YGNodeStyleSetPositionPercent); break;
-      case ZynthPropId::Right: applyEdge(YGEdgeRight, YGNodeStyleSetPosition, YGNodeStyleSetPositionPercent); break;
-      case ZynthPropId::Bottom: applyEdge(YGEdgeBottom, YGNodeStyleSetPosition, YGNodeStyleSetPositionPercent); break;
-      case ZynthPropId::Left: applyEdge(YGEdgeLeft, YGNodeStyleSetPosition, YGNodeStyleSetPositionPercent); break;
-
-      case ZynthPropId::Padding: applyEdge(YGEdgeAll, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
-      case ZynthPropId::PaddingHorizontal: applyEdge(YGEdgeHorizontal, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
-      case ZynthPropId::PaddingVertical: applyEdge(YGEdgeVertical, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
-      case ZynthPropId::PaddingTop: applyEdge(YGEdgeTop, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
-      case ZynthPropId::PaddingRight: applyEdge(YGEdgeRight, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
-      case ZynthPropId::PaddingBottom: applyEdge(YGEdgeBottom, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
-      case ZynthPropId::PaddingLeft: applyEdge(YGEdgeLeft, YGNodeStyleSetPadding, YGNodeStyleSetPaddingPercent); break;
-
-      case ZynthPropId::Margin: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeAll); else applyEdge(YGEdgeAll, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
-      case ZynthPropId::MarginHorizontal: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeHorizontal); else applyEdge(YGEdgeHorizontal, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
-      case ZynthPropId::MarginVertical: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeVertical); else applyEdge(YGEdgeVertical, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
-      case ZynthPropId::MarginTop: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeTop); else applyEdge(YGEdgeTop, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
-      case ZynthPropId::MarginRight: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeRight); else applyEdge(YGEdgeRight, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
-      case ZynthPropId::MarginBottom: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeBottom); else applyEdge(YGEdgeBottom, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
-      case ZynthPropId::MarginLeft: if (v.kind == ZynthValueKind::Auto) YGNodeStyleSetMarginAuto(node, YGEdgeLeft); else applyEdge(YGEdgeLeft, YGNodeStyleSetMargin, YGNodeStyleSetMarginPercent); break;
-
-      case ZynthPropId::Gap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterAll, host_->dpToPx(static_cast<float>(v.number))); break;
-      case ZynthPropId::RowGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterRow, host_->dpToPx(static_cast<float>(v.number))); break;
-      case ZynthPropId::ColumnGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterColumn, host_->dpToPx(static_cast<float>(v.number))); break;
-
-      default:
-        break;
     }
   }
 
