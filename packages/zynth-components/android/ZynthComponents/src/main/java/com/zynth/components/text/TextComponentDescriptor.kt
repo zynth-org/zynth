@@ -84,6 +84,45 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
   }
 }
 
+private fun resolveTextTypeface(
+  textView: TextView,
+  style: TextStyleAttributes?,
+): Typeface {
+  val weight = style?.fontWeight
+  val isBold = weight?.let {
+    it.equals("bold", ignoreCase = true) || it.toIntOrNull()?.let { w -> w >= 600 } == true
+  } ?: false
+  val isItalic = style?.fontStyle?.equals("italic", ignoreCase = true) == true
+  val styleInt = when {
+    isBold && isItalic -> Typeface.BOLD_ITALIC
+    isBold -> Typeface.BOLD
+    isItalic -> Typeface.ITALIC
+    else -> Typeface.NORMAL
+  }
+
+  val family = style?.fontFamily
+  val cachedTypeface = family?.let { FontRegistry.getTypeface(it) }
+  val baseTypeface = when {
+    family == null -> textView.typeface ?: Typeface.DEFAULT
+    cachedTypeface != null -> cachedTypeface
+    else -> Typeface.create(family, styleInt)
+  }
+
+  return when {
+    family != null && cachedTypeface != null && isIconFontFamily(family) -> baseTypeface
+    else -> Typeface.create(baseTypeface ?: Typeface.DEFAULT, styleInt)
+  }
+}
+
+private fun resolveMeasureText(
+  node: ZynthUIManager.Node,
+  manager: ZynthUIManager,
+  textStyleKey: String,
+): String {
+  val root = findTextRoot(node, manager)
+  return buildRawText(root, manager, textStyleKey)
+}
+
 
 private val measureViews = java.util.WeakHashMap<ZynthUIManager, TextView>()
 
@@ -137,7 +176,9 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         }
         
-        val currentText = textView.text ?: ""
+        val currentText = resolveMeasureText(node, manager, textStyleKey)
+        val root = findTextRoot(node, manager)
+        val style = root.attachments[textStyleKey] as? TextStyleAttributes
         val cacheKey = hashMeasureKey(currentText, textView, widthSpec, heightSpec)
         val cached = node.attachments[textMeasureCacheKey] as? TextMeasureCache
         if (cached != null && cached.key == cacheKey) {
@@ -156,37 +197,55 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         // The UI thread may be measuring the live textView instance during transitions,
         // which causes IllegalStateException if measured concurrently on the JS/Layout thread.
         val measureView = getMeasureView(manager, textView.context)
-        val measuredWidth: Float
-        val measuredHeight: Float
+        var measuredWidth: Float
+        var measuredHeight: Float
 
-        synchronized(measureView) {
-          // Sync state to measureView. We use TypedValue.COMPLEX_UNIT_PX to ensure exact match.
-          measureView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textView.textSize)
-          measureView.typeface = textView.typeface
-          measureView.text = textView.text
-          measureView.letterSpacing = textView.letterSpacing
-          measureView.maxLines = textView.maxLines
-          measureView.ellipsize = textView.ellipsize
-          measureView.includeFontPadding = textView.includeFontPadding
+        try {
+          synchronized(measureView) {
+            val resolvedTextSizePx = style?.fontSize?.let { fontSize ->
+              val density = textView.resources.displayMetrics.density
+              if (density == 0f) fontSize else fontSize * density
+            } ?: textView.textSize
 
-          measureView.measure(widthSpec, heightSpec)
-          
-          var mw = measureView.measuredWidth.toFloat()
-          var mh = measureView.measuredHeight.toFloat()
-          
-          // Fallback: If measurement returned 0 but text is not empty, use a sensible default
-          // to prevent the component from completely disappearing.
-          if (mw <= 0f && currentText.isNotEmpty()) {
-             Log.w(measureTag, "Measurement returned 0 width for non-empty text: node=${node.id} text='${node.cachedText.take(24)}'")
-             mw = textView.paint.measureText(currentText.toString()).coerceAtLeast(1f)
+            measureView.setTextSize(TypedValue.COMPLEX_UNIT_PX, resolvedTextSizePx)
+            measureView.typeface = resolveTextTypeface(textView, style)
+            measureView.text = currentText
+            measureView.letterSpacing = textView.letterSpacing
+            measureView.maxLines = textView.maxLines
+            measureView.ellipsize = textView.ellipsize
+            measureView.includeFontPadding =
+              style?.fontFamily?.let { !isIconFontFamily(it) } ?: textView.includeFontPadding
+
+            measureView.measure(widthSpec, heightSpec)
+
+            var mw = measureView.measuredWidth.toFloat()
+            var mh = measureView.measuredHeight.toFloat()
+
+            if (mw <= 0f && currentText.isNotEmpty()) {
+              Log.w(
+                measureTag,
+                "Measurement returned 0 width for non-empty text: node=${node.id} text='${currentText.take(24)}'",
+              )
+              mw = measureView.paint.measureText(currentText).coerceAtLeast(1f)
+            }
+            if (mh <= 0f && currentText.isNotEmpty()) {
+              Log.w(measureTag, "Measurement returned 0 height for non-empty text: node=${node.id}")
+              mh = (measureView.textSize * 1.2f).coerceAtLeast(1f)
+            }
+
+            measuredWidth = mw.coerceAtLeast(1f)
+            measuredHeight = mh.coerceAtLeast((measureView.textSize * 1.2f).roundToInt().toFloat())
           }
-          if (mh <= 0f && currentText.isNotEmpty()) {
-             Log.w(measureTag, "Measurement returned 0 height for non-empty text: node=${node.id}")
-             mh = (textView.textSize * 1.2f).coerceAtLeast(1f)
-          }
-
-          measuredWidth = mw.coerceAtLeast(1f)
-          measuredHeight = mh.coerceAtLeast((textView.textSize * 1.2f).roundToInt().toFloat())
+        } catch (error: Throwable) {
+          Log.e(
+            measureTag,
+            "Text measurement failed: node=${node.id} text='${currentText.take(24)}'",
+            error,
+          )
+          val fallbackWidth = textView.paint.measureText(currentText).coerceAtLeast(1f)
+          val fallbackHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
+          measuredWidth = fallbackWidth
+          measuredHeight = fallbackHeight
         }
 
         node.attachments[textMeasureCacheKey] =

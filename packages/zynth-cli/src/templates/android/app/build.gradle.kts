@@ -68,7 +68,6 @@ android {
       excludes += setOf(
         "**/libfabricjni.so",
         "**/libreactnativejni.so",
-        "**/libreactnative.so",
         "**/libreact_codegen_*.so",
         "**/libreact_newarchdefaults.so",
         "**/librrc_*.so",

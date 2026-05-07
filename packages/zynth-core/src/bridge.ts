@@ -13,6 +13,12 @@ export type ZynthUIBridge = {
   setSurface?(surfaceId: number): void;
 };
 
+export type ZynthPortalBridge = {
+  setSurface?: (surfaceId: number) => void;
+  disposeSurface?: (surfaceId: number) => void;
+  resizeSurface?: (surfaceId: number, width: number, height: number) => void;
+};
+
 export type ZynthModulesBridge = {
   call(name: string, method: string, args: any): any;
   callSync?: (name: string, method: string, args: any) => any;
@@ -59,6 +65,7 @@ declare global {
   var __zynth_worklets: ZynthWorkletsBridge;
   var __zynth_sync_signals: ZynthSyncSignalsBridge;
   var __zynth_ui_commands: ZynthUICommandsBridge;
+  var __zynth_portal: ZynthPortalBridge | undefined;
   /** JSI HostObject injected by the native animation runtime (ZynthAnimateJSI). */
   var __zynth_animate: ZynthAnimateJSIBridge | undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

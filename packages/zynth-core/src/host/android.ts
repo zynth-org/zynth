@@ -926,6 +926,7 @@ export function createAndroidHost(): Host {
       }
       if (id === null) {
         const hasMeasureFunc =
+          type === "text" ||
           type === "text-input" ||
           type === "secure-text-input" ||
           type === "text-field" ||
@@ -953,6 +954,19 @@ export function createAndroidHost(): Host {
           nodeId: id,
           name: "style",
           value: props.style as Style,
+        };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
+      }
+      if (type === "text") {
+        const textValue =
+          props && "text" in props && props.text != null
+            ? String(props.text)
+            : "";
+        TEXTS.set(id, textValue);
+        const op: BatchOperation = {
+          type: "setText",
+          nodeId: id,
+          value: textValue,
         };
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
@@ -1030,6 +1044,17 @@ export function createAndroidHost(): Host {
     },
     setProperty(node, name, value) {
       if (value === undefined && name !== "style") return;
+      if (name === "text") {
+        TEXTS.set(node.id, value == null ? "" : String(value));
+        const op: BatchOperation = {
+          type: "setText",
+          nodeId: node.id,
+          value: value == null ? "" : String(value),
+        };
+        if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
+        schedule();
+        return;
+      }
       if (name === "__zynthExiting") {
         if (value && typeof value === "object") {
           exitTransitions.set(

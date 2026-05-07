@@ -1,12 +1,9 @@
 import {
   render,
   getHost,
-  getActiveSurface,
-  setActiveSurface,
-  type HostNode,
+  createPortalSurfaceHandle,
 } from "@zynthjs/core";
-import { platform } from "@zynthjs/apis";
-import { runWithOwner, type Owner, createSignal } from "solid-js";
+import { runWithOwner, type Owner } from "solid-js";
 import type { TabIconFactory } from "../types";
 
 interface RegistryEntry {
@@ -27,26 +24,12 @@ interface MountedIcon {
   getProps: () => IconRenderProps;
 }
 
+const LOG_PREFIX = "[ZynthTabsJS]";
 const registry = new Map<string, RegistryEntry>();
 const mounted = new Map<number, MountedIcon>();
 const surfacesByKey = new Map<string, Set<number>>();
 const pendingByKey = new Map<string, Map<number, IconRenderProps>>();
 const pendingWarnedKeys = new Set<string>();
-
-function runWithSurface<T>(surfaceId: number, work: () => T): T {
-  const previous = getActiveSurface();
-  const shouldSwitch = previous !== surfaceId;
-  if (shouldSwitch) {
-    setActiveSurface(surfaceId);
-  }
-  try {
-    return work();
-  } finally {
-    if (shouldSwitch) {
-      setActiveSurface(previous);
-    }
-  }
-}
 
 function flushHostQueue() {
   const host = getHost();
@@ -60,10 +43,6 @@ function flushHostQueue() {
   }
 }
 
-function createSurfaceContainer(rootId: number): HostNode {
-  return { id: rootId, type: "root" };
-}
-
 import { View } from "@zynthjs/components";
 
 function mountIcon(
@@ -73,23 +52,43 @@ function mountIcon(
 ) {
   const current = mounted.get(surfaceId);
 
-  // If already mounted, just update the reactive signals
+  // If already mounted, rebuild the subtree with the next props.
+  // For Android tab icon portal surfaces we want correctness over cleverness:
+  // active/color flips must deterministically repaint even when the nested
+  // host text path is sensitive to stale reactive children.
   if (current) {
-    // console.log(`[tabIconRegistry] Updating icon props for surface ${surfaceId}, routeKey=${entry.routeKey}, active=${props.active}, color=${props.color}`);
-    current.setProps(props);
+    console.log(
+      `${LOG_PREFIX} update surface=${surfaceId} route=${entry.routeKey} active=${props.active} color=${props.color}`
+    );
+    const previousProps = current.getProps();
+    if (
+      previousProps.active === props.active &&
+      previousProps.color === props.color
+    ) {
+      current.setProps(props);
+      return;
+    }
+    console.log(
+      `${LOG_PREFIX} remount surface=${surfaceId} route=${entry.routeKey} prevActive=${previousProps.active} prevColor=${previousProps.color} nextActive=${props.active} nextColor=${props.color}`
+    );
+    current.dispose();
+    mounted.delete(surfaceId);
+    mountIcon(surfaceId, entry, props);
     return;
   }
 
-  // console.log(`[tabIconRegistry] Mounting NEW icon for surface ${surfaceId}, routeKey: ${entry.routeKey}, active: ${props.active}, color: ${props.color}`);
-
-  // Create reactive signals for active and color
-  const [active, setActive] = createSignal(props.active);
-  const [color, setColor] = createSignal(props.color);
+  console.log(
+    `${LOG_PREFIX} mount surface=${surfaceId} route=${entry.routeKey} active=${props.active} color=${props.color}`
+  );
 
   let disposeFn: () => void = () => undefined;
+  const portal = createPortalSurfaceHandle(surfaceId);
 
-  runWithSurface(surfaceId, () => {
+  portal.run(() => {
     disposeFn = render(() => {
+      console.log(
+        `${LOG_PREFIX} render surface=${surfaceId} route=${entry.routeKey} active=${props.active} color=${props.color}`
+      );
       return (
         <View
           style={{
@@ -98,67 +97,36 @@ function mountIcon(
             justifyContent: "center",
             alignItems: "center",
           }}
-        >
+          >
           {
-            (() => {
-              // Read signals inside the JSX function to establish tracking
-              // When they change, this function re-runs and updates the view
-              const currentActive = active();
-              const currentColor = color();
-              // console.log(
-              //   `[tabIconRegistry] render/update executing for surface ${surfaceId}, active=${currentActive}, color=${currentColor}`
-              // );
-
-              return entry.owner
-                ? runWithOwner(entry.owner, () =>
-                    entry.factory({
-                      active: currentActive,
-                      color: currentColor,
-                    })
-                  )
-                : entry.factory({ active: currentActive, color: currentColor });
-            }) as any
+            entry.owner
+              ? runWithOwner(entry.owner, () =>
+                  entry.factory({
+                    active: props.active,
+                    color: props.color,
+                  })
+                )
+              : entry.factory({ active: props.active, color: props.color })
           }
         </View>
       );
-    }, createSurfaceContainer(surfaceId));
+    }, portal.root);
     flushHostQueue();
   });
 
   const mountedEntry: MountedIcon = {
     key: entry.routeKey,
-    getProps: () => ({ active: active(), color: color() }),
+    getProps: () => ({ active: props.active, color: props.color }),
     setProps: (nextProps: IconRenderProps) => {
-      runWithSurface(surfaceId, () => {
-        if (active() !== nextProps.active) {
-          // console.log(
-          //   `[tabIconRegistry] Setting active: ${active()} -> ${nextProps.active}`
-          // );
-          setActive(nextProps.active);
-        }
-        if (color() !== nextProps.color) {
-          // console.log(
-          //   `[tabIconRegistry] Setting color: ${color()} -> ${nextProps.color}`
-          // );
-          setColor(nextProps.color);
-        }
-
-        // On Android, we MUST flush synchronously while the surface is active.
-        // On iOS, synchronous flushing might interfere with native animations (e.g. TabBar transitions),
-        // so we defer to the microtask queue to be safe.
-        if (platform.current === "android") {
-          flushHostQueue();
-        } else {
-          queueMicrotask(() => {
-            runWithSurface(surfaceId, () => {
-              flushHostQueue();
-            });
-          });
-        }
-      });
+      console.log(
+        `${LOG_PREFIX} setProps-noop surface=${surfaceId} route=${entry.routeKey} active=${nextProps.active} color=${nextProps.color}`
+      );
     },
     dispose: () => {
-      runWithSurface(surfaceId, () => {
+      portal.run(() => {
+        console.log(
+          `${LOG_PREFIX} dispose surface=${surfaceId} route=${entry.routeKey}`
+        );
         disposeFn();
         flushHostQueue();
       });
@@ -196,11 +164,17 @@ function rerenderMountedIcons(routeKey: string) {
   if (!entry) return;
   const surfaces = surfacesByKey.get(routeKey);
   if (!surfaces || surfaces.size === 0) return;
+  console.log(
+    `${LOG_PREFIX} rerender route=${routeKey} surfaces=${Array.from(surfaces.values()).join(",")}`
+  );
   const surfaceIds = Array.from(surfaces.values());
   for (const surfaceId of surfaceIds) {
     const mountedEntry = mounted.get(surfaceId);
     const previousProps = mountedEntry?.getProps();
     if (mountedEntry) {
+      console.log(
+        `${LOG_PREFIX} rerender-dispose surface=${surfaceId} route=${routeKey}`
+      );
       mountedEntry.dispose();
       mounted.delete(surfaceId);
     }
@@ -215,6 +189,9 @@ export function renderNativeTabIcon(
   active: boolean,
   color: string
 ): boolean {
+  console.log(
+    `${LOG_PREFIX} native-event surface=${surfaceId} route=${routeKey} active=${active} color=${color}`
+  );
   const entry = registry.get(routeKey);
   if (!entry) {
     let pending = pendingByKey.get(routeKey);
@@ -240,6 +217,7 @@ export function disposeNativeTabIcon(surfaceId: number) {
 }
 
 export function registerNativeTabIcon(entry: RegistryEntry) {
+  console.log(`${LOG_PREFIX} register route=${entry.routeKey}`);
   const current = registry.get(entry.routeKey);
   if (
     current &&

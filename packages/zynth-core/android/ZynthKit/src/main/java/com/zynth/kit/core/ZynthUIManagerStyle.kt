@@ -22,7 +22,6 @@ internal data class ZynthViewStyleState(
 internal data class OriginValue(val value: Float, val isPercent: Boolean)
 
 internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, value: Double): Boolean {
-  val isTextNode = view is TextView && nodeStates[id]?.type == "text"
   val floatVal = value.toFloat()
   when (name) {
     "borderWidth" -> {
@@ -226,22 +225,6 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   }
 
   if (view is TextView) {
-    if (isTextNode) {
-      when (name) {
-        "lineHeight",
-        "lineSpacing",
-        "paragraphSpacing",
-        "baselineShift",
-        "letterSpacing",
-        "minimumFontScale",
-        "textDecorationLine",
-        "textTransform",
-        "hyphenation",
-        "fontSize" -> {
-          return true
-        }
-      }
-    }
     val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
     when (name) {
       "lineHeight" -> {
@@ -282,6 +265,7 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       }
       "fontSize" -> {
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(floatVal))
+        markSurfaceDirtyForNode(id, "textStyle:fontSize:number")
         return true
       }
     }
@@ -292,7 +276,6 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
 
 internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, value: String?): Boolean {
   if (value == null) return false
-  val isTextNode = view is TextView && nodeStates[id]?.type == "text"
   val state = styleStates.getOrPut(id) { ZynthViewStyleState() }
   when (name) {
     "background", "backgroundImage" -> {
@@ -568,22 +551,6 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   }
 
   if (view is TextView) {
-    if (isTextNode) {
-      when (name) {
-        "lineHeight",
-        "lineSpacing",
-        "paragraphSpacing",
-        "baselineShift",
-        "letterSpacing",
-        "minimumFontScale",
-        "textDecorationLine",
-        "textTransform",
-        "hyphenation",
-        "fontSize" -> {
-          return true
-        }
-      }
-    }
     val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
     when (name) {
       "lineHeight" -> {
@@ -620,6 +587,12 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
         textState.minimumFontScale = value.toFloatOrNull()
         textState.applyTo(view)
         markSurfaceDirtyForNode(id, "textStyle:minimumFontScale:string")
+        return true
+      }
+      "fontSize" -> {
+        val size = value.toFloatOrNull() ?: return false
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size))
+        markSurfaceDirtyForNode(id, "textStyle:fontSize:string")
         return true
       }
       "textDecorationLine" -> {
@@ -667,10 +640,14 @@ internal fun ZynthUIManager.applyTextValue(id: Int, textView: TextView, text: St
   val state = textStyleStates[id]
   if (state == null) {
     textView.text = text
+    textView.requestLayout()
+    textView.invalidate()
     return
   }
   state.rawText = text
   state.applyTo(textView)
+  textView.requestLayout()
+  textView.invalidate()
 }
 
 private fun ZynthUIManager.ensureBorderDrawable(id: Int, view: View): ZynthBorderDrawable {

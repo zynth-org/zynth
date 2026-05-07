@@ -28,6 +28,9 @@ import kotlin.math.roundToInt
 // TODO: Move this to a separate file or optimize
 private const val TRACE_TAG = "ZynthUIManager"
 private const val DEFAULT_PERSPECTIVE = 500f
+private const val PORTAL_ALIGN_LOG_TAG = "ZynthPortalAlign"
+private const val PORTAL_TEXT_LOG_TAG = "ZynthPortalText"
+private const val PORTAL_LIFECYCLE_LOG_TAG = "ZynthPortalLifecycle"
 private const val DEBUG_TEXT = false
 private const val DEBUG_TEXT_DIRTY = false
 
@@ -156,6 +159,55 @@ private fun resolveTypedPropName(keyToken: Int, strings: Array<String?>): String
     else -> ""
   }
 }
+
+private fun View.debugPortalFrame(): String {
+  return "(${left},${top},${width},${height})" +
+    "[measured=${measuredWidth}x${measuredHeight} alpha=${"%.2f".format(alpha)} tx=${"%.1f".format(translationX)} ty=${"%.1f".format(translationY)}]"
+}
+
+private fun ZynthUIManager.logPortalText(
+  reason: String,
+  nodeId: Int,
+  view: View,
+  extra: String = "",
+) {
+  val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
+  if (surfaceId < 1048576) return
+  val node = nodeStates[nodeId] ?: return
+  if (node.type != "text") return
+  val text = (view as? TextView)?.text?.toString()?.take(32) ?: ""
+  Log.d(
+    PORTAL_TEXT_LOG_TAG,
+    "reason=$reason node=$nodeId surface=$surfaceId text='$text' frame=${view.debugPortalFrame()}$extra",
+  )
+}
+
+private fun ZynthUIManager.logPortalLifecycle(
+  reason: String,
+  parentId: Int,
+  childId: Int,
+  extra: String = "",
+) {
+  val childSurfaceId = nodeSurfaces[childId] ?: activeSurfaceId
+  val parentSurfaceId = if (parentId >= 0) {
+    nodeSurfaces[parentId] ?: childSurfaceId
+  } else {
+    childSurfaceId
+  }
+  if (childSurfaceId < 1048576 && parentSurfaceId < 1048576) return
+  val childNode = nodeStates[childId]
+  val parentNode = nodeStates[parentId]
+  val childType = childNode?.type ?: TYPESAFE_UNKNOWN
+  val parentType = if (parentId < 0) "surface" else parentNode?.type ?: TYPESAFE_UNKNOWN
+  val childText = childNode?.label?.text?.toString()?.take(32) ?: ""
+  val parentChildren = children[parentId]?.joinToString(",") ?: ""
+  Log.d(
+    PORTAL_LIFECYCLE_LOG_TAG,
+    "reason=$reason parent=$parentId/$parentType parentSurface=$parentSurfaceId child=$childId/$childType childSurface=$childSurfaceId childText='$childText' siblings=[$parentChildren]$extra",
+  )
+}
+
+private const val TYPESAFE_UNKNOWN = "unknown"
 
 class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var runtimePtr: Long = 0L
@@ -682,6 +734,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (view is TextView && name == "fontSize") {
       val size = value?.toFloatOrNull() ?: return
       view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size))
+      markSurfaceDirtyForNode(id, "textStyle:fontSize:fallback")
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
@@ -708,6 +761,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (view is TextView && name == "fontFamily") {
       if (value == null) {
         view.typeface = Typeface.DEFAULT
+        view.includeFontPadding = true
+        view.gravity = Gravity.START
+        markSurfaceDirtyForNode(id, "textStyle:fontFamily:default")
         maybeNotifyStyle(descriptor, node, name, value)
         traceOp("setProp", node?.type, startNs)
         return
@@ -720,12 +776,17 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         // Typeface.create(custom, style) can fail to preserve the glyphs if the style (e.g. Bold) isn't supported by the font file.
         if (family.contains("Icon")) {
           view.typeface = custom
+          view.includeFontPadding = false
+          view.gravity = Gravity.CENTER
         } else {
           view.typeface = Typeface.create(custom, style)
+          view.includeFontPadding = true
         }
       } else {
         view.typeface = Typeface.create(family, style)
+        view.includeFontPadding = true
       }
+      markSurfaceDirtyForNode(id, "textStyle:fontFamily")
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
@@ -781,6 +842,20 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     right: Int,
     bottom: Int,
   ) {
+    val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
+    if (surfaceId >= 1048576) {
+      layoutTransitionFrames.remove(nodeId)
+      val node = nodeStates[nodeId] ?: return
+      val view = node.view
+      node.layoutAnimator?.cancel()
+      node.layoutAnimator = null
+      view.translationX = 0f
+      view.translationY = 0f
+      view.scaleX = 1f
+      view.scaleY = 1f
+      logPortalText("portal-transition-bypass", nodeId, view)
+      return
+    }
     val node = nodeStates[nodeId] ?: return
     val transition = node.layoutTransition ?: run {
       layoutTransitionFrames.remove(nodeId)
@@ -839,6 +914,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         view.translationY = 0f
         view.scaleX = 1f
         view.scaleY = 1f
+        logPortalText("transition-reset", nodeId, view)
       }
       return
     }
@@ -850,6 +926,12 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     view.translationY = deltaY
     view.scaleX = scaleX
     view.scaleY = scaleY
+    logPortalText(
+      "transition-start",
+      nodeId,
+      view,
+      " delta=(${"%.1f".format(deltaX)},${"%.1f".format(deltaY)}) scale=(${"%.2f".format(scaleX)},${"%.2f".format(scaleY)})",
+    )
 
     val animator = view.animate()
       .translationX(0f)
@@ -859,7 +941,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       .setStartDelay(transition.delayMs.coerceAtLeast(0L))
       .setDuration(transition.durationMs.coerceAtLeast(0L))
       .setInterpolator(transition.easing.toInterpolator())
-      .withEndAction { node.layoutAnimator = null }
+      .withEndAction {
+        node.layoutAnimator = null
+        logPortalText("transition-end", nodeId, view)
+      }
 
     node.layoutAnimator = animator
     animator.start()
@@ -880,6 +965,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (!handledByDescriptor && view is TextView) {
       node?.cachedText = text
       applyTextValue(id, view, text)
+      logPortalText("set-text", id, view)
     }
     traceOp("setText", node?.type, startNs)
   }
@@ -925,7 +1011,21 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val parent = if (parentId == 0 || isSurfaceRoot) rootViewForSurface(surfaceId) else nodes[parentId]
     val previousParentId = parents[childId]
+    if (isSurfaceRoot || parentState?.type == "text" || nodeStates[childId]?.type == "text") {
+      logPortalLifecycle(
+        "insert-begin",
+        parentId,
+        childId,
+        " index=$index previousParent=${previousParentId ?: -1}",
+      )
+    }
     if (previousParentId != null && previousParentId != parentId) {
+      logPortalLifecycle(
+        "insert-detach-previous",
+        previousParentId,
+        childId,
+        " nextParent=$parentId",
+      )
       children[previousParentId]?.remove(childId as Any?)
       nodeStates[previousParentId]?.textChildren?.removeAll { it == childId }
     }
@@ -946,7 +1046,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     } else {
       nodeSurfaces[childId] = surfaceId
     }
-
     val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
     if (descriptor != null && nodeStates[childId] != null) {
       descriptor.onChildInserted(this, parentState!!, nodeStates[childId]!!, index)
@@ -954,6 +1053,12 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
     if (parent is TextView && child is TextView) {
       // Text composition is handled by the descriptor via updateComposedText
+      logPortalLifecycle(
+        "insert-text-virtual",
+        parentId,
+        childId,
+        " index=$index",
+      )
       traceOp("insertChild", parentState?.type, startNs)
       return
     }
@@ -963,6 +1068,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val targetIndex = index.coerceIn(0, group.childCount)
     group.addView(child, targetIndex)
+    if (isSurfaceRoot || parentState?.type == "text" || nodeStates[childId]?.type == "text") {
+      logPortalLifecycle(
+        "insert-commit",
+        parentId,
+        childId,
+        " index=$targetIndex groupChildren=${group.childCount}",
+      )
+    }
     val actualParent = child.parent as? ViewGroup ?: group
     if (siblings.size > 1) {
       // Keep draw order aligned with logical zIndex without relying on native Z/elevation.
@@ -988,6 +1101,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val startNs = System.nanoTime()
     val child = nodes[childId] ?: return
     val parentState = nodeStates[parentId]
+    if (isSurfaceRootId(parentId) || parentState?.type == "text" || nodeStates[childId]?.type == "text") {
+      logPortalLifecycle("remove-begin", parentId, childId)
+    }
     
     val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
     if (descriptor != null && nodeStates[childId] != null) {
@@ -999,6 +1115,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     detachNode(childId)
     parents.remove(childId)
     (child.parent as? ViewGroup)?.removeView(child)
+    if (isSurfaceRootId(parentId) || parentState?.type == "text" || nodeStates[childId]?.type == "text") {
+      logPortalLifecycle("remove-commit", parentId, childId)
+    }
     markSurfaceDirtyForNode(childId, "removeChild")
     traceOp("removeChild", parentState?.type, startNs)
   }
@@ -1010,6 +1129,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val startNs = System.nanoTime()
     val type = nodeStates[nodeId]?.type
+    val parentId = parents[nodeId] ?: -1
+    if ((nodeSurfaces[nodeId] ?: activeSurfaceId) >= 1048576 || type == "text") {
+      logPortalLifecycle("drop-node", parentId, nodeId)
+    }
     destroyNode(nodeId)
     traceOp("dropNode", type, startNs)
   }
@@ -1312,10 +1435,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         val activePb = view.paddingBottom
         
         view.measure(widthSpec, heightSpec)
-        
+
         val mw = (view.measuredWidth.toFloat() - activePl - activePr).coerceAtLeast(0f)
         val mh = (view.measuredHeight.toFloat() - activePt - activePb).coerceAtLeast(0f)
-        
         view.setPadding(originalPl, originalPt, originalPr, originalPb)
         
         val mwBits = mw.toRawBits().toLong()
@@ -1590,7 +1712,20 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                 view.measure(widthMeasureSpec, heightMeasureSpec)
 
                 maybeStartLayoutTransition(nodeId, rLeft, rTop, rRight, rBottom)
-                view.layout(rLeft, rTop, rRight, rBottom)                
+                view.layout(rLeft, rTop, rRight, rBottom)
+                val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
+                if (surfaceId >= 1048576) {
+                  val nodeType = nodeStates[nodeId]?.type ?: "unknown"
+                  val parentId = parents[nodeId] ?: -1
+                  val parentType = nodeStates[parentId]?.type
+                  Log.d(
+                    PORTAL_ALIGN_LOG_TAG,
+                    "frame node=$nodeId type=$nodeType surface=$surfaceId parent=$parentId/${parentType ?: "surface"} frame=${view.debugPortalFrame()}",
+                  )
+                  if (nodeType == "text") {
+                    logPortalText("layout-frame", nodeId, view)
+                  }
+                }
                 if (layoutNodes.contains(nodeId)) {
                   noteLayoutDebug("mountFrame:onLayoutNode")
                   layoutEventBuffer.add(LayoutEvent(nodeId, pxToDp(left), pxToDp(top), pxToDp(width), pxToDp(height)))
@@ -1879,6 +2014,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     view.alpha = opacity
     view.translationX = translateX * density
     view.translationY = translateY * density
+    logPortalText(
+      "animated-style",
+      nodeId,
+      view,
+      " inputTranslate=(${"%.1f".format(translateX)},${"%.1f".format(translateY)})" +
+        " appliedTranslate=(${"%.1f".format(view.translationX)},${"%.1f".format(view.translationY)})",
+    )
     view.scaleX = scaleX
     view.scaleY = scaleY
     val has3dRotation = kotlin.math.abs(rotateX) > 0.001f || kotlin.math.abs(rotateY) > 0.001f

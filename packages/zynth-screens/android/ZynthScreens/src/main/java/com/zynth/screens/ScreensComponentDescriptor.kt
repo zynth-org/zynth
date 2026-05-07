@@ -21,7 +21,21 @@ fun createScreenContainerDescriptor(typeName: String): ZynthComponentDescriptor 
       false
     },
     onStyleApplied = { _, _ -> },
-    onSetHandler = { _, _ -> false },
+    onSetHandler = { node, event ->
+      val container = node.view as? ScreenTabsContainerView ?: return@ZynthComponentDescriptor false
+      when (event) {
+        "onNativeTabSelect" -> true
+        "onNativeTabMount" -> {
+          container.replaySurfaceIconMounts()
+          true
+        }
+        "onNativeTabUpdate" -> {
+          container.replaySurfaceIconMounts()
+          true
+        }
+        else -> false
+      }
+    },
     onReset = { _ -> },
   )
 }

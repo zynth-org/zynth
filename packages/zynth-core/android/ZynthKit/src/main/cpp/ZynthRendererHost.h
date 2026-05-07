@@ -363,7 +363,6 @@ public:
    * @brief Register or update a surface.
    */
   void registerSurface(int32_t surfaceId, float width, float height) {
-    __android_log_print(ANDROID_LOG_DEBUG, "ZynthHost", "registerSurface %d: %.1fx%.1f", surfaceId, width, height);
     auto &surface = surfaces_[surfaceId];
     surface.surfaceId = surfaceId;
     surface.width = width;
