@@ -33,7 +33,6 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
   companion object {
     private const val SURFACE_ICON_SIZE_DP = 24f
     private const val ICON_POSITION_FRAMES = 4
-    private const val ALIGN_LOG_TAG = "ZynthTabsAlign"
   }
 
   private data class SurfaceIconSlot(
@@ -199,10 +198,6 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
 
   fun setSelectedIndex(index: Int) {
     if (selectedIndex == index) return
-    Log.d(
-      ALIGN_LOG_TAG,
-      "select from=$selectedIndex to=$index visible=$visibleIndex pending=${pendingIndex ?: -1}",
-    )
     selectedIndex = index
     if (nativeTabBarEnabled && bottomNav.menu.size() > index) {
       bottomNav.menu.getItem(index).isChecked = true
@@ -236,6 +231,8 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
       }
       if (activeIndicatorColor != null) {
         bottomNav.itemActiveIndicatorColor = ColorStateList.valueOf(activeIndicatorColor)
+      } else {
+        bottomNav.itemActiveIndicatorColor = ColorStateList.valueOf(Color.parseColor("#E8DEF8"))
       }
       if (activeColor != null || inactiveColor != null) {
         val active = activeColor ?: Color.BLUE
@@ -415,6 +412,20 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
     val itemView = itemViewAt(slot.index) ?: return
     val iconView = findIconView(itemView)
     val activeIndicator = findActiveIndicatorView(itemView)
+    
+    if (activeIndicator != null) {
+      val desiredWidth = dpToPx(64f)
+      val desiredHeight = dpToPx(32f)
+      if (activeIndicator.layoutParams?.width != desiredWidth || activeIndicator.layoutParams?.height != desiredHeight) {
+        activeIndicator.layoutParams?.width = desiredWidth
+        activeIndicator.layoutParams?.height = desiredHeight
+        activeIndicator.requestLayout()
+      }
+      if (activeIndicator.visibility != View.VISIBLE) {
+        activeIndicator.visibility = View.VISIBLE
+      }
+    }
+
     val anchor = iconView ?: itemView
     if (anchor.width <= 0 || anchor.height <= 0 || iconOverlay.width <= 0) return
 
@@ -452,20 +463,6 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
       rootTop.toInt(),
       rootLeft.toInt() + iconSizePx,
       rootTop.toInt() + iconSizePx,
-    )
-
-    Log.d(
-      ALIGN_LOG_TAG,
-      buildString {
-        append("position route=${slot.routeKey} index=${slot.index} active=${slot.index == selectedIndex} ")
-        append("item=${viewFrame(itemView)} ")
-        append("icon=${viewFrame(iconView)} ")
-        append("anchor=${viewFrame(anchor)} ")
-        append("indicator=${viewFrame(activeIndicator)} ")
-        append("wrapper=${viewFrame(slot.wrapper)} ")
-        append("portalRoot=${viewFrame(slot.portal.rootView)} ")
-        append("computedRoot=(${rootLeft.toInt()},${rootTop.toInt()},$iconSizePx,$iconSizePx)")
-      },
     )
 
     slot.wrapper.visibility = if (shouldShowNativeTabBar()) View.VISIBLE else View.INVISIBLE

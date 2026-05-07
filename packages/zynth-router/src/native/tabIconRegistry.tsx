@@ -24,7 +24,6 @@ interface MountedIcon {
   getProps: () => IconRenderProps;
 }
 
-const LOG_PREFIX = "[ZynthTabsJS]";
 const registry = new Map<string, RegistryEntry>();
 const mounted = new Map<number, MountedIcon>();
 const surfacesByKey = new Map<string, Set<number>>();
@@ -54,16 +53,9 @@ function mountIcon(
 
   // If already mounted, just update the signals.
   if (current) {
-    console.log(
-      `${LOG_PREFIX} update surface=${surfaceId} route=${entry.routeKey} active=${props.active} color=${props.color}`
-    );
     current.setProps(props);
     return;
   }
-
-  console.log(
-    `${LOG_PREFIX} mount surface=${surfaceId} route=${entry.routeKey} active=${props.active} color=${props.color}`
-  );
 
   let disposeFn: () => void = () => undefined;
   const portal = createPortalSurfaceHandle(surfaceId);
@@ -73,9 +65,6 @@ function mountIcon(
 
   portal.run(() => {
     disposeFn = render(() => {
-      console.log(
-        `${LOG_PREFIX} render surface=${surfaceId} route=${entry.routeKey} active=${active()} color=${color()}`
-      );
       return (
         <View
           style={{
@@ -85,7 +74,7 @@ function mountIcon(
             alignItems: "center",
           }}
           >
-          {() =>
+          {
             entry.owner
               ? runWithOwner(entry.owner, () =>
                   entry.factory({
@@ -105,17 +94,11 @@ function mountIcon(
     key: entry.routeKey,
     getProps: () => ({ active: active(), color: color() }),
     setProps: (nextProps: IconRenderProps) => {
-      console.log(
-        `${LOG_PREFIX} setProps surface=${surfaceId} route=${entry.routeKey} active=${nextProps.active} color=${nextProps.color}`
-      );
       setActive(nextProps.active);
       setColor(nextProps.color);
     },
     dispose: () => {
       portal.run(() => {
-        console.log(
-          `${LOG_PREFIX} dispose surface=${surfaceId} route=${entry.routeKey}`
-        );
         disposeFn();
         flushHostQueue();
       });
@@ -153,17 +136,11 @@ function rerenderMountedIcons(routeKey: string) {
   if (!entry) return;
   const surfaces = surfacesByKey.get(routeKey);
   if (!surfaces || surfaces.size === 0) return;
-  console.log(
-    `${LOG_PREFIX} rerender route=${routeKey} surfaces=${Array.from(surfaces.values()).join(",")}`
-  );
   const surfaceIds = Array.from(surfaces.values());
   for (const surfaceId of surfaceIds) {
     const mountedEntry = mounted.get(surfaceId);
     const previousProps = mountedEntry?.getProps();
     if (mountedEntry) {
-      console.log(
-        `${LOG_PREFIX} rerender-dispose surface=${surfaceId} route=${routeKey}`
-      );
       mountedEntry.dispose();
       mounted.delete(surfaceId);
     }
@@ -178,9 +155,6 @@ export function renderNativeTabIcon(
   active: boolean,
   color: string
 ): boolean {
-  console.log(
-    `${LOG_PREFIX} native-event surface=${surfaceId} route=${routeKey} active=${active} color=${color}`
-  );
   const entry = registry.get(routeKey);
   if (!entry) {
     let pending = pendingByKey.get(routeKey);
@@ -206,7 +180,6 @@ export function disposeNativeTabIcon(surfaceId: number) {
 }
 
 export function registerNativeTabIcon(entry: RegistryEntry) {
-  console.log(`${LOG_PREFIX} register route=${entry.routeKey}`);
   const current = registry.get(entry.routeKey);
   if (
     current &&
