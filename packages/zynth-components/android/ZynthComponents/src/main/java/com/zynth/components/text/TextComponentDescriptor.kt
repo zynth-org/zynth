@@ -1,5 +1,6 @@
 package com.zynth.components.text
 
+import android.content.Context
 import android.graphics.Typeface
 import android.util.Log
 import android.os.SystemClock
@@ -83,6 +84,20 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
   }
 }
 
+
+private val measureViews = java.util.WeakHashMap<ZynthUIManager, TextView>()
+
+private fun getMeasureView(manager: ZynthUIManager, context: Context): TextView {
+  synchronized(measureViews) {
+    return measureViews.getOrPut(manager) {
+      ZynthTextView(context).apply {
+        // Ensure measurement view never has padding
+        setPadding(0, 0, 0, 0)
+      }
+    }
+  }
+}
+
 /**
  * Creates and returns the Text component descriptor.
  */
@@ -137,22 +152,42 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           return@setMeasureHandler measuredWidth to measuredHeight
         }
 
-        // Temporarily clear padding for measurement as Yoga provides content-only constraints
-        // and expects content-only dimensions in return.
-        val pl = textView.paddingLeft
-        val pt = textView.paddingTop
-        val pr = textView.paddingRight
-        val pb = textView.paddingBottom
-        textView.setPadding(0, 0, 0, 0)
+        // Use a dedicated measurement view to avoid race conditions with the UI thread.
+        // The UI thread may be measuring the live textView instance during transitions,
+        // which causes IllegalStateException if measured concurrently on the JS/Layout thread.
+        val measureView = getMeasureView(manager, textView.context)
+        val measuredWidth: Float
+        val measuredHeight: Float
 
-        textView.measure(widthSpec, heightSpec)
-        val measuredWidth = textView.measuredWidth.coerceAtLeast(1).toFloat()
-        val measuredHeight = textView.measuredHeight
-          .coerceAtLeast((textView.textSize * 1.2f).roundToInt())
-          .toFloat()
-        
-        // Restore padding
-        textView.setPadding(pl, pt, pr, pb)
+        synchronized(measureView) {
+          // Sync state to measureView. We use TypedValue.COMPLEX_UNIT_PX to ensure exact match.
+          measureView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textView.textSize)
+          measureView.typeface = textView.typeface
+          measureView.text = textView.text
+          measureView.letterSpacing = textView.letterSpacing
+          measureView.maxLines = textView.maxLines
+          measureView.ellipsize = textView.ellipsize
+          measureView.includeFontPadding = textView.includeFontPadding
+
+          measureView.measure(widthSpec, heightSpec)
+          
+          var mw = measureView.measuredWidth.toFloat()
+          var mh = measureView.measuredHeight.toFloat()
+          
+          // Fallback: If measurement returned 0 but text is not empty, use a sensible default
+          // to prevent the component from completely disappearing.
+          if (mw <= 0f && currentText.isNotEmpty()) {
+             Log.w(measureTag, "Measurement returned 0 width for non-empty text: node=${node.id} text='${node.cachedText.take(24)}'")
+             mw = textView.paint.measureText(currentText.toString()).coerceAtLeast(1f)
+          }
+          if (mh <= 0f && currentText.isNotEmpty()) {
+             Log.w(measureTag, "Measurement returned 0 height for non-empty text: node=${node.id}")
+             mh = (textView.textSize * 1.2f).coerceAtLeast(1f)
+          }
+
+          measuredWidth = mw.coerceAtLeast(1f)
+          measuredHeight = mh.coerceAtLeast((textView.textSize * 1.2f).roundToInt().toFloat())
+        }
 
         node.attachments[textMeasureCacheKey] =
           TextMeasureCache(cacheKey, measuredWidth, measuredHeight)

@@ -1257,77 +1257,82 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   @androidx.annotation.Keep
   fun measureNode(id: Int, width: Float, widthMode: Int, height: Float, heightMode: Int): Long {
-    val view = nodes[id] ?: return 0L
-    
-    val handler = layoutEngine.getMeasureHandler(id)
-    if (handler != null) {
-      val input = com.zynth.kit.layout.MeasureInput(
-        width = width,
-        widthMode = when (widthMode) {
-          1 -> com.zynth.kit.layout.MeasureMode.EXACTLY
-          2 -> com.zynth.kit.layout.MeasureMode.AT_MOST
-          else -> com.zynth.kit.layout.MeasureMode.UNDEFINED
-        },
-        height = height,
-        heightMode = when (heightMode) {
-          1 -> com.zynth.kit.layout.MeasureMode.EXACTLY
-          2 -> com.zynth.kit.layout.MeasureMode.AT_MOST
-          else -> com.zynth.kit.layout.MeasureMode.UNDEFINED
-        }
-      )
-      val result = handler(input)
-      val mw = result.first
-      val mh = result.second
-      val mwBits = mw.toRawBits().toLong()
-      val mhBits = mh.toRawBits().toLong()
-      return (mwBits shl 32) or (mhBits and 0xFFFFFFFFL)
-    }
-
-    val widthSpec = when (widthMode) {
-      0 -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-      1 -> View.MeasureSpec.makeMeasureSpec(width.toInt(), View.MeasureSpec.EXACTLY)
-      2 -> View.MeasureSpec.makeMeasureSpec(width.toInt(), View.MeasureSpec.AT_MOST)
-      else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-    }
-    
-    val heightSpec = when (heightMode) {
-      0 -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-      1 -> View.MeasureSpec.makeMeasureSpec(height.toInt(), View.MeasureSpec.EXACTLY)
-      2 -> View.MeasureSpec.makeMeasureSpec(height.toInt(), View.MeasureSpec.AT_MOST)
-      else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-    }
-
-    if (view is TextView) {
-      val originalPl = view.paddingLeft
-      val originalPt = view.paddingTop
-      val originalPr = view.paddingRight
-      val originalPb = view.paddingBottom
+    try {
+      val view = nodes[id] ?: return 0L
       
-      view.setPadding(0, 0, 0, 0)
+      val handler = layoutEngine.getMeasureHandler(id)
+      if (handler != null) {
+        val input = com.zynth.kit.layout.MeasureInput(
+          width = width,
+          widthMode = when (widthMode) {
+            1 -> com.zynth.kit.layout.MeasureMode.EXACTLY
+            2 -> com.zynth.kit.layout.MeasureMode.AT_MOST
+            else -> com.zynth.kit.layout.MeasureMode.UNDEFINED
+          },
+          height = height,
+          heightMode = when (heightMode) {
+            1 -> com.zynth.kit.layout.MeasureMode.EXACTLY
+            2 -> com.zynth.kit.layout.MeasureMode.AT_MOST
+            else -> com.zynth.kit.layout.MeasureMode.UNDEFINED
+          }
+        )
+        val result = handler(input)
+        val mw = result.first
+        val mh = result.second
+        val mwBits = mw.toRawBits().toLong()
+        val mhBits = mh.toRawBits().toLong()
+        return (mwBits shl 32) or (mhBits and 0xFFFFFFFFL)
+      }
+
+      val widthSpec = when (widthMode) {
+        0 -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        1 -> View.MeasureSpec.makeMeasureSpec(width.toInt(), View.MeasureSpec.EXACTLY)
+        2 -> View.MeasureSpec.makeMeasureSpec(width.toInt(), View.MeasureSpec.AT_MOST)
+        else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+      }
       
-      val activePl = view.paddingLeft
-      val activePt = view.paddingTop
-      val activePr = view.paddingRight
-      val activePb = view.paddingBottom
+      val heightSpec = when (heightMode) {
+        0 -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        1 -> View.MeasureSpec.makeMeasureSpec(height.toInt(), View.MeasureSpec.EXACTLY)
+        2 -> View.MeasureSpec.makeMeasureSpec(height.toInt(), View.MeasureSpec.AT_MOST)
+        else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+      }
+
+      if (view is TextView) {
+        val originalPl = view.paddingLeft
+        val originalPt = view.paddingTop
+        val originalPr = view.paddingRight
+        val originalPb = view.paddingBottom
+        
+        view.setPadding(0, 0, 0, 0)
+        
+        val activePl = view.paddingLeft
+        val activePt = view.paddingTop
+        val activePr = view.paddingRight
+        val activePb = view.paddingBottom
+        
+        view.measure(widthSpec, heightSpec)
+        
+        val mw = (view.measuredWidth.toFloat() - activePl - activePr).coerceAtLeast(0f)
+        val mh = (view.measuredHeight.toFloat() - activePt - activePb).coerceAtLeast(0f)
+        
+        view.setPadding(originalPl, originalPt, originalPr, originalPb)
+        
+        val mwBits = mw.toRawBits().toLong()
+        val mhBits = mh.toRawBits().toLong()
+        return (mwBits shl 32) or (mhBits and 0xFFFFFFFFL)
+      }
       
       view.measure(widthSpec, heightSpec)
-      
-      val mw = (view.measuredWidth.toFloat() - activePl - activePr).coerceAtLeast(0f)
-      val mh = (view.measuredHeight.toFloat() - activePt - activePb).coerceAtLeast(0f)
-      
-      view.setPadding(originalPl, originalPt, originalPr, originalPb)
-      
+      val mw = view.measuredWidth.toFloat()
+      val mh = view.measuredHeight.toFloat()
       val mwBits = mw.toRawBits().toLong()
       val mhBits = mh.toRawBits().toLong()
       return (mwBits shl 32) or (mhBits and 0xFFFFFFFFL)
+    } catch (e: Throwable) {
+      Log.e("ZynthUIManager", "Error measuring node $id: ${e.message}", e)
+      return 0L
     }
-    
-    view.measure(widthSpec, heightSpec)
-    val mw = view.measuredWidth.toFloat()
-    val mh = view.measuredHeight.toFloat()
-    val mwBits = mw.toRawBits().toLong()
-    val mhBits = mh.toRawBits().toLong()
-    return (mwBits shl 32) or (mhBits and 0xFFFFFFFFL)
   }
 
   fun applyBatchTypedBuffer(buffer: ByteBuffer, opCount: Int, strings: Array<String?>) {
@@ -1573,19 +1578,19 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
               val frameHeight = rBottom - rTop
               
               val rect = layoutFrames[nodeId] ?: android.graphics.Rect().also { layoutFrames[nodeId] = it }
-              
+
               if (rect.left != rLeft || rect.top != rTop || rect.right != rRight || rect.bottom != rBottom) {
                 rect.set(rLeft, rTop, rRight, rBottom)
                 if (view is ZynthLayoutView) {
                   view.updateYogaLayout(frameWidth, frameHeight)
                 }
+
                 val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(frameWidth, View.MeasureSpec.EXACTLY)
                 val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(frameHeight, View.MeasureSpec.EXACTLY)
                 view.measure(widthMeasureSpec, heightMeasureSpec)
-                
+
                 maybeStartLayoutTransition(nodeId, rLeft, rTop, rRight, rBottom)
-                view.layout(rLeft, rTop, rRight, rBottom)
-                
+                view.layout(rLeft, rTop, rRight, rBottom)                
                 if (layoutNodes.contains(nodeId)) {
                   noteLayoutDebug("mountFrame:onLayoutNode")
                   layoutEventBuffer.add(LayoutEvent(nodeId, pxToDp(left), pxToDp(top), pxToDp(width), pxToDp(height)))
