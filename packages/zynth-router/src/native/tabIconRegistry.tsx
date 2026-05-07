@@ -2,6 +2,7 @@ import {
   render,
   getHost,
   createPortalSurfaceHandle,
+  withHostBatch,
 } from "@zynthjs/core";
 import { runWithOwner, createSignal, type Owner } from "solid-js";
 import type { TabIconFactory } from "../types";
@@ -137,16 +138,19 @@ function rerenderMountedIcons(routeKey: string) {
   const surfaces = surfacesByKey.get(routeKey);
   if (!surfaces || surfaces.size === 0) return;
   const surfaceIds = Array.from(surfaces.values());
-  for (const surfaceId of surfaceIds) {
-    const mountedEntry = mounted.get(surfaceId);
-    const previousProps = mountedEntry?.getProps();
-    if (mountedEntry) {
-      mountedEntry.dispose();
-      mounted.delete(surfaceId);
+
+  withHostBatch({ kind: "mount", scope: "tab-icon" }, () => {
+    for (const surfaceId of surfaceIds) {
+      const mountedEntry = mounted.get(surfaceId);
+      const previousProps = mountedEntry?.getProps();
+      if (mountedEntry) {
+        mountedEntry.dispose();
+        mounted.delete(surfaceId);
+      }
+      const props = previousProps ?? { active: false, color: "#ffffff" };
+      mountIcon(surfaceId, entry, props);
     }
-    const props = previousProps ?? { active: false, color: "#ffffff" };
-    mountIcon(surfaceId, entry, props);
-  }
+  });
 }
 
 export function renderNativeTabIcon(
@@ -171,7 +175,9 @@ export function renderNativeTabIcon(
     }
     return false;
   }
-  mountIcon(surfaceId, entry, { active, color });
+  withHostBatch({ kind: "mount", scope: "tab-icon" }, () => {
+    mountIcon(surfaceId, entry, { active, color });
+  });
   return true;
 }
 
@@ -188,16 +194,19 @@ export function registerNativeTabIcon(entry: RegistryEntry) {
   ) {
     return;
   }
-  registry.set(entry.routeKey, entry);
-  rerenderMountedIcons(entry.routeKey);
 
-  const pending = pendingByKey.get(entry.routeKey);
-  if (pending && pending.size > 0) {
-    for (const [surfaceId, props] of pending.entries()) {
-      mountIcon(surfaceId, entry, props);
+  withHostBatch({ kind: "mount", scope: "tab-icon" }, () => {
+    registry.set(entry.routeKey, entry);
+    rerenderMountedIcons(entry.routeKey);
+
+    const pending = pendingByKey.get(entry.routeKey);
+    if (pending && pending.size > 0) {
+      for (const [surfaceId, props] of pending.entries()) {
+        mountIcon(surfaceId, entry, props);
+      }
+      pendingByKey.delete(entry.routeKey);
     }
-    pendingByKey.delete(entry.routeKey);
-  }
+  });
 }
 
 export function unregisterNativeTabIcon(routeKey: string) {
