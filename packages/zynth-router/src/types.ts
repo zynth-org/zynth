@@ -217,7 +217,7 @@ export interface TabIconDescriptor {
  */
 export type TabIconFactory = (props: {
   active: boolean;
-  color: string;
+  color: Accessor<string>;
 }) => JSX.Element;
 
 /**

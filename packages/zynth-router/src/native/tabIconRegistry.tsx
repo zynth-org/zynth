@@ -3,7 +3,7 @@ import {
   getHost,
   createPortalSurfaceHandle,
 } from "@zynthjs/core";
-import { runWithOwner, type Owner } from "solid-js";
+import { runWithOwner, createSignal, type Owner } from "solid-js";
 import type { TabIconFactory } from "../types";
 
 interface RegistryEntry {
@@ -52,28 +52,12 @@ function mountIcon(
 ) {
   const current = mounted.get(surfaceId);
 
-  // If already mounted, rebuild the subtree with the next props.
-  // For Android tab icon portal surfaces we want correctness over cleverness:
-  // active/color flips must deterministically repaint even when the nested
-  // host text path is sensitive to stale reactive children.
+  // If already mounted, just update the signals.
   if (current) {
     console.log(
       `${LOG_PREFIX} update surface=${surfaceId} route=${entry.routeKey} active=${props.active} color=${props.color}`
     );
-    const previousProps = current.getProps();
-    if (
-      previousProps.active === props.active &&
-      previousProps.color === props.color
-    ) {
-      current.setProps(props);
-      return;
-    }
-    console.log(
-      `${LOG_PREFIX} remount surface=${surfaceId} route=${entry.routeKey} prevActive=${previousProps.active} prevColor=${previousProps.color} nextActive=${props.active} nextColor=${props.color}`
-    );
-    current.dispose();
-    mounted.delete(surfaceId);
-    mountIcon(surfaceId, entry, props);
+    current.setProps(props);
     return;
   }
 
@@ -84,10 +68,13 @@ function mountIcon(
   let disposeFn: () => void = () => undefined;
   const portal = createPortalSurfaceHandle(surfaceId);
 
+  const [active, setActive] = createSignal(props.active);
+  const [color, setColor] = createSignal(props.color);
+
   portal.run(() => {
     disposeFn = render(() => {
       console.log(
-        `${LOG_PREFIX} render surface=${surfaceId} route=${entry.routeKey} active=${props.active} color=${props.color}`
+        `${LOG_PREFIX} render surface=${surfaceId} route=${entry.routeKey} active=${active()} color=${color()}`
       );
       return (
         <View
@@ -98,15 +85,15 @@ function mountIcon(
             alignItems: "center",
           }}
           >
-          {
+          {() =>
             entry.owner
               ? runWithOwner(entry.owner, () =>
                   entry.factory({
-                    active: props.active,
-                    color: props.color,
+                    active: active(),
+                    color,
                   })
                 )
-              : entry.factory({ active: props.active, color: props.color })
+              : entry.factory({ active: active(), color })
           }
         </View>
       );
@@ -116,11 +103,13 @@ function mountIcon(
 
   const mountedEntry: MountedIcon = {
     key: entry.routeKey,
-    getProps: () => ({ active: props.active, color: props.color }),
+    getProps: () => ({ active: active(), color: color() }),
     setProps: (nextProps: IconRenderProps) => {
       console.log(
-        `${LOG_PREFIX} setProps-noop surface=${surfaceId} route=${entry.routeKey} active=${nextProps.active} color=${nextProps.color}`
+        `${LOG_PREFIX} setProps surface=${surfaceId} route=${entry.routeKey} active=${nextProps.active} color=${nextProps.color}`
       );
+      setActive(nextProps.active);
+      setColor(nextProps.color);
     },
     dispose: () => {
       portal.run(() => {

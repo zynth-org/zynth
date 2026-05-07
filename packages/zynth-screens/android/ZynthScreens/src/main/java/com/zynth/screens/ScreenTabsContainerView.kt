@@ -87,6 +87,9 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
       clipChildren = false
       clipToPadding = false
       labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
+      isItemActiveIndicatorEnabled = true
+      itemActiveIndicatorWidth = dpToPx(64f)
+      itemActiveIndicatorHeight = dpToPx(32f)
       setOnItemSelectedListener { item ->
         val index = item.itemId
         if (index != selectedIndex && uiManager != null && nodeId != -1) {

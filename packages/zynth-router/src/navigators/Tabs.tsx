@@ -151,7 +151,7 @@ function DefaultTabBar(
               >
                 {(options().tab?.icon as any)?.({
                   active: isActive(),
-                  color: tintColor(),
+                  color: tintColor,
                 })}
                 <Show when={tabBarShowLabels}>
                   <Text
