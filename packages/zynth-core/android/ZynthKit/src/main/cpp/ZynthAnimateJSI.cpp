@@ -23,6 +23,7 @@ constexpr const char *kTag = "ZynthAnimate";
 constexpr const char *kAnimateKey = "__zynth_animate";
 constexpr const char *kSharedValueKey = "__zynth_shared_value";
 constexpr const char *kInterpolationKey = "__zynth_interpolation";
+constexpr const char *kDerivedValueKey = "__zynth_derived_value";
 
 JavaVM *gVm = nullptr;
 jclass gFrameClockClass = nullptr;
@@ -35,13 +36,15 @@ using SetSharedSignalFn = bool (*)(void *, int, double);
 using ApplyAnimatedStyleFn =
     void (*)(void *, int, float, float, float, float, float, float, float, float, float, float, float);
 using ApplyAnimatedLayoutStyleFn =
-    void (*)(void *, int, float, float, float, float, float, float, float);
+    void (*)(void *, int, float, float, float, float, float, float, float, float, float);
+using PerformNativeLayoutFn = void (*)(void *);
 
 CreateSharedSignalFn gCreateSharedSignal = nullptr;
 GetSharedSignalFn gGetSharedSignal = nullptr;
 SetSharedSignalFn gSetSharedSignal = nullptr;
 ApplyAnimatedStyleFn gApplyAnimatedStyle = nullptr;
 ApplyAnimatedLayoutStyleFn gApplyAnimatedLayoutStyle = nullptr;
+PerformNativeLayoutFn gPerformNativeLayout = nullptr;
 
 using RegisterInstallerFn = void (*)(ZynthJSIPluginInstaller);
 using RegisterSharedSignalCallbackFn = void (*)(ZynthSharedSignalChangedCallback);
@@ -92,6 +95,8 @@ void resolveCoreSymbols() {
       dlsym(handle, "ZynthApplyAnimatedStyle"));
   gApplyAnimatedLayoutStyle = reinterpret_cast<ApplyAnimatedLayoutStyleFn>(
       dlsym(handle, "ZynthApplyAnimatedLayoutStyle"));
+  gPerformNativeLayout = reinterpret_cast<PerformNativeLayoutFn>(
+      dlsym(handle, "ZynthPerformNativeLayout"));
 }
 
 struct SharedAnimation {
@@ -126,6 +131,8 @@ struct MappedValue {
   bool isInterpolation = false;
   int sharedId = 0;
   double numberValue = 0.0;
+  double multiplier = 1.0;
+  double offset = 0.0;
   std::vector<double> inputRange;
   std::vector<double> outputRange;
   std::string extrapolateLeft = "clamp";
@@ -154,6 +161,8 @@ struct StyleMapper {
   MappedValue maxWidth;
   MappedValue maxHeight;
   MappedValue flexBasis;
+  MappedValue paddingBottom;
+  MappedValue marginBottom;
 };
 
 bool extractSharedValueId(Runtime &rt, const Value &value, int &outId) {
@@ -192,11 +201,43 @@ bool parseAngleString(const std::string &input, double &outDegrees) {
 }
 
 bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool isAngle = false) {
+  if (value.isObject()) {
+    Object obj = value.getObject(rt);
+    if (obj.hasProperty(rt, kDerivedValueKey)) {
+      Value derivedValue = obj.getProperty(rt, kDerivedValueKey);
+      if (!derivedValue.isObject()) return false;
+      Object derivedObj = derivedValue.getObject(rt);
+      if (!derivedObj.hasProperty(rt, "source")) return false;
+
+      MappedValue source;
+      if (!parseMappedValue(rt, derivedObj.getProperty(rt, "source"), source, isAngle)) {
+        return false;
+      }
+
+      out = source;
+      if (derivedObj.hasProperty(rt, "multiplier")) {
+        Value multiplierValue = derivedObj.getProperty(rt, "multiplier");
+        if (multiplierValue.isNumber()) {
+          out.multiplier = multiplierValue.asNumber();
+        }
+      }
+      if (derivedObj.hasProperty(rt, "offset")) {
+        Value offsetValue = derivedObj.getProperty(rt, "offset");
+        if (offsetValue.isNumber()) {
+          out.offset = offsetValue.asNumber();
+        }
+      }
+      return true;
+    }
+  }
+
   int sharedId = 0;
   if (extractSharedValueId(rt, value, sharedId)) {
     out.hasValue = true;
     out.isShared = true;
     out.sharedId = sharedId;
+    out.multiplier = 1.0;
+    out.offset = 0.0;
     return true;
   }
   if (value.isObject()) {
@@ -240,6 +281,8 @@ bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool is
       out.isInterpolation = true;
       out.isShared = false;
       out.sharedId = sourceId;
+      out.multiplier = 1.0;
+      out.offset = 0.0;
       out.inputRange.clear();
       out.outputRange.clear();
       out.inputRange.reserve(count);
@@ -274,7 +317,10 @@ bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool is
   if (value.isNumber()) {
     out.hasValue = true;
     out.isShared = false;
+    out.isInterpolation = false;
     out.numberValue = value.asNumber();
+    out.multiplier = 1.0;
+    out.offset = 0.0;
     return true;
   }
   if (isAngle && value.isString()) {
@@ -283,7 +329,10 @@ bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool is
     if (parseAngleString(text, degrees)) {
       out.hasValue = true;
       out.isShared = false;
+      out.isInterpolation = false;
       out.numberValue = degrees;
+      out.multiplier = 1.0;
+      out.offset = 0.0;
       return true;
     }
   }
@@ -325,20 +374,25 @@ double interpolateMappedValue(const MappedValue &value, double source, double fa
 
 double resolveMappedValue(const MappedValue &value, void *state, double fallback) {
   if (!value.hasValue) return fallback;
+  auto applyDerived = [&](double base) -> double {
+    if (!std::isfinite(base)) return fallback;
+    return base * value.multiplier + value.offset;
+  };
   if (value.isInterpolation) {
     if (!gGetSharedSignal) return fallback;
     bool found = false;
     double source = gGetSharedSignal(state, value.sharedId, &found);
     if (!found || !std::isfinite(source)) return fallback;
-    return interpolateMappedValue(value, source, fallback);
+    return applyDerived(interpolateMappedValue(value, source, fallback));
   }
   if (value.isShared) {
     if (!gGetSharedSignal) return fallback;
     bool found = false;
     double result = gGetSharedSignal(state, value.sharedId, &found);
-    return found ? result : fallback;
+    return found ? applyDerived(result) : fallback;
   }
-  return value.numberValue;
+
+  return applyDerived(value.numberValue);
 }
 
 class ZynthAnimateRuntime {
@@ -621,6 +675,13 @@ class ZynthAnimateRuntime {
       }
     }
     applyStyleMappers();
+    
+    // Trigger synchronous native layout pass for all surfaces affected by animations in this frame.
+    // This extracts new frames from Yoga and commits them to the UI thread.
+    if (gPerformNativeLayout) {
+      gPerformNativeLayout(state);
+    }
+
     if (hasActiveAnimations()) {
       ensureFrame();
     }
@@ -687,6 +748,12 @@ class ZynthAnimateRuntime {
     }
     if (styleObj.hasProperty(rt, "flexBasis")) {
       parseMappedValue(rt, styleObj.getProperty(rt, "flexBasis"), mapper.flexBasis);
+    }
+    if (styleObj.hasProperty(rt, "paddingBottom")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "paddingBottom"), mapper.paddingBottom);
+    }
+    if (styleObj.hasProperty(rt, "marginBottom")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "marginBottom"), mapper.marginBottom);
     }
     if (styleObj.hasProperty(rt, "transform")) {
       Value transformValue = styleObj.getProperty(rt, "transform");
@@ -805,6 +872,13 @@ class ZynthAnimateRuntime {
       float flexBasis = mapper.flexBasis.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.flexBasis, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
+      float paddingBottom = mapper.paddingBottom.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.paddingBottom, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      float marginBottom = mapper.marginBottom.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.marginBottom, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+          
       gApplyAnimatedLayoutStyle(
           state,
           mapper.nodeId,
@@ -814,7 +888,9 @@ class ZynthAnimateRuntime {
           minHeight,
           maxWidth,
           maxHeight,
-          flexBasis);
+          flexBasis,
+          paddingBottom,
+          marginBottom);
     }
   }
 

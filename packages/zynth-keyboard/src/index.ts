@@ -16,6 +16,7 @@ export {
   useKeyboardVisible,
   useKeyboardHeight,
   useKeyboardAnimating,
+  useKeyboardHeightSharedValue,
 } from "./hooks";
 
 // Controller (imperative API)

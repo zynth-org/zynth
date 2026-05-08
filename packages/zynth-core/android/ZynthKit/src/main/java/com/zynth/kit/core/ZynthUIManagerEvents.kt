@@ -242,6 +242,7 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
   for (id in ids) {
     val view = nodes[id] ?: continue
     val frame = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
+    val force = layoutPendingNodes.contains(id)
     val previous = layoutFrames[id]
     val changed = previous == null ||
       previous.left != frame.left ||
@@ -249,11 +250,12 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
       previous.width() != frame.width() ||
       previous.height() != frame.height()
     
-    if (!changed) {
+    if (!force && !changed) {
       continue
     }
     
     layoutFrames[id] = frame
+    layoutPendingNodes.remove(id)
     
     if (!alreadyBuffered.contains(id)) {
       layoutEventBuffer.add(

@@ -46,7 +46,7 @@ public:
     }
   }
 
-  void applyProp(YGNodeRef node, const ZynthPropMutation& mut) {
+  bool applyProp(YGNodeRef node, const ZynthPropMutation& mut) {
     const auto& v = mut.value;
     
     // Helper to get auto/percent/point values
@@ -113,18 +113,23 @@ public:
       case ZynthPropId::ColumnGap: if (v.kind == ZynthValueKind::Number) YGNodeStyleSetGap(node, YGGutterColumn, host_->dpToPx(static_cast<float>(v.number))); break;
 
       default:
-        break;
+        return false;
     }
+    return true;
   }
 
   /**
-   * @brief Calculate layout for all dirty surfaces and extract only the frames
-   *        that were actually affected by this commit's mutations.
+   * @brief Calculate layout for all dirty surfaces and extract the frames
+   *        that were affected.
    */
   void calculateLayoutForDirtySurfaces(ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
     ZynthPhaseTimer timer(telemetry.yogaCalculateUs);
     
     const auto& dirtySurfaces = host_->dirtySurfaces();
+    bool hasJsMutations = !commit.inserts.empty() || !commit.removes.empty() || 
+                         !commit.creates.empty() || !commit.layoutProps.empty() || 
+                         !commit.textProps.empty() || !commit.textMutations.empty();
+
     for (int32_t surfaceId : dirtySurfaces) {
       auto surfIt = host_->surfaces_.find(surfaceId);
       if (surfIt == host_->surfaces_.end()) {
@@ -140,21 +145,63 @@ public:
       
       // Calculate layout — Yoga skips clean subtrees internally
       YGNodeCalculateLayout(surface.rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
+
+      // If this is a native-only commit (e.g. from an animation frame), we won't have 
+      // JS mutation records to seed extractFramesForMutatedNodes. We must walk the tree
+      // to find what Yoga changed.
+      if (!hasJsMutations) {
+        extractFrames(surface.rootYoga, telemetry, commit);
+      }
     }
     
-    // Extract frames only for nodes mutated in this commit
-    extractFramesForMutatedNodes(telemetry, commit);
+    // Extract frames using the optimized mutation-seeded path if JS changes are present.
+    if (hasJsMutations) {
+      extractFramesForMutatedNodes(telemetry, commit);
+    }
     
     // Clear dirty
     host_->clearDirtySurfaces();
   }
 
-private:
   /**
-   * @brief Build a set of nodes that were directly mutated, expand it to
-   *        include ancestors (since parent dimensions may reflow), then
-   *        extract only those frames.
+   * @brief Full-tree frame extraction. 
    */
+  void extractFrames(YGNodeRef node, ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
+    if (!node) return;
+    
+    int32_t nodeId = static_cast<int32_t>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
+    
+    if (nodeId > 0 && YGNodeGetHasNewLayout(node)) {
+      auto* record = host_->getNode(nodeId);
+      if (record) {
+        float left = YGNodeLayoutGetLeft(node);
+        float top = YGNodeLayoutGetTop(node);
+        float width = YGNodeLayoutGetWidth(node);
+        float height = YGNodeLayoutGetHeight(node);
+        
+        if (record->lastFrame.left != left ||
+            record->lastFrame.top != top ||
+            record->lastFrame.width != width ||
+            record->lastFrame.height != height) {
+          record->lastFrame.left = left;
+          record->lastFrame.top = top;
+          record->lastFrame.width = width;
+          record->lastFrame.height = height;
+          record->lastFrame.changed = true;
+          
+          telemetry.changedFrameCount++;
+          commit.layoutFrames.push_back({nodeId, left, top, width, height});
+        }
+      }
+      YGNodeSetHasNewLayout(node, false);
+    }
+    
+    for (uint32_t i = 0; i < YGNodeGetChildCount(node); ++i) {
+      extractFrames(YGNodeGetChild(node, i), telemetry, commit);
+    }
+  }
+
+private:
   void extractFramesForMutatedNodes(ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
     // Seed: all nodes that were directly affected by this commit
     std::unordered_set<int32_t> dirtyNodes;
@@ -294,44 +341,6 @@ private:
       if (YGNodeGetHasNewLayout(record->yoga)) {
         YGNodeSetHasNewLayout(record->yoga, false);
       }
-    }
-  }
-
-  /**
-   * @brief Legacy full-tree frame extraction. Retained for fallback/debugging.
-   */
-  void extractFrames(YGNodeRef node, ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
-    if (!node) return;
-    
-    int32_t nodeId = static_cast<int32_t>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
-    
-    if (nodeId > 0 && YGNodeGetHasNewLayout(node)) {
-      auto* record = host_->getNode(nodeId);
-      if (record) {
-        float left = YGNodeLayoutGetLeft(node);
-        float top = YGNodeLayoutGetTop(node);
-        float width = YGNodeLayoutGetWidth(node);
-        float height = YGNodeLayoutGetHeight(node);
-        
-        if (record->lastFrame.left != left ||
-            record->lastFrame.top != top ||
-            record->lastFrame.width != width ||
-            record->lastFrame.height != height) {
-          record->lastFrame.left = left;
-          record->lastFrame.top = top;
-          record->lastFrame.width = width;
-          record->lastFrame.height = height;
-          record->lastFrame.changed = true;
-          
-          telemetry.changedFrameCount++;
-          commit.layoutFrames.push_back({nodeId, left, top, width, height});
-        }
-      }
-      YGNodeSetHasNewLayout(node, false);
-    }
-    
-    for (uint32_t i = 0; i < YGNodeGetChildCount(node); ++i) {
-      extractFrames(YGNodeGetChild(node, i), telemetry, commit);
     }
   }
 

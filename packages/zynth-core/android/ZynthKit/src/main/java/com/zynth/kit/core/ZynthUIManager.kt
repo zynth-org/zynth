@@ -223,6 +223,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   internal val touchListeners = HashMap<Int, View.OnTouchListener>()
   internal val layoutNodes = ConcurrentHashMap.newKeySet<Int>()
+  internal val layoutPendingNodes = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutDirtyNodes = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val layoutTransitionFrames = HashMap<Int, android.graphics.Rect>()
@@ -1075,6 +1076,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (name == "onLayout") {
       val isNewLayoutNode = layoutNodes.add(id)
       if (isNewLayoutNode) {
+        layoutPendingNodes.add(id)
         requestLayout("setHandler:onLayout")
       }
       traceOp("setHandler", node?.type, startNs)
@@ -1190,7 +1192,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     view.requestLayout()
   }
-
 
   fun applyBatch(json: String) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -1838,6 +1839,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     maxWidth: Float,
     maxHeight: Float,
     flexBasis: Float,
+    paddingBottom: Float,
+    marginBottom: Float
   ) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
       runOnMain {
@@ -1850,6 +1853,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           maxWidth,
           maxHeight,
           flexBasis,
+          paddingBottom,
+          marginBottom
         )
       }
       return
@@ -1863,6 +1868,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       maxWidth,
       maxHeight,
       flexBasis,
+      paddingBottom,
+      marginBottom
     )
   }
 
@@ -1875,27 +1882,86 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     maxWidth: Float,
     maxHeight: Float,
     flexBasis: Float,
+    paddingBottom: Float,
+    marginBottom: Float
   ) {
-    if (nodes[nodeId] == null) return
+    val view = nodes[nodeId] ?: return
     var changed = false
 
-    val applyDp = { name: String, value: Float ->
-      if (value.isFinite()) {
-        val px = dpToPx(value).roundToInt().toFloat()
+    fun applySize(target: String, value: Float) {
+      if (!value.isFinite()) return
+      val params = view.layoutParams ?: return
+      val next = dpToPx(value).roundToInt()
+      when (target) {
+        "width" -> {
+          if (params.width != next) {
+            params.width = next
+            view.layoutParams = params
+            changed = true
+          }
+        }
+        "height" -> {
+          if (params.height != next) {
+            params.height = next
+            view.layoutParams = params
+            changed = true
+          }
+        }
+      }
+    }
+
+    applySize("width", width)
+    applySize("height", height)
+
+    if (minWidth.isFinite()) {
+      val next = dpToPx(minWidth).roundToInt()
+      if (view.minimumWidth != next) {
+        view.minimumWidth = next
         changed = true
       }
     }
 
-    applyDp("width", width)
-    applyDp("height", height)
-    applyDp("minWidth", minWidth)
-    applyDp("minHeight", minHeight)
-    applyDp("maxWidth", maxWidth)
-    applyDp("maxHeight", maxHeight)
-    applyDp("flexBasis", flexBasis)
+    if (minHeight.isFinite()) {
+      val next = dpToPx(minHeight).roundToInt()
+      if (view.minimumHeight != next) {
+        view.minimumHeight = next
+        changed = true
+      }
+    }
+
+    maxWidth
+    maxHeight
+    flexBasis
+
+    if (paddingBottom.isFinite()) {
+      val next = dpToPx(paddingBottom).roundToInt()
+      if (view.paddingBottom != next) {
+        view.setPadding(
+          view.paddingLeft,
+          view.paddingTop,
+          view.paddingRight,
+          next,
+        )
+        changed = true
+      }
+    }
+
+    if (marginBottom.isFinite()) {
+      val params = view.layoutParams as? ViewGroup.MarginLayoutParams
+      if (params != null) {
+        val next = dpToPx(marginBottom).roundToInt()
+        if (params.bottomMargin != next) {
+          params.bottomMargin = next
+          view.layoutParams = params
+          changed = true
+        }
+      }
+    }
 
     if (changed) {
       markSurfaceDirtyForNode(nodeId, "animatedStyle")
+      view.requestLayout()
+      view.invalidate()
     }
   }
 

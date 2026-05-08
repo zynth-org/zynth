@@ -844,7 +844,9 @@ extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
     float minHeight,
     float maxWidth,
     float maxHeight,
-    float flexBasis) {
+    float flexBasis,
+    float paddingBottom,
+    float marginBottom) {
   auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
   if (!runtimeState) {
     return;
@@ -865,8 +867,9 @@ extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
         mut.prop = prop;
         mut.value = v;
         
-        runtimeState->yogaTree->applyProp(nodeRecord->yoga, mut);
-        changed = true;
+        if (runtimeState->yogaTree->applyProp(nodeRecord->yoga, mut)) {
+          changed = true;
+        }
       }
     };
     
@@ -877,6 +880,8 @@ extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
     update(zynth::ZynthPropId::MaxWidth, maxWidth);
     update(zynth::ZynthPropId::MaxHeight, maxHeight);
     update(zynth::ZynthPropId::FlexBasis, flexBasis);
+    update(zynth::ZynthPropId::PaddingBottom, paddingBottom);
+    update(zynth::ZynthPropId::MarginBottom, marginBottom);
     
     if (changed) {
       runtimeState->rendererHost.markSurfaceDirty(nodeRecord->surfaceId);
@@ -897,7 +902,66 @@ extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
         minHeight,
         maxWidth,
         maxHeight,
-        flexBasis);
+        flexBasis,
+        paddingBottom,
+        marginBottom);
+  }
+}
+
+extern "C" JNIEXPORT void ZynthPerformNativeLayout(void *state) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState || !runtimeState->useNativeCommit) {
+    return;
+  }
+
+  // 1. Calculate Layout for all surfaces marked dirty by animated style changes
+  zynth::ZynthCommit commit;
+  zynth::ZynthCommitTelemetry telemetry;
+  
+  // calculateLayoutForDirtySurfaces will only do work if there are dirty surfaces.
+  runtimeState->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
+
+  // 2. If layout changed, send the new frames to Kotlin
+  if (!commit.layoutFrames.empty()) {
+    JNIEnv *env = getEnv();
+    if (!env || !runtimeState->uiManager || !runtimeState->applyMountTransaction) {
+      return;
+    }
+
+    std::vector<double> postLayoutOps;
+    postLayoutOps.reserve(commit.layoutFrames.size() * 6);
+    
+    // OPCODE 6: frame (nodeId, left, top, width, height)
+    for (const auto& op : commit.layoutFrames) {
+      postLayoutOps.push_back(6);
+      postLayoutOps.push_back(static_cast<double>(op.nodeId));
+      postLayoutOps.push_back(static_cast<double>(op.left));
+      postLayoutOps.push_back(static_cast<double>(op.top));
+      postLayoutOps.push_back(static_cast<double>(op.width));
+      postLayoutOps.push_back(static_cast<double>(op.height));
+    }
+
+    jobject jBuffer = env->NewDirectByteBuffer(
+        postLayoutOps.data(),
+        static_cast<jlong>(postLayoutOps.size() * sizeof(double)));
+    
+    if (jBuffer) {
+      // Dispatch layout updates to the UI thread. 
+      // applyMountTransaction handles frame extraction and view.layout().
+      
+      // We must pass a non-null string array to satisfy Kotlin parameter checks.
+      jobjectArray jStrings = env->NewObjectArray(0, runtimeState->stringClass, nullptr);
+
+      env->CallVoidMethod(
+          runtimeState->uiManager, 
+          runtimeState->applyMountTransaction,
+          jBuffer, 
+          static_cast<jint>(postLayoutOps.size()), 
+          jStrings);
+
+      env->DeleteLocalRef(jBuffer);
+      if (jStrings) env->DeleteLocalRef(jStrings);
+    }
   }
 }
 
@@ -2507,7 +2571,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->applyAnimatedStyle =
       env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFFFFFFF)V");
   state->applyAnimatedLayoutStyle =
-      env->GetMethodID(state->uiClass, "applyAnimatedLayoutStyle", "(IFFFFFFF)V");
+      env->GetMethodID(state->uiClass, "applyAnimatedLayoutStyle", "(IFFFFFFFFF)V");
   state->scheduleTimer = env->GetMethodID(state->uiClass, "scheduleTimer", "(JIIZ)V");
   state->cancelTimer = env->GetMethodID(state->uiClass, "cancelTimer", "(I)V");
   state->scheduleAnimationFrame = env->GetMethodID(state->uiClass, "scheduleAnimationFrame", "(JI)V");

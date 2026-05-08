@@ -26,6 +26,7 @@ namespace {
 static const char *kZynthSharedValueKey = "__zynth_shared_value";
 static const char *kZynthAnimateKey = "__zynth_animate";
 static const char *kZynthInterpolationKey = "__zynth_interpolation";
+static const char *kZynthDerivedValueKey = "__zynth_derived_value";
 static char kZynthAnimateHostAssociationKey;
 
 static bool ZynthAnimateVerboseLogsEnabled() {
@@ -82,6 +83,8 @@ struct StyleValueRef {
   bool isInterpolation = false;
   int sharedId = 0;
   double constant = 0.0;
+  double multiplier = 1.0;
+  double offset = 0.0;
   std::string stringValue;
   std::vector<double> inputRange;
   std::vector<double> outputRange;
@@ -113,6 +116,10 @@ struct StyleMapper {
   StyleValueRef maxHeight;
   bool hasFlexBasis = false;
   StyleValueRef flexBasis;
+  bool hasPaddingBottom = false;
+  StyleValueRef paddingBottom;
+  bool hasMarginBottom = false;
+  StyleValueRef marginBottom;
   std::vector<TransformOp> transforms;
 };
 
@@ -330,6 +337,28 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
   }
   if (value.isObject()) {
     Object obj = value.asObject(rt);
+    if (obj.hasProperty(rt, kZynthDerivedValueKey)) {
+      Value derivedValue = obj.getProperty(rt, kZynthDerivedValueKey);
+      if (derivedValue.isObject()) {
+        Object derivedObj = derivedValue.asObject(rt);
+        if (derivedObj.hasProperty(rt, "source")) {
+          ref = [self resolveStyleValue:rt value:derivedObj.getProperty(rt, "source")];
+          if (derivedObj.hasProperty(rt, "multiplier")) {
+            Value multiplierValue = derivedObj.getProperty(rt, "multiplier");
+            if (multiplierValue.isNumber()) {
+              ref.multiplier = multiplierValue.asNumber();
+            }
+          }
+          if (derivedObj.hasProperty(rt, "offset")) {
+            Value offsetValue = derivedObj.getProperty(rt, "offset");
+            if (offsetValue.isNumber()) {
+              ref.offset = offsetValue.asNumber();
+            }
+          }
+          return ref;
+        }
+      }
+    }
     if (obj.hasProperty(rt, kZynthInterpolationKey)) {
       Value interpolationValue = obj.getProperty(rt, kZynthInterpolationKey);
       if (interpolationValue.isObject()) {
@@ -379,6 +408,8 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
                 if (valid) {
                   ref.isInterpolation = true;
                   ref.sharedId = sourceId;
+                  ref.multiplier = 1.0;
+                  ref.offset = 0.0;
                   if (interpolationObj.hasProperty(rt, "extrapolateLeft")) {
                     Value left = interpolationObj.getProperty(rt, "extrapolateLeft");
                     if (left.isString()) {
@@ -404,6 +435,8 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
       if (idValue.isNumber()) {
         ref.isShared = true;
         ref.sharedId = static_cast<int>(idValue.asNumber());
+        ref.multiplier = 1.0;
+        ref.offset = 0.0;
       }
     }
   }
@@ -478,6 +511,10 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
     UIView *view = [manager viewForNodeId:@(mapper.nodeId)];
     if (!view) continue;
     auto resolveValue = [&](const StyleValueRef &ref, double fallback) -> double {
+      auto applyDerived = [&](double base) -> double {
+        if (std::isnan(base)) return fallback;
+        return base * ref.multiplier + ref.offset;
+      };
       double resolved = ref.constant;
       if (ref.isInterpolation) {
         double source = [self sharedSignalValueForId:ref.sharedId];
@@ -486,10 +523,7 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
       } else if (ref.isShared) {
         resolved = [self sharedSignalValueForId:ref.sharedId];
       }
-      if (std::isnan(resolved)) {
-        return fallback;
-      }
-      return resolved;
+      return applyDerived(resolved);
     };
     auto applyLayout = [&](const char *name, bool hasValue, const StyleValueRef &ref) {
       if (!hasValue) return;
@@ -515,6 +549,8 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
     applyLayout("maxWidth", mapper.hasMaxWidth, mapper.maxWidth);
     applyLayout("maxHeight", mapper.hasMaxHeight, mapper.maxHeight);
     applyLayout("flexBasis", mapper.hasFlexBasis, mapper.flexBasis);
+    applyLayout("paddingBottom", mapper.hasPaddingBottom, mapper.paddingBottom);
+    applyLayout("marginBottom", mapper.hasMarginBottom, mapper.marginBottom);
     if (mapper.hasOpacity) {
       double opacity = resolveValue(mapper.opacity, 0.0);
       view.alpha = (CGFloat)opacity;
@@ -533,9 +569,10 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
 
     for (const auto &op : mapper.transforms) {
       const auto &key = op.key;
-      double raw = op.value.isShared
-        ? [self sharedSignalValueForId:op.value.sharedId]
-        : (op.value.stringValue.empty() ? op.value.constant : parseAngleString(op.value.stringValue));
+      double raw = resolveValue(op.value, 0.0);
+      if (!op.value.stringValue.empty()) {
+        raw = parseAngleString(op.value.stringValue);
+      }
       if (std::isnan(raw)) {
         raw = 0.0;
       }
@@ -699,6 +736,14 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
   if (obj.hasProperty(rt, "flexBasis")) {
     mapper.hasFlexBasis = true;
     mapper.flexBasis = [self resolveStyleValue:rt value:obj.getProperty(rt, "flexBasis")];
+  }
+  if (obj.hasProperty(rt, "paddingBottom")) {
+    mapper.hasPaddingBottom = true;
+    mapper.paddingBottom = [self resolveStyleValue:rt value:obj.getProperty(rt, "paddingBottom")];
+  }
+  if (obj.hasProperty(rt, "marginBottom")) {
+    mapper.hasMarginBottom = true;
+    mapper.marginBottom = [self resolveStyleValue:rt value:obj.getProperty(rt, "marginBottom")];
   }
 
   if (obj.hasProperty(rt, "transform")) {

@@ -49,6 +49,7 @@ const MODULE_NAME = "ZynthAnimate";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
 export const SHARED_VALUE_MARKER = "__zynth_shared_value";
 export const INTERPOLATION_MARKER = "__zynth_interpolation";
+export const DERIVED_VALUE_MARKER = "__zynth_derived_value";
 
 type NativeSharedValueRef = {
   [SHARED_VALUE_MARKER]: number;
@@ -64,11 +65,20 @@ type NativeInterpolationRef = {
   };
 };
 
+type NativeDerivedRef = {
+  [DERIVED_VALUE_MARKER]: {
+    source: NativeSharedValueRef | NativeInterpolationRef | number;
+    multiplier?: number;
+    offset?: number;
+  };
+};
+
 export type NativeStyleValue =
   | number
   | string
   | NativeSharedValueRef
-  | NativeInterpolationRef;
+  | NativeInterpolationRef
+  | NativeDerivedRef;
 
 export type NativeStyleMapperConfig = {
   opacity?: NativeStyleValue;
@@ -80,6 +90,8 @@ export type NativeStyleMapperConfig = {
   maxWidth?: NativeStyleValue;
   maxHeight?: NativeStyleValue;
   flexBasis?: NativeStyleValue;
+  paddingBottom?: NativeStyleValue;
+  marginBottom?: NativeStyleValue;
 };
 
 type NativeAnimateJSI = {

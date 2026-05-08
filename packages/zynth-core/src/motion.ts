@@ -40,6 +40,7 @@ export {
   removeNativeStyleMapper,
   SHARED_VALUE_MARKER,
   INTERPOLATION_MARKER,
+  DERIVED_VALUE_MARKER,
 } from "./animation/native";
 
 export type {
@@ -65,12 +66,14 @@ export { now, startAnimation } from "./animation/runtime";
 export {
   createSharedValue,
   createAnimatedStyle,
+  deriveAnimatedValue,
   withTiming,
   withSpring,
 } from "./animation/sharedValue";
 
 export type {
   SharedValue,
+  DerivedValueConfig,
   AnimationCallback,
   TimingConfig,
   SpringConfig,

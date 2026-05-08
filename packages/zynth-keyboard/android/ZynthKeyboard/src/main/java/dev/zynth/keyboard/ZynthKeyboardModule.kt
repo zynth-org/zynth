@@ -25,6 +25,7 @@ class ZynthKeyboardModule(
     private var rootView: View? = null
     private var isKeyboardVisible = false
     private var keyboardHeight = 0f
+    private var heightSignalId: Int = -1
 
     init {
         registerBridge()
@@ -96,6 +97,15 @@ class ZynthKeyboardModule(
         return defaultState()
     }
 
+    fun setHeightSignalId(id: Int) {
+        heightSignalId = id
+    }
+
+    private fun publishSharedHeight(height: Float) {
+        if (heightSignalId == -1) return
+        runtime.getUIManager().setSharedSignal(heightSignalId, height.toDouble())
+    }
+
     private fun setupKeyboardListener(view: View) {
         val density = view.resources.displayMetrics.density
         fun buildStateFromInsetsLocal(
@@ -140,6 +150,8 @@ class ZynthKeyboardModule(
                         isKeyboardVisible = state.isVisible
                         keyboardHeight = state.height
                         publishStateToJS(state)
+                        publishSharedHeight(state.height)
+                        
                         return insets
                     }
 
@@ -156,6 +168,7 @@ class ZynthKeyboardModule(
                         isKeyboardVisible = state.isVisible
                         keyboardHeight = state.height
                         publishStateToJS(state)
+                        publishSharedHeight(state.height)
                     }
                 }
             )
@@ -168,6 +181,7 @@ class ZynthKeyboardModule(
                     isKeyboardVisible = state.isVisible
                     keyboardHeight = state.height
                     publishStateToJS(state)
+                    publishSharedHeight(state.height)
                 }
 
                 insets
@@ -198,6 +212,7 @@ class ZynthKeyboardModule(
                     isKeyboardVisible = isVisible
                     keyboardHeight = imeHeight
                     publishStateToJS(state)
+                    publishSharedHeight(imeHeight)
                 }
 
                 insets
@@ -231,6 +246,7 @@ class ZynthKeyboardModule(
                     isKeyboardVisible = isVisible
                     keyboardHeight = if (isVisible) heightDp else 0f
                     publishStateToJS(state)
+                    publishSharedHeight(if (isVisible) heightDp else 0f)
                 }
             }
         }

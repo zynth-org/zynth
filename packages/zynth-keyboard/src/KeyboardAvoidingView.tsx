@@ -1,8 +1,16 @@
-import { createMemo, type JSX, type ParentComponent } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  type JSX,
+  type ParentComponent,
+} from "solid-js";
 import { platform } from "@zynthjs/apis";
 import { View } from "@zynthjs/components";
-import type { Style } from "@zynthjs/core";
-import { useKeyboard } from "./hooks";
+import { createAnimatedStyle, deriveAnimatedValue } from "@zynthjs/core/motion";
+import { useKeyboardHeightSharedValue } from "./hooks";
+import { Style } from "@zynthjs/core";
 
 export type KeyboardAvoidingBehavior = "padding" | "position" | "height";
 
@@ -50,15 +58,12 @@ export interface KeyboardAvoidingViewProps {
 
 /**
  * A view that automatically adjusts its layout when the keyboard appears.
- * Use this to prevent the keyboard from covering your content.
  *
- * This component uses a pure JS approach with Solid reactivity to ensure
- * proper integration with Yoga layout.
- *
- * Behaviors:
- * - `padding`: Adds bottom padding equal to keyboard height (default)
- * - `position`: Translates the view upward (content may go off-screen)
- * - `height`: Reduces available space, causing flex children to compress
+ * This component uses high-performance native animations. When the keyboard
+ * height changes on the native UI thread, a style mapper in C++ updates
+ * Yoga layout properties (padding, height, or transform) and triggers a
+ * synchronous layout pass + frame extraction. This ensures that children
+ * are repositioned at 60fps without jumping back to the JS thread.
  *
  * @example
  * ```tsx
@@ -70,7 +75,7 @@ export interface KeyboardAvoidingViewProps {
 export const KeyboardAvoidingView: ParentComponent<
   KeyboardAvoidingViewProps
 > = (props) => {
-  if (platform.current === "android" || platform.current === "ios") {
+  if (platform.current === "ios") {
     return (
       <zynth-keyboard-avoiding-view
         style={props.style}
@@ -85,70 +90,86 @@ export const KeyboardAvoidingView: ParentComponent<
     );
   }
 
-  const keyboard = useKeyboard();
-
-  const behavior = () => props.behavior ?? "padding";
   const enabled = () => props.enabled ?? true;
+  const behavior = () => props.behavior ?? "padding";
   const offset = () => props.keyboardVerticalOffset ?? 0;
+  const isHeightBehavior = () => behavior() === "height";
+  const isPositionBehavior = () => behavior() === "position";
 
-  // Calculate the keyboard adjustment value
-  const keyboardAdjustment = createMemo(() => {
-    if (!enabled()) return 0;
-    const state = keyboard();
-    if (!state.isVisible) return 0;
-    return state.height + offset();
+  const sharedHeight = useKeyboardHeightSharedValue();
+  const [baseHeight, setBaseHeight] = createSignal<number | null>(null);
+
+  /**
+   * Fully native animated style.
+   * When sharedHeight.value changes on the native UI thread, the mapper
+   * in ZynthAnimateJSI.cpp updates Yoga properties and triggers a
+   * synchronous layout pass, moving children at 60fps.
+   */
+  const animatedStyle = createAnimatedStyle((): Style => {
+    const base: Style = props.style ?? {};
+    if (!enabled()) return base;
+
+    // Use the native-backed value for the mapper
+    const kb = sharedHeight?.value ?? 0;
+    const off = offset();
+
+    if (isPositionBehavior()) {
+      // translateY: -(kb + off) => kb * -1 - off
+      const shift = deriveAnimatedValue(kb, { multiplier: -1, offset: -off });
+      return { ...base, transform: [{ translateY: shift }] };
+    }
+
+    if (isHeightBehavior()) {
+      const measured = baseHeight();
+      if (measured === null || measured <= 0) return base;
+      // height: measured - kb - off => kb * -1 + (measured - off)
+      const nextHeight = deriveAnimatedValue(kb, {
+        multiplier: -1,
+        offset: measured - off,
+      });
+      return { ...base, height: nextHeight };
+    }
+
+    // padding (default)
+    // paddingBottom: kb + off => kb * 1 + off
+    const padding = deriveAnimatedValue(kb, { offset: off });
+    return { ...base, paddingBottom: padding };
   });
 
-  // For "height" behavior, we render differently
-  const isHeightBehavior = () => behavior() === "height";
+  const contentStyle = createMemo(
+    (): Style => ({
+      flex: 1,
+      ...(props.contentContainerStyle ?? {}),
+    })
+  );
 
-  // Compute the outer container style based on behavior
-  const containerStyle = createMemo((): Style => {
-    const adjustment = keyboardAdjustment();
-    const baseStyle = props.style ?? {};
-
-    switch (behavior()) {
-      case "padding":
-        // Add bottom padding to push content up
-        return {
-          ...baseStyle,
-          paddingBottom:
-            ((baseStyle.paddingBottom as number) ?? 0) + adjustment,
-        };
-
-      case "position":
-        // Translate the view upward
-        return {
-          ...baseStyle,
-          transform:
-            adjustment > 0 ? `translateY(${-adjustment}px)` : undefined,
-        };
-
-      case "height":
-        // For height behavior, we use the base style on outer container
-        // and apply the height reduction on an inner wrapper
-        return baseStyle;
-
-      default:
-        return baseStyle;
+  // Signal reset when keyboard closes
+  createEffect(() => {
+    if (sharedHeight && sharedHeight.value === 0) {
+      setBaseHeight(null);
     }
   });
 
-  // Inner content wrapper style for "height" behavior
-  // This view takes flex:1 minus the keyboard height via marginBottom
-  const heightContentStyle = createMemo((): Style => {
-    const adjustment = keyboardAdjustment();
-    return {
-      flex: 1,
-      marginBottom: adjustment,
-      ...(props.contentContainerStyle ?? {}),
-    };
+  onCleanup(() => {
+    setBaseHeight(null);
   });
 
   return (
-    <View style={containerStyle()} testID={props.testID}>
+    <View
+      style={animatedStyle}
+      testID={props.testID}
+      onLayout={(event) => {
+        const nextHeight = event.nativeEvent.layout.height;
+        if (!isHeightBehavior()) return;
+        // Only capture base height when keyboard is closed
+        if (sharedHeight && sharedHeight.value > 0) return;
+        if (typeof nextHeight === "number" && nextHeight > 0) {
+          setBaseHeight(nextHeight);
+        }
+      }}
+    >
       {isHeightBehavior() ? (
-        <View style={heightContentStyle()}>{props.children}</View>
+        <View style={contentStyle()}>{props.children}</View>
       ) : (
         props.children
       )}

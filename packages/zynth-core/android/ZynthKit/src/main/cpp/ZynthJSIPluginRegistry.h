@@ -42,7 +42,9 @@ void ZynthApplyAnimatedLayoutStyle(
     float minHeight,
     float maxWidth,
     float maxHeight,
-    float flexBasis);
+    float flexBasis,
+    float paddingBottom,
+    float marginBottom);
 
 #ifdef __cplusplus
 }
