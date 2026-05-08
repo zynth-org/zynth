@@ -2303,4 +2303,3 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     return runCatching { Style.fromJson(json) }.getOrNull()
   }
 }
-
