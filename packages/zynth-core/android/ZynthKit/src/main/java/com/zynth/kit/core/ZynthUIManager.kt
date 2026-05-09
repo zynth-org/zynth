@@ -1149,7 +1149,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
    * Used by components when text or content changes.
    */
   fun markNodeDirty(nodeId: Int) {
-    android.util.Log.v("ZynthLayout", "[${System.currentTimeMillis()}] markNodeDirty node=$nodeId")
     layoutEngine.markDirty(nodeId)
     requestLayout("markNodeDirty")
   }

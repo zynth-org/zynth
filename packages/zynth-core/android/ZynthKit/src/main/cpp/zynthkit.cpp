@@ -2065,11 +2065,13 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 syncOps.push_back(op.childId);
                 syncOps.push_back(op.index);
               }
-              // ASYNC: removeChild
+              // SYNC: removeChild - text measurement reads Kotlin child topology.
+              // If removals lag behind inserts, conditional text can be composed from
+              // a mixed old/new subtree during the pre-layout Yoga measurement pass.
               for (const auto& op : commit.removes) {
-                asyncOps.push_back(4);
-                asyncOps.push_back(op.parentId);
-                asyncOps.push_back(op.childId);
+                syncOps.push_back(4);
+                syncOps.push_back(op.parentId);
+                syncOps.push_back(op.childId);
               }
               // ASYNC: dropNode
               for (const auto& op : commit.drops) {

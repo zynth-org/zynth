@@ -133,6 +133,10 @@ private fun getMeasureView(manager: ZynthUIManager, context: Context): TextView 
   synchronized(measureViews) {
     return measureViews.getOrPut(manager) {
       ZynthTextView(context).apply {
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
         // Ensure measurement view never has padding
         setPadding(0, 0, 0, 0)
       }
@@ -228,7 +232,9 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
 
             measureView.setTextSize(TypedValue.COMPLEX_UNIT_PX, resolvedTextSizePx)
             measureView.typeface = resolveTextTypeface(textView, style)
-            measureView.text = currentText
+            if (measureView.text.toString() != currentText) {
+              measureView.text = currentText
+            }
             measureView.letterSpacing = textView.letterSpacing
             measureView.maxLines = textView.maxLines
             measureView.ellipsize = textView.ellipsize
@@ -257,8 +263,13 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           }
         } catch (error: Throwable) {
           android.util.Log.e("ZynthLayout", "Error measuring text node ${node.id}: ${error.message}", error)
-          measuredWidth = 0f
-          measuredHeight = 16f
+          measuredWidth = when (input.widthMode) {
+            MeasureMode.EXACTLY -> widthValue.coerceAtLeast(0).toFloat()
+            MeasureMode.AT_MOST -> textView.paint.measureText(currentText)
+              .coerceIn(0f, widthValue.coerceAtLeast(0).toFloat())
+            MeasureMode.UNDEFINED -> textView.paint.measureText(currentText).coerceAtLeast(0f)
+          }
+          measuredHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
         }
         if (!hasVolatileZeroHeightConstraint) {
           node.attachments[textMeasureCacheKey] =

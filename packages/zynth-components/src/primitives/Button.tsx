@@ -697,8 +697,6 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (color) setProperty(node, "baseColor", color);
     if (useNativeTitle()) {
       setProperty(node, "title", titleContent());
-    } else {
-      setProperty(node, "title", null);
     }
 
     setProperty(node, "tone", resolvedTone());
@@ -811,6 +809,8 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       const textStyle: Style = {
         fontSize,
         color: resolvedTextColor(),
+        width: "100%",
+        textAlign: "center",
         ...((local.labelStyle as Style) ?? {}),
       };
       return <Text style={textStyle}>{titleContent()}</Text>;
@@ -818,6 +818,13 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (isStringContent()) return null;
     return local.children;
   };
+
+  const shouldUseContentWrapper = createMemo(() => {
+    if (!isStringContent()) return true;
+    if (hasAffixes()) return true;
+    if (computedLoading()) return true;
+    return false;
+  });
 
   return (
     <button
@@ -843,36 +850,40 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       }}
       testID={local.testID}
     >
-      <View style={contentStyle()}>
-        {shouldHideContentForOverlay() && local.loadingIndicator !== false ? (
-          <>
-            {local.loadingIndicator ?? (
-              <ProgressIndicator
-                color={resolvedTextColor()}
-                size={
-                  resolvedSize() === "xs" || resolvedSize() === "sm"
-                    ? "small"
-                    : "small"
-                }
-              />
-            )}
-            {local.loadingAriaLabel ? (
-              <Text
-                style={{
-                  fontSize: sizeFontMap[resolvedSize()] ?? sizeFontMap.md,
-                  color: resolvedTextColor(),
-                  ...((local.labelStyle as Style) ?? {}),
-                }}
-              >
-                {local.loadingAriaLabel}
-              </Text>
-            ) : null}
-          </>
-        ) : null}
-        {!shouldHideContentForOverlay() ? local.startIcon : null}
-        {!shouldHideContentForOverlay() ? renderContent() : null}
-        {!shouldHideContentForOverlay() ? local.endIcon : null}
-      </View>
+      {shouldUseContentWrapper() ? (
+        <View style={contentStyle()}>
+          {shouldHideContentForOverlay() && local.loadingIndicator !== false ? (
+            <>
+              {local.loadingIndicator ?? (
+                <ProgressIndicator
+                  color={resolvedTextColor()}
+                  size={
+                    resolvedSize() === "xs" || resolvedSize() === "sm"
+                      ? "small"
+                      : "small"
+                  }
+                />
+              )}
+              {local.loadingAriaLabel ? (
+                <Text
+                  style={{
+                    fontSize: sizeFontMap[resolvedSize()] ?? sizeFontMap.md,
+                    color: resolvedTextColor(),
+                    ...((local.labelStyle as Style) ?? {}),
+                  }}
+                >
+                  {local.loadingAriaLabel}
+                </Text>
+              ) : null}
+            </>
+          ) : null}
+          {!shouldHideContentForOverlay() ? local.startIcon : null}
+          {!shouldHideContentForOverlay() ? renderContent() : null}
+          {!shouldHideContentForOverlay() ? local.endIcon : null}
+        </View>
+      ) : (
+        renderContent()
+      )}
     </button>
   );
 };
