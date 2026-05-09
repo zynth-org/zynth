@@ -910,9 +910,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       if (node != null) descriptor?.applyProperty?.invoke(node, "text", text) == true else false
     if (!handledByDescriptor && view is TextView) {
       val oldText = node?.label?.text?.toString() ?: ""
-      if (text.isEmpty() && oldText.isNotEmpty()) {
-         android.util.Log.w("ZynthLayout", "[${System.currentTimeMillis()}] setText node=$id resetting to EMPTY string (was '$oldText')")
-      }
       node?.label?.text = text
       applyTextValue(id, view, text)
     }
@@ -1302,9 +1299,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       val view = node.view
       
       val handler = node.measureHandler ?: layoutEngine.getMeasureHandler(id)
-      if (handler == null) {
-        android.util.Log.e("ZynthLayout", "CRITICAL: measureNode called but handler is MISSING for node $id (type=${node.type})")
-      }
       
       if (handler != null) {
         // Cache it back if we found it via JNI fallback
@@ -1332,9 +1326,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         val modeStrW = when(widthMode) { 1 -> "EXACTLY"; 2 -> "AT_MOST"; else -> "UNDEFINED" }
         val modeStrH = when(heightMode) { 1 -> "EXACTLY"; 2 -> "AT_MOST"; else -> "UNDEFINED" }
 
-        if ((mw <= 0f && widthMode != 0) || (mh <= 0f && heightMode != 0)) {
-           android.util.Log.w("ZynthLayout", "[${Thread.currentThread().name}] Zero dimension measured for node $id (type=${nodeStates[id]?.type}) result=${mw}x${mh} inputW=${width}(mode=$modeStrW) inputH=${height}(mode=$modeStrH)")
-        }
 
         val mwBits = mw.toRawBits().toLong()
         val mhBits = mh.toRawBits().toLong()
@@ -1642,7 +1633,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                   if (frameWidth <= 0 || frameHeight <= 0) {
                     val parentId = parents[nodeId] ?: -1
                     val parentType = nodeStates[parentId]?.type ?: "none"
-                    android.util.Log.w("ZynthLayout", "Node $nodeId ($nodeType) assigned zero dimensions: ${frameWidth}x${frameHeight} (parent=$parentId type=$parentType)")
                   }
                   view.measure(widthMeasureSpec, heightMeasureSpec)
                 }
@@ -2086,9 +2076,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
 
     if (layoutParamsChanged || paddingChanged || otherChanged) {
-      if (node.type == "text") {
-        android.util.Log.d("ZynthLayout", "Animated layout for text node ${nodeId}: lpChanged=$layoutParamsChanged padChanged=$paddingChanged w=${params?.width} h=${params?.height} pL=$nextPaddingLeft pT=$nextPaddingTop")
-      }
 
       // For text nodes, frequent layout marking can disrupt the measurement cache.
       // We only mark dirty if the properties actually affect intrinsic measurement.
