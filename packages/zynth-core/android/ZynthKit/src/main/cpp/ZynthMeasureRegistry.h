@@ -43,16 +43,23 @@ public:
   }
 
   YGSize measure(int32_t nodeId, uint32_t revision, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode, uint32_t& cacheHits, uint32_t& cacheMisses) {
+    const bool hasVolatileZeroConstraint =
+        (widthMode != YGMeasureModeUndefined && width <= 0.0f) ||
+        (heightMode != YGMeasureModeUndefined && height <= 0.0f);
     MeasureCacheKey key{nodeId, revision, width, widthMode, height, heightMode};
-    auto it = cache_.find(key);
-    if (it != cache_.end()) {
-      cacheHits++;
-      return it->second;
+    if (!hasVolatileZeroConstraint) {
+      auto it = cache_.find(key);
+      if (it != cache_.end()) {
+        cacheHits++;
+        return it->second;
+      }
     }
     cacheMisses++;
     if (callback_) {
       YGSize result = callback_(nodeId, width, widthMode, height, heightMode);
-      cache_[key] = result;
+      if (!hasVolatileZeroConstraint) {
+        cache_[key] = result;
+      }
       return result;
     }
     return {0, 0};

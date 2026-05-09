@@ -78,6 +78,9 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
   if (root.type != "text") return
   val rootTextView = root.view as? TextView ?: return
   val immediateText = buildRawText(root, manager, styleKey)
+  if (immediateText.isEmpty() && root.cachedText.isNotEmpty()) {
+    android.util.Log.w("ZynthLayout", "rebuildRawText: resulting text is empty for node $rootId despite cachedText='${root.cachedText}'")
+  }
   if (rootTextView.text.toString() != immediateText) {
     rootTextView.text = immediateText
     manager.markNodeDirty(root.id)
@@ -152,7 +155,10 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       
       // Set up measurement handler for text
       val measureTag = "ZynthText/measure"
-      manager.getLayoutEngine().setMeasureHandler(node.id) { input ->
+      val handler: com.zynth.kit.layout.MeasureHandler = handler@{ input ->
+        if (input.height <= 0f && input.heightMode != MeasureMode.UNDEFINED) {
+          android.util.Log.v("ZynthLayout", "Text measure constraints: node=${node.id} w=${input.width}(${input.widthMode}) h=${input.height}(${input.heightMode})")
+        }
         val measureStart = SystemClock.elapsedRealtimeNanos()
         val widthValue = when {
           input.width.isNaN() -> 0
@@ -166,23 +172,36 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         }
         
         val widthSpec = when (input.widthMode) {
-          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.EXACTLY)
-          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.AT_MOST)
+          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(widthValue.coerceAtLeast(0), MeasureSpec.EXACTLY)
+          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(widthValue.coerceAtLeast(0), MeasureSpec.AT_MOST)
           MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         }
         val heightSpec = when (input.heightMode) {
-          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.EXACTLY)
-          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.AT_MOST)
+          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(heightValue.coerceAtLeast(0), MeasureSpec.EXACTLY)
+          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(heightValue.coerceAtLeast(0), MeasureSpec.AT_MOST)
           MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         }
         
         val currentText = resolveMeasureText(node, manager, textStyleKey)
         val root = findTextRoot(node, manager)
         val style = root.attachments[textStyleKey] as? TextStyleAttributes
-        val cacheKey = hashMeasureKey(currentText, textView, widthSpec, heightSpec)
+        val hasVolatileZeroHeightConstraint =
+          currentText.isNotEmpty() &&
+            input.height <= 0f &&
+            input.heightMode != MeasureMode.UNDEFINED
+        val effectiveHeightSpec = if (hasVolatileZeroHeightConstraint) {
+          // A transient zero-height constraint can appear while ancestor padding/margin
+          // animations cross through a collapsed content box. Measuring intrinsic text
+          // height with that exact spec makes TextView return 0 and can poison Yoga's
+          // cached measurement for the pulse.
+          MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+        } else {
+          heightSpec
+        }
+        val cacheKey = hashMeasureKey(currentText, textView, widthSpec, effectiveHeightSpec)
         val cached = node.attachments[textMeasureCacheKey] as? TextMeasureCache
         if (cached != null && cached.key == cacheKey) {
-          return@setMeasureHandler cached.width to cached.height
+          return@handler cached.width to cached.height
         }
 
         if (currentText.isEmpty()) {
@@ -190,7 +209,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           val measuredHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
           node.attachments[textMeasureCacheKey] =
             TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
-          return@setMeasureHandler measuredWidth to measuredHeight
+          return@handler measuredWidth to measuredHeight
         }
 
         // Use a dedicated measurement view to avoid race conditions with the UI thread.
@@ -216,40 +235,35 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
             measureView.includeFontPadding =
               style?.fontFamily?.let { !isIconFontFamily(it) } ?: textView.includeFontPadding
 
-            measureView.measure(widthSpec, heightSpec)
-
-            var mw = measureView.measuredWidth.toFloat()
-            var mh = measureView.measuredHeight.toFloat()
-
-            if (mw <= 0f && currentText.isNotEmpty()) {
-              Log.w(
-                measureTag,
-                "Measurement returned 0 width for non-empty text: node=${node.id} text='${currentText.take(24)}'",
-              )
-              mw = measureView.paint.measureText(currentText).coerceAtLeast(1f)
-            }
-            if (mh <= 0f && currentText.isNotEmpty()) {
-              Log.w(measureTag, "Measurement returned 0 height for non-empty text: node=${node.id}")
-              mh = (measureView.textSize * 1.2f).coerceAtLeast(1f)
+            measureView.measure(widthSpec, effectiveHeightSpec)
+            val mwResult = measureView.measuredWidth.toFloat()
+            val mhResult = measureView.measuredHeight.toFloat()
+            
+            if (mhResult <= 0f && input.heightMode != MeasureMode.UNDEFINED && currentText.isNotEmpty()) {
+                android.util.Log.w("ZynthLayout", "Text measurement returned zero height! node=${node.id} text='$currentText' width=$mwResult (inputW=${input.width}, mode=${input.widthMode}) height=$mhResult (inputH=${input.height}, mode=${input.heightMode})")
             }
 
-            measuredWidth = mw.coerceAtLeast(1f)
-            measuredHeight = mh.coerceAtLeast((measureView.textSize * 1.2f).roundToInt().toFloat())
+            val fallbackHeight = (measureView.textSize * 1.2f).coerceAtLeast(1f)
+            measuredWidth = if (mwResult <= 0f && currentText.isNotEmpty()) {
+                measureView.paint.measureText(currentText).coerceAtLeast(1f)
+            } else {
+                mwResult.coerceAtLeast(0f)
+            }
+            measuredHeight = if (mhResult <= 0f && currentText.isNotEmpty()) {
+                fallbackHeight
+            } else {
+                mhResult.coerceAtLeast(0f)
+            }
           }
         } catch (error: Throwable) {
-          Log.e(
-            measureTag,
-            "Text measurement failed: node=${node.id} text='${currentText.take(24)}'",
-            error,
-          )
-          val fallbackWidth = textView.paint.measureText(currentText).coerceAtLeast(1f)
-          val fallbackHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
-          measuredWidth = fallbackWidth
-          measuredHeight = fallbackHeight
+          android.util.Log.e("ZynthLayout", "Error measuring text node ${node.id}: ${error.message}", error)
+          measuredWidth = 0f
+          measuredHeight = 16f
         }
-
-        node.attachments[textMeasureCacheKey] =
-          TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
+        if (!hasVolatileZeroHeightConstraint) {
+          node.attachments[textMeasureCacheKey] =
+            TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
+        }
         val durationMs = (SystemClock.elapsedRealtimeNanos() - measureStart) / 1_000_000.0
         if (durationMs > 8) {
           Log.w(
@@ -259,6 +273,9 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         }
         measuredWidth to measuredHeight
       }
+      
+      node.measureHandler = handler
+      manager.getLayoutEngine().setMeasureHandler(node.id, handler)
       
       // Set appropriate layout params
       node.view.layoutParams = FrameLayout.LayoutParams(

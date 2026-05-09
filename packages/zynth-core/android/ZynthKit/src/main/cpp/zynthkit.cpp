@@ -947,12 +947,20 @@ extern "C" JNIEXPORT void ZynthPerformNativeLayout(void *state) {
   // constraints (e.g. indefinite availableHeight with incompatible sizing
   // mode).  Catch and log rather than crashing the entire layout pass.
   try {
+    g_currentLayoutState = runtimeState;
+    runtimeState->currentTelemetry = &telemetry;
     runtimeState->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
+    runtimeState->currentTelemetry = nullptr;
+    g_currentLayoutState = nullptr;
   } catch (const std::exception &e) {
+    runtimeState->currentTelemetry = nullptr;
+    g_currentLayoutState = nullptr;
     __android_log_print(ANDROID_LOG_ERROR, "ZynthAnimate",
                         "Yoga layout failed: %s", e.what());
     return;
   } catch (...) {
+    runtimeState->currentTelemetry = nullptr;
+    g_currentLayoutState = nullptr;
     __android_log_print(ANDROID_LOG_ERROR, "ZynthAnimate",
                         "Yoga layout failed (unknown exception)");
     return;
