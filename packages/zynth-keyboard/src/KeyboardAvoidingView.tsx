@@ -99,6 +99,9 @@ export const KeyboardAvoidingView: ParentComponent<
   const sharedHeight = useKeyboardHeightSharedValue();
   const [baseHeight, setBaseHeight] = createSignal<number | null>(null);
 
+  // Helper signal to read the actual current value (not the token)
+  const kbSignal = sharedHeight?.toSignal();
+
   /**
    * Fully native animated style.
    * When sharedHeight.value changes on the native UI thread, the mapper
@@ -127,7 +130,16 @@ export const KeyboardAvoidingView: ParentComponent<
         multiplier: -1,
         offset: measured - off,
       });
-      return { ...base, height: nextHeight };
+
+      // When animating height, we MUST override flex: 1 (if present in base style)
+      // otherwise Yoga might ignore the height constraint and continue to fill the parent.
+      return {
+        ...base,
+        flex: 0,
+        flexGrow: 0,
+        flexShrink: 1,
+        height: nextHeight,
+      };
     }
 
     // padding (default)
@@ -136,19 +148,10 @@ export const KeyboardAvoidingView: ParentComponent<
     return { ...base, paddingBottom: padding };
   });
 
-  const contentStyle = createMemo(
-    (): Style => ({
-      flex: 1,
-      ...(props.contentContainerStyle ?? {}),
-    })
-  );
-
-  // Signal reset when keyboard closes
-  createEffect(() => {
-    if (sharedHeight && sharedHeight.value === 0) {
-      setBaseHeight(null);
-    }
-  });
+  const contentStyle = createMemo((): Style => ({
+    flex: 1,
+    ...(props.contentContainerStyle ?? {}),
+  }));
 
   onCleanup(() => {
     setBaseHeight(null);
@@ -161,9 +164,12 @@ export const KeyboardAvoidingView: ParentComponent<
       onLayout={(event) => {
         const nextHeight = event.nativeEvent.layout.height;
         if (!isHeightBehavior()) return;
-        // Only capture base height when keyboard is closed
-        if (sharedHeight && sharedHeight.value > 0) return;
-        if (typeof nextHeight === "number" && nextHeight > 0) {
+
+        // Only capture base height when keyboard is closed (kbSignal() < 1).
+        // Using the signal directly ensures we get the current number, not a token.
+        const isClosed = kbSignal ? kbSignal() < 1 : true;
+
+        if (isClosed && typeof nextHeight === "number" && nextHeight > 0) {
           setBaseHeight(nextHeight);
         }
       }}
