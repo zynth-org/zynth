@@ -585,74 +585,50 @@ function normalizeAngleValue(value: unknown): unknown {
   return value;
 }
 
+type AnimatableLayoutKey =
+  | "width"
+  | "height"
+  | "minWidth"
+  | "minHeight"
+  | "maxWidth"
+  | "maxHeight"
+  | "flex"
+  | "flexGrow"
+  | "flexShrink"
+  | "flexBasis"
+  | "top"
+  | "right"
+  | "bottom"
+  | "left"
+  | "padding"
+  | "paddingHorizontal"
+  | "paddingVertical"
+  | "paddingTop"
+  | "paddingRight"
+  | "paddingBottom"
+  | "paddingLeft"
+  | "margin"
+  | "marginHorizontal"
+  | "marginVertical"
+  | "marginTop"
+  | "marginRight"
+  | "marginBottom"
+  | "marginLeft";
+
 function applyLayoutStyleMapping(
   style: Style,
   resolved: Style,
   mapping: NativeStyleMapperConfig,
-  key:
-    | "width"
-    | "height"
-    | "minWidth"
-    | "minHeight"
-    | "maxWidth"
-    | "maxHeight"
-    | "flexBasis"
-    | "paddingBottom"
-    | "marginBottom",
+  key: AnimatableLayoutKey,
 ): boolean {
-  const rawValue = style[key];
+  const rawValue = (style as Record<string, unknown>)[key];
   if (rawValue === undefined) return false;
   const { value, token, interpolation, isDynamicMapped } =
     resolveTokenValue(rawValue);
   if (isDynamicMapped) {
     delete (resolved as Record<string, unknown>)[key];
-  }
-  switch (key) {
-    case "width":
-      if (!isDynamicMapped) {
-        resolved.width = rawValue as Style["width"];
-      }
-      break;
-    case "height":
-      if (!isDynamicMapped) {
-        resolved.height = rawValue as Style["height"];
-      }
-      break;
-    case "minWidth":
-      if (!isDynamicMapped) {
-        resolved.minWidth = rawValue as Style["minWidth"];
-      }
-      break;
-    case "minHeight":
-      if (!isDynamicMapped) {
-        resolved.minHeight = rawValue as Style["minHeight"];
-      }
-      break;
-    case "maxWidth":
-      if (!isDynamicMapped) {
-        resolved.maxWidth = rawValue as Style["maxWidth"];
-      }
-      break;
-    case "maxHeight":
-      if (!isDynamicMapped) {
-        resolved.maxHeight = rawValue as Style["maxHeight"];
-      }
-      break;
-    case "flexBasis":
-      if (!isDynamicMapped) {
-        resolved.flexBasis = rawValue as Style["flexBasis"];
-      }
-      break;
-    case "paddingBottom":
-      if (!isDynamicMapped) {
-        resolved.paddingBottom = rawValue as Style["paddingBottom"];
-      }
-      break;
-    case "marginBottom":
-      if (!isDynamicMapped) {
-        resolved.marginBottom = rawValue as Style["marginBottom"];
-      }
-      break;
+  } else {
+    (resolved as Record<string, unknown>)[key] = rawValue;
   }
   if (token) {
     mapping[key] = { [SHARED_VALUE_MARKER]: token[SHARED_VALUE_MARKER] };
@@ -696,29 +672,20 @@ function buildNativeStyleMapping(style: Style): {
     }
   }
 
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "width") || hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "height") || hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "minWidth") || hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "minHeight") ||
-    hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "maxWidth") || hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "maxHeight") ||
-    hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "flexBasis") ||
-    hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "paddingBottom") ||
-    hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "marginBottom") ||
-    hasMapping;
+  const layoutKeys: AnimatableLayoutKey[] = [
+    "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
+    "flex", "flexGrow", "flexShrink", "flexBasis",
+    "top", "right", "bottom", "left",
+    "padding", "paddingHorizontal", "paddingVertical",
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "margin", "marginHorizontal", "marginVertical",
+    "marginTop", "marginRight", "marginBottom", "marginLeft",
+  ];
+  for (const layoutKey of layoutKeys) {
+    hasMapping =
+      applyLayoutStyleMapping(style, resolved, mapping, layoutKey) ||
+      hasMapping;
+  }
 
   if (Array.isArray(style.transform)) {
     const resolvedTransforms: Array<Record<string, unknown>> = [];

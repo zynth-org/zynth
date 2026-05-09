@@ -251,7 +251,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var firstMountCommitListener: (() -> Unit)? = null
   private var didDispatchFirstMountCommit = false
   internal val frameCallback = Choreographer.FrameCallback { handleFrame() }
-  internal val layoutEngine: LayoutEngine = LayoutEngineAdapter()
+  internal val layoutEngine: LayoutEngine by lazy { LayoutEngineAdapter() }
   private data class TimerEntry(
     val handler: Handler,
     val runnable: Runnable,
@@ -1838,38 +1838,47 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     minHeight: Float,
     maxWidth: Float,
     maxHeight: Float,
+    flex: Float,
+    flexGrow: Float,
+    flexShrink: Float,
     flexBasis: Float,
+    top: Float,
+    right: Float,
+    bottom: Float,
+    left: Float,
+    padding: Float,
+    paddingHorizontal: Float,
+    paddingVertical: Float,
+    paddingTop: Float,
+    paddingRight: Float,
     paddingBottom: Float,
-    marginBottom: Float
+    paddingLeft: Float,
+    margin: Float,
+    marginHorizontal: Float,
+    marginVertical: Float,
+    marginTop: Float,
+    marginRight: Float,
+    marginBottom: Float,
+    marginLeft: Float
   ) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
       runOnMain {
         applyAnimatedLayoutStyleInternal(
-          nodeId,
-          width,
-          height,
-          minWidth,
-          minHeight,
-          maxWidth,
-          maxHeight,
-          flexBasis,
-          paddingBottom,
-          marginBottom
+          nodeId, width, height, minWidth, minHeight, maxWidth, maxHeight,
+          flex, flexGrow, flexShrink, flexBasis,
+          top, right, bottom, left,
+          padding, paddingHorizontal, paddingVertical, paddingTop, paddingRight, paddingBottom, paddingLeft,
+          margin, marginHorizontal, marginVertical, marginTop, marginRight, marginBottom, marginLeft
         )
       }
       return
     }
     applyAnimatedLayoutStyleInternal(
-      nodeId,
-      width,
-      height,
-      minWidth,
-      minHeight,
-      maxWidth,
-      maxHeight,
-      flexBasis,
-      paddingBottom,
-      marginBottom
+      nodeId, width, height, minWidth, minHeight, maxWidth, maxHeight,
+      flex, flexGrow, flexShrink, flexBasis,
+      top, right, bottom, left,
+      padding, paddingHorizontal, paddingVertical, paddingTop, paddingRight, paddingBottom, paddingLeft,
+      margin, marginHorizontal, marginVertical, marginTop, marginRight, marginBottom, marginLeft
     )
   }
 
@@ -1881,9 +1890,28 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     minHeight: Float,
     maxWidth: Float,
     maxHeight: Float,
+    flex: Float,
+    flexGrow: Float,
+    flexShrink: Float,
     flexBasis: Float,
+    top: Float,
+    right: Float,
+    bottom: Float,
+    left: Float,
+    padding: Float,
+    paddingHorizontal: Float,
+    paddingVertical: Float,
+    paddingTop: Float,
+    paddingRight: Float,
     paddingBottom: Float,
-    marginBottom: Float
+    paddingLeft: Float,
+    margin: Float,
+    marginHorizontal: Float,
+    marginVertical: Float,
+    marginTop: Float,
+    marginRight: Float,
+    marginBottom: Float,
+    marginLeft: Float
   ) {
     val view = nodes[nodeId] ?: return
     var changed = false
@@ -1920,7 +1948,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         changed = true
       }
     }
-
     if (minHeight.isFinite()) {
       val next = dpToPx(minHeight).roundToInt()
       if (view.minimumHeight != next) {
@@ -1929,37 +1956,93 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       }
     }
 
-    maxWidth
-    maxHeight
-    flexBasis
+    // Padding application
+    var nextPaddingLeft = view.paddingLeft
+    var nextPaddingTop = view.paddingTop
+    var nextPaddingRight = view.paddingRight
+    var nextPaddingBottom = view.paddingBottom
+    var paddingChanged = false
 
+    if (padding.isFinite()) {
+      val p = dpToPx(padding).roundToInt()
+      nextPaddingLeft = p; nextPaddingTop = p; nextPaddingRight = p; nextPaddingBottom = p
+      paddingChanged = true
+    }
+    if (paddingHorizontal.isFinite()) {
+      val ph = dpToPx(paddingHorizontal).roundToInt()
+      nextPaddingLeft = ph; nextPaddingRight = ph
+      paddingChanged = true
+    }
+    if (paddingVertical.isFinite()) {
+      val pv = dpToPx(paddingVertical).roundToInt()
+      nextPaddingTop = pv; nextPaddingBottom = pv
+      paddingChanged = true
+    }
+    if (paddingTop.isFinite()) {
+      nextPaddingTop = dpToPx(paddingTop).roundToInt()
+      paddingChanged = true
+    }
+    if (paddingRight.isFinite()) {
+      nextPaddingRight = dpToPx(paddingRight).roundToInt()
+      paddingChanged = true
+    }
     if (paddingBottom.isFinite()) {
-      val next = dpToPx(paddingBottom).roundToInt()
-      if (view.paddingBottom != next) {
-        view.setPadding(
-          view.paddingLeft,
-          view.paddingTop,
-          view.paddingRight,
-          next,
-        )
+      nextPaddingBottom = dpToPx(paddingBottom).roundToInt()
+      paddingChanged = true
+    }
+    if (paddingLeft.isFinite()) {
+      nextPaddingLeft = dpToPx(paddingLeft).roundToInt()
+      paddingChanged = true
+    }
+
+    if (paddingChanged) {
+      view.setPadding(nextPaddingLeft, nextPaddingTop, nextPaddingRight, nextPaddingBottom)
+      changed = true
+    }
+
+    // Margin application
+    val marginParams = view.layoutParams as? ViewGroup.MarginLayoutParams
+    if (marginParams != null) {
+      var marginChanged = false
+      if (margin.isFinite()) {
+        val m = dpToPx(margin).roundToInt()
+        marginParams.leftMargin = m; marginParams.topMargin = m; marginParams.rightMargin = m; marginParams.bottomMargin = m
+        marginChanged = true
+      }
+      if (marginHorizontal.isFinite()) {
+        val mh = dpToPx(marginHorizontal).roundToInt()
+        marginParams.leftMargin = mh; marginParams.rightMargin = mh
+        marginChanged = true
+      }
+      if (marginVertical.isFinite()) {
+        val mv = dpToPx(marginVertical).roundToInt()
+        marginParams.topMargin = mv; marginParams.bottomMargin = mv
+        marginChanged = true
+      }
+      if (marginTop.isFinite()) {
+        marginParams.topMargin = dpToPx(marginTop).roundToInt()
+        marginChanged = true
+      }
+      if (marginRight.isFinite()) {
+        marginParams.rightMargin = dpToPx(marginRight).roundToInt()
+        marginChanged = true
+      }
+      if (marginBottom.isFinite()) {
+        marginParams.bottomMargin = dpToPx(marginBottom).roundToInt()
+        marginChanged = true
+      }
+      if (marginLeft.isFinite()) {
+        marginParams.leftMargin = dpToPx(marginLeft).roundToInt()
+        marginChanged = true
+      }
+      if (marginChanged) {
+        view.layoutParams = marginParams
         changed = true
       }
     }
 
-    if (marginBottom.isFinite()) {
-      val params = view.layoutParams as? ViewGroup.MarginLayoutParams
-      if (params != null) {
-        val next = dpToPx(marginBottom).roundToInt()
-        if (params.bottomMargin != next) {
-          params.bottomMargin = next
-          view.layoutParams = params
-          changed = true
-        }
-      }
-    }
-
     if (changed) {
-      markSurfaceDirtyForNode(nodeId, "animatedStyle")
+      markSurfaceDirtyForNode(nodeId, "animatedLayoutStyle")
       view.requestLayout()
       view.invalidate()
     }
@@ -2366,6 +2449,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       else -> JSONObject.quote(rawValue)
     }
     val json = "{\"$name\":$jsonValue}"
+
     return runCatching { Style.fromJson(json) }.getOrNull()
   }
 }

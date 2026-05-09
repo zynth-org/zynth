@@ -11,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
 #include <vector>
 
 #include <android/log.h>
@@ -151,6 +152,7 @@ public:
    * @return true if the node was created (not a duplicate).
    */
   bool createNode(int32_t nodeId, const std::string &typeName, int32_t surfaceId, bool hasMeasure = false) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     if (nodes_.count(nodeId)) return false;
 
     ZynthNodeRecord record;
@@ -180,6 +182,7 @@ public:
    * @brief Remove a node and clean up all references.
    */
   void dropNode(int32_t nodeId) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     auto it = nodes_.find(nodeId);
     if (it == nodes_.end()) return;
 
@@ -220,6 +223,7 @@ public:
    * @brief Insert a child node at the given index.
    */
   void insertChild(int32_t parentId, int32_t childId, int32_t index) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     auto childIt = nodes_.find(childId);
     if (childIt == nodes_.end()) return;
 
@@ -313,6 +317,7 @@ public:
    * @brief Remove a child from its parent.
    */
   void removeChild(int32_t parentId, int32_t childId) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     auto parentIt = nodes_.find(parentId);
     auto surfaceIt = surfaces_.find(parentId);
     const bool parentIsSurfaceRoot = parentIt == nodes_.end() && surfaceIt != surfaces_.end();
@@ -363,6 +368,7 @@ public:
    * @brief Register or update a surface.
    */
   void registerSurface(int32_t surfaceId, float width, float height) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     auto &surface = surfaces_[surfaceId];
     surface.surfaceId = surfaceId;
     surface.width = width;
@@ -386,6 +392,7 @@ public:
    * @brief Remove a surface and all its nodes.
    */
   void unregisterSurface(int32_t surfaceId) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     // Collect nodes belonging to this surface
     std::vector<int32_t> toRemove;
     for (const auto &pair : nodeSurfaces_) {
@@ -412,6 +419,7 @@ public:
    * @brief Mark a surface as needing layout recalculation.
    */
   void markSurfaceDirty(int32_t surfaceId) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     dirtySurfaces_.insert(surfaceId);
   }
 
@@ -419,9 +427,17 @@ public:
    * @brief Mark the surface containing the given node as dirty.
    */
   void markSurfaceDirtyForNode(int32_t nodeId) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     auto it = nodeSurfaces_.find(nodeId);
     int32_t surfaceId = (it != nodeSurfaces_.end()) ? it->second : activeSurfaceId_;
     dirtySurfaces_.insert(surfaceId);
+  }
+
+  std::unordered_set<int32_t> getDirtySurfacesAndClear() {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
+    std::unordered_set<int32_t> copy = std::move(dirtySurfaces_);
+    dirtySurfaces_.clear();
+    return copy;
   }
 
   const std::unordered_set<int32_t> &dirtySurfaces() const {
@@ -429,7 +445,14 @@ public:
   }
 
   void clearDirtySurfaces() {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     dirtySurfaces_.clear();
+  }
+
+  YGNodeRef getSurfaceRootYoga(int32_t surfaceId) const {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
+    auto it = surfaces_.find(surfaceId);
+    return (it != surfaces_.end()) ? it->second.rootYoga : nullptr;
   }
 
   // ---- Layout event tracking ----
@@ -527,11 +550,13 @@ public:
    * @return Pointer to node record, or nullptr if not found.
    */
   ZynthNodeRecord *getNode(int32_t nodeId) {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     auto it = nodes_.find(nodeId);
     return (it != nodes_.end()) ? &it->second : nullptr;
   }
 
   const ZynthNodeRecord *getNode(int32_t nodeId) const {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     auto it = nodes_.find(nodeId);
     return (it != nodes_.end()) ? &it->second : nullptr;
   }
@@ -540,6 +565,7 @@ public:
    * @brief Get surface for a node.
    */
   int32_t surfaceForNode(int32_t nodeId) const {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     auto it = nodeSurfaces_.find(nodeId);
     return (it != nodeSurfaces_.end()) ? it->second : activeSurfaceId_;
   }
@@ -547,17 +573,24 @@ public:
   /**
    * @brief Get total node count.
    */
-  size_t nodeCount() const { return nodes_.size(); }
+  size_t nodeCount() const {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
+    return nodes_.size();
+  }
 
   /**
    * @brief Get total surface count.
    */
-  size_t surfaceCount() const { return surfaces_.size(); }
+  size_t surfaceCount() const {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
+    return surfaces_.size();
+  }
 
   /**
    * @brief Check if a node exists.
    */
   bool hasNode(int32_t nodeId) const {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
     return nodes_.count(nodeId) > 0;
   }
 
@@ -643,6 +676,7 @@ private:
   std::unordered_map<int32_t, int32_t> nodeSurfaces_;  ///< nodeId -> surfaceId
   std::unordered_map<int32_t, std::vector<int32_t>> surfaceChildren_; ///< surfaceId -> root child ids
   std::unordered_set<int32_t> dirtySurfaces_;
+  mutable std::recursive_mutex hostMutex_;
   std::unordered_set<int32_t> layoutNodes_;  ///< Nodes that emit onLayout events
   std::unordered_map<std::string, uint16_t> typeTable_;  ///< type name -> typeId
   YGConfigRef yogaConfig_ = nullptr;

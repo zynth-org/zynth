@@ -89,9 +89,28 @@ export type NativeStyleMapperConfig = {
   minHeight?: NativeStyleValue;
   maxWidth?: NativeStyleValue;
   maxHeight?: NativeStyleValue;
+  flex?: NativeStyleValue;
+  flexGrow?: NativeStyleValue;
+  flexShrink?: NativeStyleValue;
   flexBasis?: NativeStyleValue;
+  top?: NativeStyleValue;
+  right?: NativeStyleValue;
+  bottom?: NativeStyleValue;
+  left?: NativeStyleValue;
+  padding?: NativeStyleValue;
+  paddingHorizontal?: NativeStyleValue;
+  paddingVertical?: NativeStyleValue;
+  paddingTop?: NativeStyleValue;
+  paddingRight?: NativeStyleValue;
   paddingBottom?: NativeStyleValue;
+  paddingLeft?: NativeStyleValue;
+  margin?: NativeStyleValue;
+  marginHorizontal?: NativeStyleValue;
+  marginVertical?: NativeStyleValue;
+  marginTop?: NativeStyleValue;
+  marginRight?: NativeStyleValue;
   marginBottom?: NativeStyleValue;
+  marginLeft?: NativeStyleValue;
 };
 
 type NativeAnimateJSI = {

@@ -382,7 +382,7 @@ std::string jsonEscape(const std::string &value) {
   out.reserve(value.size() + 8);
   for (unsigned char ch : value) {
     switch (ch) {
-      case '\"':
+      case '"':
         out += "\\\"";
         break;
       case '\\':
@@ -429,6 +429,7 @@ void emitDevtoolsEvent(RuntimeState *state,
                         "\",\"level\":\"" + jsonEscape(level) +
                         "\",\"tag\":\"" + jsonEscape(tag) +
                         "\",\"data\":\"" + jsonEscape(data) + "\"}";
+
 
   if (state->nativeOverlayClass && state->nativeOverlayHandleRaw) {
     jstring jPayload = env->NewStringUTF(payload.c_str());
@@ -838,17 +839,9 @@ extern "C" JNIEXPORT void ZynthApplyAnimatedStyle(
 extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
     void *state,
     int nodeId,
-    float width,
-    float height,
-    float minWidth,
-    float minHeight,
-    float maxWidth,
-    float maxHeight,
-    float flexBasis,
-    float paddingBottom,
-    float marginBottom) {
+    const ZynthAnimatedLayoutProps* props) {
   auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
-  if (!runtimeState) {
+  if (!runtimeState || !props) {
     return;
   }
 
@@ -873,39 +866,71 @@ extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
       }
     };
     
-    update(zynth::ZynthPropId::Width, width);
-    update(zynth::ZynthPropId::Height, height);
-    update(zynth::ZynthPropId::MinWidth, minWidth);
-    update(zynth::ZynthPropId::MinHeight, minHeight);
-    update(zynth::ZynthPropId::MaxWidth, maxWidth);
-    update(zynth::ZynthPropId::MaxHeight, maxHeight);
-    update(zynth::ZynthPropId::FlexBasis, flexBasis);
-    update(zynth::ZynthPropId::PaddingBottom, paddingBottom);
-    update(zynth::ZynthPropId::MarginBottom, marginBottom);
+    update(zynth::ZynthPropId::Width, props->width);
+    update(zynth::ZynthPropId::Height, props->height);
+    update(zynth::ZynthPropId::MinWidth, props->minWidth);
+    update(zynth::ZynthPropId::MinHeight, props->minHeight);
+    update(zynth::ZynthPropId::MaxWidth, props->maxWidth);
+    update(zynth::ZynthPropId::MaxHeight, props->maxHeight);
+    update(zynth::ZynthPropId::Flex, props->flex);
+    update(zynth::ZynthPropId::FlexGrow, props->flexGrow);
+    update(zynth::ZynthPropId::FlexShrink, props->flexShrink);
+    update(zynth::ZynthPropId::FlexBasis, props->flexBasis);
+    update(zynth::ZynthPropId::Top, props->top);
+    update(zynth::ZynthPropId::Right, props->right);
+    update(zynth::ZynthPropId::Bottom, props->bottom);
+    update(zynth::ZynthPropId::Left, props->left);
+
+    // Padding shorthands
+    if (!std::isnan(props->padding)) {
+      update(zynth::ZynthPropId::PaddingTop, props->padding);
+      update(zynth::ZynthPropId::PaddingRight, props->padding);
+      update(zynth::ZynthPropId::PaddingBottom, props->padding);
+      update(zynth::ZynthPropId::PaddingLeft, props->padding);
+    }
+    if (!std::isnan(props->paddingHorizontal)) {
+      update(zynth::ZynthPropId::PaddingRight, props->paddingHorizontal);
+      update(zynth::ZynthPropId::PaddingLeft, props->paddingHorizontal);
+    }
+    if (!std::isnan(props->paddingVertical)) {
+      update(zynth::ZynthPropId::PaddingTop, props->paddingVertical);
+      update(zynth::ZynthPropId::PaddingBottom, props->paddingVertical);
+    }
+    update(zynth::ZynthPropId::PaddingTop, props->paddingTop);
+    update(zynth::ZynthPropId::PaddingRight, props->paddingRight);
+    update(zynth::ZynthPropId::PaddingBottom, props->paddingBottom);
+    update(zynth::ZynthPropId::PaddingLeft, props->paddingLeft);
+
+    // Margin shorthands
+    if (!std::isnan(props->margin)) {
+      update(zynth::ZynthPropId::MarginTop, props->margin);
+      update(zynth::ZynthPropId::MarginRight, props->margin);
+      update(zynth::ZynthPropId::MarginBottom, props->margin);
+      update(zynth::ZynthPropId::MarginLeft, props->margin);
+    }
+    if (!std::isnan(props->marginHorizontal)) {
+      update(zynth::ZynthPropId::MarginRight, props->marginHorizontal);
+      update(zynth::ZynthPropId::MarginLeft, props->marginHorizontal);
+    }
+    if (!std::isnan(props->marginVertical)) {
+      update(zynth::ZynthPropId::MarginTop, props->marginVertical);
+      update(zynth::ZynthPropId::MarginBottom, props->marginVertical);
+    }
+    update(zynth::ZynthPropId::MarginTop, props->marginTop);
+    update(zynth::ZynthPropId::MarginRight, props->marginRight);
+    update(zynth::ZynthPropId::MarginBottom, props->marginBottom);
+    update(zynth::ZynthPropId::MarginLeft, props->marginLeft);
     
     if (changed) {
       runtimeState->rendererHost.markSurfaceDirty(nodeRecord->surfaceId);
     }
   }
 
-  // 2. Notify Kotlin for any component side-effects
-  if (runtimeState->uiManager && runtimeState->applyAnimatedLayoutStyle) {
-    JNIEnv *env = getEnv();
-    if (!env) return;
-    env->CallVoidMethod(
-        runtimeState->uiManager,
-        runtimeState->applyAnimatedLayoutStyle,
-        nodeId,
-        width,
-        height,
-        minWidth,
-        minHeight,
-        maxWidth,
-        maxHeight,
-        flexBasis,
-        paddingBottom,
-        marginBottom);
-  }
+  // Layout updates are committed to Android views exclusively through
+  // ZynthPerformNativeLayout → applyMountTransaction.  Calling the Kotlin
+  // applyAnimatedLayoutStyle callback here would cause a redundant, conflicting
+  // view-level update (view.setPadding / layoutParams / requestLayout) that
+  // races with the authoritative Yoga-driven mount transaction.
 }
 
 extern "C" JNIEXPORT void ZynthPerformNativeLayout(void *state) {
@@ -918,8 +943,20 @@ extern "C" JNIEXPORT void ZynthPerformNativeLayout(void *state) {
   zynth::ZynthCommit commit;
   zynth::ZynthCommitTelemetry telemetry;
   
-  // calculateLayoutForDirtySurfaces will only do work if there are dirty surfaces.
-  runtimeState->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
+  // calculateLayoutForDirtySurfaces may throw if Yoga encounters invalid
+  // constraints (e.g. indefinite availableHeight with incompatible sizing
+  // mode).  Catch and log rather than crashing the entire layout pass.
+  try {
+    runtimeState->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
+  } catch (const std::exception &e) {
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthAnimate",
+                        "Yoga layout failed: %s", e.what());
+    return;
+  } catch (...) {
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthAnimate",
+                        "Yoga layout failed (unknown exception)");
+    return;
+  }
 
   // 2. If layout changed, send the new frames to Kotlin
   if (!commit.layoutFrames.empty()) {
@@ -946,10 +983,6 @@ extern "C" JNIEXPORT void ZynthPerformNativeLayout(void *state) {
         static_cast<jlong>(postLayoutOps.size() * sizeof(double)));
     
     if (jBuffer) {
-      // Dispatch layout updates to the UI thread. 
-      // applyMountTransaction handles frame extraction and view.layout().
-      
-      // We must pass a non-null string array to satisfy Kotlin parameter checks.
       jobjectArray jStrings = env->NewObjectArray(0, runtimeState->stringClass, nullptr);
 
       env->CallVoidMethod(
@@ -2571,7 +2604,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->applyAnimatedStyle =
       env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFFFFFFF)V");
   state->applyAnimatedLayoutStyle =
-      env->GetMethodID(state->uiClass, "applyAnimatedLayoutStyle", "(IFFFFFFFFF)V");
+      env->GetMethodID(state->uiClass, "applyAnimatedLayoutStyle", "(IFFFFFFFFFFFFFFFFFFFFFFFFFFFF)V");
   state->scheduleTimer = env->GetMethodID(state->uiClass, "scheduleTimer", "(JIIZ)V");
   state->cancelTimer = env->GetMethodID(state->uiClass, "cancelTimer", "(I)V");
   state->scheduleAnimationFrame = env->GetMethodID(state->uiClass, "scheduleAnimationFrame", "(JI)V");

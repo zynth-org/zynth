@@ -125,32 +125,30 @@ public:
   void calculateLayoutForDirtySurfaces(ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
     ZynthPhaseTimer timer(telemetry.yogaCalculateUs);
     
-    const auto& dirtySurfaces = host_->dirtySurfaces();
+    // We get a snapshot of dirty surfaces to avoid iterator invalidation 
+    // if other threads (JS) mark surfaces as dirty while we calculate.
+    const auto dirtySurfaces = host_->getDirtySurfacesAndClear();
+    if (dirtySurfaces.empty()) return;
+
     bool hasJsMutations = !commit.inserts.empty() || !commit.removes.empty() || 
                          !commit.creates.empty() || !commit.layoutProps.empty() || 
                          !commit.textProps.empty() || !commit.textMutations.empty();
 
     for (int32_t surfaceId : dirtySurfaces) {
-      auto surfIt = host_->surfaces_.find(surfaceId);
-      if (surfIt == host_->surfaces_.end()) {
-        __android_log_print(ANDROID_LOG_WARN, "ZynthYoga", "Surface %d NOT FOUND in host!", surfaceId);
+      YGNodeRef rootYoga = host_->getSurfaceRootYoga(surfaceId);
+      if (!rootYoga) {
+        __android_log_print(ANDROID_LOG_WARN, "ZynthYoga", "Surface %d rootYoga NOT FOUND in host!", surfaceId);
         continue;
       }
-      if (!surfIt->second.rootYoga) {
-        __android_log_print(ANDROID_LOG_WARN, "ZynthYoga", "Surface %d has NO rootYoga!", surfaceId);
-        continue;
-      }
-      
-      auto& surface = surfIt->second;
       
       // Calculate layout — Yoga skips clean subtrees internally
-      YGNodeCalculateLayout(surface.rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
+      YGNodeCalculateLayout(rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
 
       // If this is a native-only commit (e.g. from an animation frame), we won't have 
       // JS mutation records to seed extractFramesForMutatedNodes. We must walk the tree
       // to find what Yoga changed.
       if (!hasJsMutations) {
-        extractFrames(surface.rootYoga, telemetry, commit);
+        extractFrames(rootYoga, telemetry, commit);
       }
     }
     
@@ -158,9 +156,6 @@ public:
     if (hasJsMutations) {
       extractFramesForMutatedNodes(telemetry, commit);
     }
-    
-    // Clear dirty
-    host_->clearDirtySurfaces();
   }
 
   /**
