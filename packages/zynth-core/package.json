@@ -34,6 +34,7 @@
     "android/ZynthKit/build.gradle.kts",
     "android/ZynthKit/consumer-rules.pro",
     "ZynthKit.podspec",
+    "native",
     "README.md",
     "src"
   ],

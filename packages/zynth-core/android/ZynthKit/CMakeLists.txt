@@ -25,11 +25,17 @@ find_package(hermes-engine REQUIRED CONFIG)
 find_package(ReactAndroid REQUIRED CONFIG)
 find_package(fbjni REQUIRED CONFIG)
 
+# Add Yoga prebuilt from vendor (updated with correct C symbols)
+add_library(zynth_yoga SHARED IMPORTED)
+set_target_properties(zynth_yoga PROPERTIES
+  IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/../../native/vendor/android/${ANDROID_ABI}/libyoga.so
+)
+
 target_include_directories(zynthkit
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../native/vendor/headers
     $<TARGET_PROPERTY:ReactAndroid::jsi,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:ReactAndroid::reactnative,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 if(TARGET hermes-engine::hermesvm)
@@ -44,7 +50,7 @@ target_link_libraries(zynthkit
   PRIVATE
     ${ZYNTH_HERMES_TARGET}
     ReactAndroid::jsi
-    ReactAndroid::reactnative
+    zynth_yoga
     fbjni::fbjni
     log
 )

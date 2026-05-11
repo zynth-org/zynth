@@ -30,7 +30,8 @@
     "release:fixture": "node --experimental-strip-types scripts/release-fixture-smoke.ts",
     "release:versioning-drill": "node --experimental-strip-types scripts/release-versioning-drill.ts",
     "release:packages": "changeset publish",
-    "release:alpha": "changeset publish --tag alpha"
+    "release:alpha": "changeset publish --tag alpha",
+    "provision:yoga": "./scripts/provision-yoga.sh"
   },
   "devDependencies": {
     "@changesets/cli": "^2.30.0",
