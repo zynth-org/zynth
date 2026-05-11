@@ -534,7 +534,7 @@ class ZynthAnimateRuntime {
     auto cancelSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "cancelSharedValue"), 1,
         [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-          if (count < 1 || !args[0].isObject()) return Value::undefined();
+          if (count < 1 || !args[0].isNumber()) return Value::undefined();
           int id = static_cast<int>(args[0].asNumber());
           {
             std::lock_guard<std::mutex> lock(mutex);
