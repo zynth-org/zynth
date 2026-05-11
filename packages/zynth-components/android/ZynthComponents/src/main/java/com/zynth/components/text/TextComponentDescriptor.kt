@@ -29,6 +29,7 @@ private fun parseString(json: String?): String? {
 }
 
 private const val DEBUG_TEXT = false
+private const val TEXT_MEASURE_CACHE_KEY = "textMeasureCache"
 
 private fun isIconFontFamily(family: String): Boolean {
   return family.contains("Icon")
@@ -40,13 +41,21 @@ private data class TextMeasureCache(
   val height: Float,
 )
 
+private data class ResolvedMeasureText(
+  val text: CharSequence,
+  val plainText: String,
+  val usesSpans: Boolean,
+)
+
 private fun hashMeasureKey(
-  text: CharSequence,
+  text: String,
+  usesSpans: Boolean,
   textView: TextView,
   widthSpec: Int,
   heightSpec: Int,
 ): Int {
   var result = text.hashCode()
+  result = 31 * result + usesSpans.hashCode()
   result = 31 * result + textView.textSize.toBits()
   result = 31 * result + (textView.typeface?.hashCode() ?: 0)
   result = 31 * result + textView.letterSpacing.toBits()
@@ -121,9 +130,28 @@ private fun resolveMeasureText(
   node: ZynthUIManager.Node,
   manager: ZynthUIManager,
   textStyleKey: String,
-): String {
+): ResolvedMeasureText {
   val root = findTextRoot(node, manager)
-  return buildRawText(root, manager, textStyleKey)
+  val hasInlineSpans = subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)
+  val rootStyle = root.attachments[textStyleKey] as? TextStyleAttributes
+  val rootNeedsSpans = rootStyle?.let { needsRootSpanStyles(it) } ?: false
+  if (!hasInlineSpans && !rootNeedsSpans) {
+    val rawText = buildRawText(root, manager, textStyleKey)
+    return ResolvedMeasureText(
+      text = rawText,
+      plainText = rawText,
+      usesSpans = false,
+    )
+  }
+
+  val density = manager.getRootView().resources.displayMetrics.density
+  val composer = TextComposer(density, textStyleKey) { id -> manager.getNodeState(id) }
+  val composed = composer.compose(root)
+  return ResolvedMeasureText(
+    text = composed.text,
+    plainText = composed.text.toString(),
+    usesSpans = true,
+  )
 }
 
 
@@ -150,7 +178,6 @@ private fun getMeasureView(manager: ZynthUIManager, context: Context): TextView 
 fun createTextComponentDescriptor(): ZynthComponentDescriptor {
   val textStyleKey = "textStyle"
   val textManagerKey = "textManager"
-  val textMeasureCacheKey = "textMeasureCache"
   return ZynthComponentDescriptor(
     type = "text",
     createView = { context, _ -> ZynthTextView(context) },
@@ -186,7 +213,8 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         }
         
-        val currentText = resolveMeasureText(node, manager, textStyleKey)
+        val resolvedMeasureText = resolveMeasureText(node, manager, textStyleKey)
+        val currentText = resolvedMeasureText.plainText
         val root = findTextRoot(node, manager)
         val style = root.attachments[textStyleKey] as? TextStyleAttributes
         val hasVolatileZeroHeightConstraint =
@@ -202,8 +230,14 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         } else {
           heightSpec
         }
-        val cacheKey = hashMeasureKey(currentText, textView, widthSpec, effectiveHeightSpec)
-        val cached = node.attachments[textMeasureCacheKey] as? TextMeasureCache
+        val cacheKey = hashMeasureKey(
+          currentText,
+          resolvedMeasureText.usesSpans,
+          textView,
+          widthSpec,
+          effectiveHeightSpec,
+        )
+        val cached = node.attachments[TEXT_MEASURE_CACHE_KEY] as? TextMeasureCache
         if (cached != null && cached.key == cacheKey) {
           return@handler cached.width to cached.height
         }
@@ -211,7 +245,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         if (currentText.isEmpty()) {
           val measuredWidth = 0f
           val measuredHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
-          node.attachments[textMeasureCacheKey] =
+          node.attachments[TEXT_MEASURE_CACHE_KEY] =
             TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
           return@handler measuredWidth to measuredHeight
         }
@@ -232,10 +266,15 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
 
             measureView.setTextSize(TypedValue.COMPLEX_UNIT_PX, resolvedTextSizePx)
             measureView.typeface = resolveTextTypeface(textView, style)
-            if (measureView.text.toString() != currentText) {
-              measureView.text = currentText
+            if (resolvedMeasureText.usesSpans) {
+              measureView.setLineSpacing(0f, 1f)
+              measureView.letterSpacing = 0f
+            } else {
+              measureView.letterSpacing = textView.letterSpacing
             }
-            measureView.letterSpacing = textView.letterSpacing
+            if (measureView.text != resolvedMeasureText.text) {
+              measureView.text = resolvedMeasureText.text
+            }
             measureView.maxLines = textView.maxLines
             measureView.ellipsize = textView.ellipsize
             measureView.includeFontPadding =
@@ -272,7 +311,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           measuredHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
         }
         if (!hasVolatileZeroHeightConstraint) {
-          node.attachments[textMeasureCacheKey] =
+          node.attachments[TEXT_MEASURE_CACHE_KEY] =
             TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
         }
         val durationMs = (SystemClock.elapsedRealtimeNanos() - measureStart) / 1_000_000.0
@@ -417,6 +456,12 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           } else {
             false
           }
+        val usesSpanDrivenRendering =
+          hasInlineSpans || merged.let { needsRootSpanStyles(it) }
+        if (usesSpanDrivenRendering && textView != null) {
+          textView.setLineSpacing(0f, 1f)
+          textView.letterSpacing = 0f
+        }
         val shouldRecompose = shouldRecomposeText(existing, merged, hasInlineSpans)
         if (shouldRecompose) {
           updateComposedText(node, textStyleKey, textManagerKey)
@@ -461,6 +506,7 @@ private fun updateComposedText(
 ) {
   val manager = node.attachments[textManagerKey] as? ZynthUIManager ?: return
   val root = findTextRoot(node, manager)
+  root.attachments.remove(TEXT_MEASURE_CACHE_KEY)
   val hasInlineSpans = subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)
   val rootStyle = root.attachments[textStyleKey] as? TextStyleAttributes
   val rootNeedsSpans = rootStyle?.let { needsRootSpanStyles(it) } ?: false
