@@ -34,10 +34,13 @@ class ZynthRuntime(val root: ZynthRootView) {
   private var pendingStartRootId: Int? = null
   val bridgeSessionId: String = java.util.UUID.randomUUID().toString()
   init {
-    if (isStartupMetricsBootstrapEnabled()) {
+    val budgetEnabled = isBudgetMetricsBootstrapEnabled()
+    val startupEnabled = isStartupMetricsBootstrapEnabled() || budgetEnabled
+
+    if (startupEnabled) {
       startupMetrics.enableFeatures(listOf("startupTime"))
     }
-    if (isBudgetMetricsBootstrapEnabled()) {
+    if (budgetEnabled) {
       uiManager.budgetMetrics.enable(true)
     }
     startupMetrics.markRuntimeConstructStart()
