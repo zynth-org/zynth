@@ -1022,7 +1022,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val startNs = System.nanoTime()
     val child = nodes[childId] ?: return
     val parentState = nodeStates[parentId]
-    
+
     val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
     if (descriptor != null && nodeStates[childId] != null) {
       descriptor.onChildRemoved(this, parentState!!, nodeStates[childId]!!)
@@ -1145,9 +1145,12 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
    * Mark a node as dirty so its intrinsic size can be remeasured.
    * Used by components when text or content changes.
    */
-  fun markNodeDirty(nodeId: Int) {
+  fun markNodeDirty(nodeId: Int, reason: String = "unknown") {
     layoutEngine.markDirty(nodeId)
-    requestLayout("markNodeDirty")
+    if (runtimePtr != 0L) {
+      com.zynth.kit.runtime.JSBridge.markMeasuredNodeDirty(runtimePtr, nodeId)
+    }
+    requestLayout("markNodeDirty:$reason")
   }
 
   fun applyKeyboardAvoidingAdjustment(
@@ -1629,7 +1632,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                 val nodeType = nodeState?.type ?: "unknown"
                 val isText = nodeType == "text"
                 
-                if (!isText || view.measuredWidth != frameWidth || view.measuredHeight != frameHeight) {
+                val needsMeasure =
+                  forceUpdate ||
+                    !isText ||
+                    view.measuredWidth != frameWidth ||
+                    view.measuredHeight != frameHeight
+
+                if (needsMeasure) {
                   if (frameWidth <= 0 || frameHeight <= 0) {
                     val parentId = parents[nodeId] ?: -1
                     val parentType = nodeStates[parentId]?.type ?: "none"

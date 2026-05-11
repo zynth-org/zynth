@@ -58,7 +58,7 @@ export const Text: ParentComponent<TextProps> = (props) => {
   const coalescedChildren = createMemo(() => {
     const children = resolvedChildren();
     if (Array.isArray(children)) {
-      const result: any[] = [];
+      const result: unknown[] = [];
       let currentString = "";
       for (const child of children) {
         if (typeof child === "string" || typeof child === "number") {
@@ -73,8 +73,13 @@ export const Text: ParentComponent<TextProps> = (props) => {
       }
       if (currentString) result.push(currentString);
       if (result.length === 0) return "";
-      // Force array return to avoid Solid's replaceText(getFirstChild(parent)) optimization
-      // which is causing null node errors on both platforms under high churn.
+      if (
+        result.length === 1 &&
+        (typeof result[0] === "string" || typeof result[0] === "number")
+      ) {
+        return String(result[0]);
+      }
+      // Preserve arrays for mixed content so nested text nodes still compose correctly.
       return result;
     }
     return children ?? "";

@@ -123,8 +123,6 @@ public:
    *        that were affected.
    */
   void calculateLayoutForDirtySurfaces(ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
-    ZynthPhaseTimer timer(telemetry.yogaCalculateUs);
-    
     // We get a snapshot of dirty surfaces to avoid iterator invalidation 
     // if other threads (JS) mark surfaces as dirty while we calculate.
     const auto dirtySurfaces = host_->getDirtySurfacesAndClear();
@@ -140,21 +138,33 @@ public:
         __android_log_print(ANDROID_LOG_WARN, "ZynthYoga", "Surface %d rootYoga NOT FOUND in host!", surfaceId);
         continue;
       }
+      if (!YGNodeIsDirty(rootYoga) && !YGNodeGetHasNewLayout(rootYoga)) {
+        continue;
+      }
       
       // Calculate layout — Yoga skips clean subtrees internally
+      const auto layoutStart = std::chrono::steady_clock::now();
       YGNodeCalculateLayout(rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
+      telemetry.yogaCalculateUs += std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now() - layoutStart).count();
 
       // If this is a native-only commit (e.g. from an animation frame), we won't have 
       // JS mutation records to seed extractFramesForMutatedNodes. We must walk the tree
       // to find what Yoga changed.
       if (!hasJsMutations) {
+        const auto extractStart = std::chrono::steady_clock::now();
         extractFrames(rootYoga, telemetry, commit);
+        telemetry.frameExtractUs += std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - extractStart).count();
       }
     }
     
     // Extract frames using the optimized mutation-seeded path if JS changes are present.
     if (hasJsMutations) {
+      const auto extractStart = std::chrono::steady_clock::now();
       extractFramesForMutatedNodes(telemetry, commit);
+      telemetry.frameExtractUs += std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now() - extractStart).count();
     }
   }
 
@@ -163,10 +173,11 @@ public:
    */
   void extractFrames(YGNodeRef node, ZynthCommitTelemetry& telemetry, ZynthCommit& commit) {
     if (!node) return;
+    if (!YGNodeGetHasNewLayout(node)) return;
     
     int32_t nodeId = static_cast<int32_t>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
     
-    if (nodeId > 0 && YGNodeGetHasNewLayout(node)) {
+    if (nodeId > 0) {
       auto* record = host_->getNode(nodeId);
       if (record) {
         float left = YGNodeLayoutGetLeft(node);
@@ -188,8 +199,8 @@ public:
           commit.layoutFrames.push_back({nodeId, left, top, width, height});
         }
       }
-      YGNodeSetHasNewLayout(node, false);
     }
+    YGNodeSetHasNewLayout(node, false);
     
     for (uint32_t i = 0; i < YGNodeGetChildCount(node); ++i) {
       extractFrames(YGNodeGetChild(node, i), telemetry, commit);
@@ -237,11 +248,9 @@ private:
     }
     for (const auto& op : commit.textProps) {
       dirtyNodes.insert(op.nodeId);
-      subtreeRoots.insert(op.nodeId);
     }
     for (const auto& op : commit.textMutations) {
       dirtyNodes.insert(op.nodeId);
-      subtreeRoots.insert(op.nodeId);
     }
 
     // Expand: walk ancestors so we capture parent reflows

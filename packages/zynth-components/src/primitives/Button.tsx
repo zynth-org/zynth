@@ -531,6 +531,10 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   const hasStartIcon = createMemo(() => !!local.startIcon);
   const hasEndIcon = createMemo(() => !!local.endIcon);
   const hasAffixes = createMemo(() => hasStartIcon() || hasEndIcon());
+  const hasExplicitButtonWidth = createMemo(() => {
+    const style = local.style as Style | undefined;
+    return local.fullWidth || style?.width !== undefined;
+  });
   const contentStyle = createMemo<Style>(() => {
     const metrics = sizeMetrics[resolvedSize()] ?? sizeMetrics.md;
     const base: Style = {
@@ -539,7 +543,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       justifyContent: "center",
     };
     base.gap = metrics.gap;
-    if (local.fullWidth) {
+    if (hasExplicitButtonWidth()) {
       base.width = "100%";
     }
     return base;
@@ -800,6 +804,12 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     return toneColorMap[resolvedTone()] ?? toneColorMap.primary;
   });
 
+  const shouldUseFlexibleLabel = createMemo(() => {
+    if (hasAffixes()) return true;
+    if (computedLoading()) return true;
+    return false;
+  });
+
   // If using native title, we don't render text children.
   // Otherwise, render a Text node for string content so it participates in layout.
   const renderContent = () => {
@@ -809,8 +819,16 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       const textStyle: Style = {
         fontSize,
         color: resolvedTextColor(),
-        width: "100%",
         textAlign: "center",
+        ...(shouldUseFlexibleLabel()
+          ? {
+              flexGrow: 1,
+              flexShrink: 1,
+              minWidth: 0,
+            }
+          : {
+              width: "100%",
+            }),
         ...((local.labelStyle as Style) ?? {}),
       };
       return <Text style={textStyle}>{titleContent()}</Text>;
@@ -820,6 +838,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   };
 
   const shouldUseContentWrapper = createMemo(() => {
+    if (hasExplicitButtonWidth()) return true;
     if (!isStringContent()) return true;
     if (hasAffixes()) return true;
     if (computedLoading()) return true;
@@ -877,9 +896,13 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
               ) : null}
             </>
           ) : null}
-          {!shouldHideContentForOverlay() ? local.startIcon : null}
+          {!shouldHideContentForOverlay() && local.startIcon && (
+            <View style={{ flexShrink: 0 }}>{local.startIcon}</View>
+          )}
           {!shouldHideContentForOverlay() ? renderContent() : null}
-          {!shouldHideContentForOverlay() ? local.endIcon : null}
+          {!shouldHideContentForOverlay() && local.endIcon && (
+            <View style={{ flexShrink: 0 }}>{local.endIcon}</View>
+          )}
         </View>
       ) : (
         renderContent()

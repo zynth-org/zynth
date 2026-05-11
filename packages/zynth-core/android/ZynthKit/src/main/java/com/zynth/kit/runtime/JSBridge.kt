@@ -47,6 +47,7 @@ internal object JSBridge {
   external fun invokeTimer(runtimePtr: Long, timerId: Int)
   external fun invokeAnimationFrame(runtimePtr: Long, callbackId: Int, timestampMs: Double)
   external fun updateSurfaceSize(runtimePtr: Long, surfaceId: Int, width: Float, height: Float)
+  external fun markMeasuredNodeDirty(runtimePtr: Long, nodeId: Int)
   external fun setSharedSignal(runtimePtr: Long, id: Int, value: Double)
   external fun getSharedSignal(runtimePtr: Long, id: Int): Double
   external fun cancelSharedSignalAnimation(runtimePtr: Long, id: Int): Boolean

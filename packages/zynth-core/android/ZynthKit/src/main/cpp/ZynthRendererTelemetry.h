@@ -22,7 +22,8 @@ struct ZynthCommitTelemetry {
   int64_t kotlinDecodeUs   = 0; ///< Legacy: time Kotlin spends decoding ops (if applicable)
   int64_t commitApplyUs    = 0; ///< Time to apply commit to native state
   int64_t yogaMutateUs     = 0; ///< Time to mutate Yoga nodes
-  int64_t yogaCalculateUs  = 0; ///< Time to run Yoga layout calculation
+  int64_t yogaCalculateUs  = 0; ///< Time spent inside YGNodeCalculateLayout
+  int64_t frameExtractUs   = 0; ///< Time to diff/extract layout frames after Yoga
   int64_t measureCallbackUs = 0; ///< Accumulated text/intrinsic measurement time
   int64_t jniBuildUs       = 0; ///< Time to build JNI transaction
   int64_t mainApplyUs      = 0; ///< Time for main-thread transaction apply
@@ -45,6 +46,7 @@ struct ZynthCommitTelemetry {
 
   uint32_t measureCacheHits   = 0;
   uint32_t measureCacheMisses = 0;
+  uint32_t measureCacheBypasses = 0;
   uint32_t mutatedNodeCount   = 0;
   uint32_t layoutNodeCount    = 0;
   uint32_t changedFrameCount  = 0;
@@ -63,9 +65,9 @@ struct ZynthCommitTelemetry {
     __android_log_print(
         ANDROID_LOG_DEBUG, "ZynthCommit",
         "commit=%llu total=%.2fms jsi=%.2f decode=%.2f ktDecode=%.2f "
-        "apply=%.2f yogaMut=%.2f yogaCalc=%.2f measure=%.2f "
+        "apply=%.2f yogaMut=%.2f yogaCalc=%.2f frameExtract=%.2f measure=%.2f "
         "jniBuild=%.2f mainApply=%.2f events=%.2f "
-        "ops=%u props(L/V/T/D)=%u/%u/%u/%u",
+        "ops=%u props(L/V/T/D)=%u/%u/%u/%u measureCache(H/M/B)=%u/%u/%u changedFrames=%u dirtySurfaces=%u",
         static_cast<unsigned long long>(commitId),
         totalMs,
         jsiEntryUs / 1000.0,
@@ -74,6 +76,7 @@ struct ZynthCommitTelemetry {
         commitApplyUs / 1000.0,
         yogaMutateUs / 1000.0,
         yogaCalculateUs / 1000.0,
+        frameExtractUs / 1000.0,
         measureCallbackUs / 1000.0,
         jniBuildUs / 1000.0,
         mainApplyUs / 1000.0,
@@ -82,7 +85,12 @@ struct ZynthCommitTelemetry {
         layoutPropCount,
         viewPropCount,
         textPropCount,
-        descriptorPropCount);
+        descriptorPropCount,
+        measureCacheHits,
+        measureCacheMisses,
+        measureCacheBypasses,
+        changedFrameCount,
+        dirtySurfaceCount);
 #endif
   }
 };

@@ -42,7 +42,7 @@ public:
     callback_ = std::move(cb);
   }
 
-  YGSize measure(int32_t nodeId, uint32_t revision, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode, uint32_t& cacheHits, uint32_t& cacheMisses) {
+  YGSize measure(int32_t nodeId, uint32_t revision, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode, uint32_t& cacheHits, uint32_t& cacheMisses, uint32_t& cacheBypasses) {
     const bool hasVolatileZeroConstraint =
         (widthMode != YGMeasureModeUndefined && width <= 0.0f) ||
         (heightMode != YGMeasureModeUndefined && height <= 0.0f);
@@ -53,6 +53,8 @@ public:
         cacheHits++;
         return it->second;
       }
+    } else {
+      cacheBypasses++;
     }
     cacheMisses++;
     if (callback_) {

@@ -140,6 +140,10 @@ public:
     markSurfaceDirty(node.surfaceId);
   }
 
+  void bumpMeasuredNodeRevision(ZynthNodeRecord &node) {
+    node.contentRevision++;
+  }
+
   // ---- Node lifecycle ----
 
   /**
@@ -533,11 +537,11 @@ public:
     }
     for (const auto &mut : commit.textProps) {
       auto* node = getNode(mut.nodeId);
-      if (node) markMeasuredNodeDirty(*node);
+      if (node) bumpMeasuredNodeRevision(*node);
     }
     for (const auto &tm : commit.textMutations) {
       auto* node = getNode(tm.nodeId);
-      if (node) markMeasuredNodeDirty(*node);
+      if (node) bumpMeasuredNodeRevision(*node);
     }
 
     telemetry.dirtySurfaceCount = static_cast<uint32_t>(dirtySurfaces_.size());

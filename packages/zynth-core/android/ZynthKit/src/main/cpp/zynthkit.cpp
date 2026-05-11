@@ -170,15 +170,17 @@ static YGSize zynthYogaMeasureFunc(YGNodeConstRef node, float width, YGMeasureMo
   
   uint32_t hits = 0;
   uint32_t misses = 0;
+  uint32_t bypasses = 0;
   int64_t dummy = 0;
   zynth::ZynthPhaseTimer timer(g_currentLayoutState->currentTelemetry ? g_currentLayoutState->currentTelemetry->measureCallbackUs : dummy);
   
   YGSize res = g_currentLayoutState->measureRegistry.measure(
-      nodeId, record->contentRevision, width, widthMode, height, heightMode, hits, misses);
+      nodeId, record->contentRevision, width, widthMode, height, heightMode, hits, misses, bypasses);
       
   if (g_currentLayoutState->currentTelemetry) {
       g_currentLayoutState->currentTelemetry->measureCacheHits += hits;
       g_currentLayoutState->currentTelemetry->measureCacheMisses += misses;
+      g_currentLayoutState->currentTelemetry->measureCacheBypasses += bypasses;
   }
   return res;
 }
@@ -1995,17 +1997,6 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             {
               zynth::ZynthPhaseTimer timer(telemetry.yogaMutateUs);
               state->yogaTree->applyLayoutMutations(commit.layoutProps);
-              
-              auto processTextDirty = [&](int32_t nodeId) {
-                auto* record = state->rendererHost.getNode(nodeId);
-                if (record && record->hasMeasureFunc) {
-                  record->contentRevision++;
-                  if (record->yoga && YGNodeHasMeasureFunc(record->yoga)) YGNodeMarkDirty(record->yoga);
-                  state->rendererHost.markSurfaceDirty(record->surfaceId);
-                }
-              };
-              for (const auto& op : commit.textProps) processTextDirty(op.nodeId);
-              for (const auto& op : commit.textMutations) processTextDirty(op.nodeId);
             }
             
             // Phase 3A: Kotlin Pre-Layout Transaction
@@ -2202,9 +2193,6 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             if (jStrings) {
               env->DeleteLocalRef(jStrings);
             }
-
-            // Emit commit summary in debug builds
-            // commit.telemetry.logSummary();
 
             return Value::undefined();
           }
@@ -2493,6 +2481,17 @@ Java_com_zynth_kit_runtime_JSBridge_updateSurfaceSize(JNIEnv *, jobject, jlong p
   auto state = stateFor(runtime);
   if (!state) return;
   state->rendererHost.registerSurface(surfaceId, width, height);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_markMeasuredNodeDirty(JNIEnv *, jobject, jlong ptr, jint nodeId) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return;
+  auto state = stateFor(runtime);
+  if (!state) return;
+  if (auto *node = state->rendererHost.getNode(nodeId)) {
+    state->rendererHost.markMeasuredNodeDirty(*node);
+  }
 }
 
 extern "C" JNIEXPORT void JNICALL

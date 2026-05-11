@@ -3,7 +3,6 @@ package com.zynth.components.text
 import android.content.Context
 import android.graphics.Typeface
 import android.util.Log
-import android.os.SystemClock
 import android.util.TypedValue
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
@@ -30,7 +29,6 @@ private fun parseString(json: String?): String? {
 
 private const val DEBUG_TEXT = false
 private const val TEXT_MEASURE_CACHE_KEY = "textMeasureCache"
-
 private fun isIconFontFamily(family: String): Boolean {
   return family.contains("Icon")
 }
@@ -45,6 +43,11 @@ private data class ResolvedMeasureText(
   val text: CharSequence,
   val plainText: String,
   val usesSpans: Boolean,
+)
+
+private data class MeasuredTextSize(
+  val width: Int,
+  val height: Int,
 )
 
 private fun hashMeasureKey(
@@ -78,7 +81,7 @@ private fun rebuildComposedText(manager: ZynthUIManager, rootId: Int, styleKey: 
   // are reflected even when the raw string is unchanged.
   applyTextSynchronously(textView, composed.text)
   if (previous != next) {
-    manager.markNodeDirty(root.id)
+    manager.markNodeDirty(root.id, "text:rebuildComposed")
   }
 }
 
@@ -90,9 +93,60 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
   if (immediateText.isEmpty() && root.cachedText.isNotEmpty()) {
     android.util.Log.w("ZynthLayout", "rebuildRawText: resulting text is empty for node $rootId despite cachedText='${root.cachedText}'")
   }
-  if (rootTextView.text.toString() != immediateText) {
+  val didChange = rootTextView.text.toString() != immediateText
+  if (didChange) {
+    val previousText = rootTextView.text?.toString() ?: ""
+    val previousSize = measureRawTextSizeForCurrentBounds(manager, rootTextView, previousText)
+    val nextSize = measureRawTextSizeForCurrentBounds(manager, rootTextView, immediateText)
     rootTextView.text = immediateText
-    manager.markNodeDirty(root.id)
+    val shouldDirty = previousSize == null || nextSize == null || previousSize != nextSize
+    if (shouldDirty) {
+      manager.markNodeDirty(root.id, "text:rebuildRaw")
+    } else {
+      root.attachments[TEXT_MEASURE_CACHE_KEY] = TextMeasureCache(
+        key = hashMeasureKey(
+          immediateText,
+          false,
+          rootTextView,
+          MeasureSpec.makeMeasureSpec(rootTextView.width.coerceAtLeast(0), MeasureSpec.AT_MOST),
+          MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+        ),
+        width = nextSize.width.toFloat(),
+        height = nextSize.height.toFloat(),
+      )
+    }
+  }
+}
+
+private fun measureRawTextSizeForCurrentBounds(
+  manager: ZynthUIManager,
+  textView: TextView,
+  text: String,
+): MeasuredTextSize? {
+  val availableWidth = textView.width.takeIf { it > 0 } ?: textView.measuredWidth.takeIf { it > 0 }
+  if (availableWidth == null) {
+    return null
+  }
+  val measureView = getMeasureView(manager, textView.context)
+  return try {
+    synchronized(measureView) {
+      measureView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textView.textSize)
+      measureView.typeface = textView.typeface
+      measureView.letterSpacing = textView.letterSpacing
+      measureView.maxLines = textView.maxLines
+      measureView.ellipsize = textView.ellipsize
+      measureView.includeFontPadding = textView.includeFontPadding
+      measureView.text = text
+      val widthSpec = MeasureSpec.makeMeasureSpec(availableWidth, MeasureSpec.AT_MOST)
+      val heightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+      measureView.measure(widthSpec, heightSpec)
+      MeasuredTextSize(
+        width = measureView.measuredWidth,
+        height = measureView.measuredHeight,
+      )
+    }
+  } catch (_: Throwable) {
+    null
   }
 }
 
@@ -185,12 +239,10 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       val textView = node.view as? TextView ?: return@ZynthComponentDescriptor
       
       // Set up measurement handler for text
-      val measureTag = "ZynthText/measure"
       val handler: com.zynth.kit.layout.MeasureHandler = handler@{ input ->
         if (input.height <= 0f && input.heightMode != MeasureMode.UNDEFINED) {
           android.util.Log.v("ZynthLayout", "Text measure constraints: node=${node.id} w=${input.width}(${input.widthMode}) h=${input.height}(${input.heightMode})")
         }
-        val measureStart = SystemClock.elapsedRealtimeNanos()
         val widthValue = when {
           input.width.isNaN() -> 0
           input.width.isInfinite() -> Int.MAX_VALUE / 2
@@ -314,13 +366,6 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           node.attachments[TEXT_MEASURE_CACHE_KEY] =
             TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
         }
-        val durationMs = (SystemClock.elapsedRealtimeNanos() - measureStart) / 1_000_000.0
-        if (durationMs > 8) {
-          Log.w(
-            measureTag,
-            "Slow text measure: node=${node.id} text='${node.cachedText.take(24)}' duration=${"%.2f".format(durationMs)}ms",
-          )
-        }
         measuredWidth to measuredHeight
       }
       
@@ -341,20 +386,12 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       } else {
         when (name) {
           "text" -> {
-            val startNs = SystemClock.elapsedRealtimeNanos()
             val text = parseString(jsonValue) ?: ""
             if (text == node.cachedText) {
               return@ZynthComponentDescriptor true
             }
             node.cachedText = text
             updateComposedText(node, textStyleKey, textManagerKey)
-            val durationMs = (SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
-            if (durationMs > 4) {
-              Log.w(
-                "ZynthText/setProp",
-                "Slow text prop: node=${node.id} duration=${"%.2f".format(durationMs)}ms",
-              )
-            }
             true
           }
           "numberOfLines" -> {
@@ -363,7 +400,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
             val manager = node.attachments[textManagerKey] as? ZynthUIManager
             val root = manager?.let { findTextRoot(node, it) }
             if (manager != null && root != null) {
-              manager.markNodeDirty(root.id)
+              manager.markNodeDirty(root.id, "text:numberOfLines")
             }
             true
           }
@@ -372,8 +409,6 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       }
     },
     onStyleApplied = { node, style ->
-      val styleStart = SystemClock.elapsedRealtimeNanos()
-
       // Always capture text style attributes for composition (even for virtual text nodes).
       // Merge with existing to preserve previously-set props because style is applied per-key.
       val nextAttrs = TextStyleAttributes.fromStyle(style)
@@ -467,15 +502,8 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           updateComposedText(node, textStyleKey, textManagerKey)
         }
         if (didTextMetricsChange(existing, merged) && manager != null && root != null) {
-          manager.markNodeDirty(root.id)
+          manager.markNodeDirty(root.id, "text:styleMetrics")
         }
-      }
-      val durationMs = (SystemClock.elapsedRealtimeNanos() - styleStart) / 1_000_000.0
-      if (durationMs > 4) {
-        Log.w(
-          "ZynthText/style",
-          "Slow text style: node=${node.id} duration=${"%.2f".format(durationMs)}ms",
-        )
       }
     },
     onSetHandler = { _, _ ->
@@ -575,7 +603,7 @@ private fun didTextMetricsChange(
   previous: TextStyleAttributes?,
   next: TextStyleAttributes,
 ): Boolean {
-  if (previous == null) return true
+  if (previous == null) return false
   return previous.fontSize != next.fontSize ||
     previous.fontWeight != next.fontWeight ||
     previous.fontFamily != next.fontFamily ||
