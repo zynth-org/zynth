@@ -102,6 +102,7 @@ struct StyleMapper {
   int nodeId = 0;
   bool hasOpacity = false;
   StyleValueRef opacity;
+  // Dimensions
   bool hasWidth = false;
   StyleValueRef width;
   bool hasHeight = false;
@@ -114,12 +115,54 @@ struct StyleMapper {
   StyleValueRef maxWidth;
   bool hasMaxHeight = false;
   StyleValueRef maxHeight;
+  // Flex
+  bool hasFlex = false;
+  StyleValueRef flex;
+  bool hasFlexGrow = false;
+  StyleValueRef flexGrow;
+  bool hasFlexShrink = false;
+  StyleValueRef flexShrink;
   bool hasFlexBasis = false;
   StyleValueRef flexBasis;
+  // Position
+  bool hasTop = false;
+  StyleValueRef top;
+  bool hasRight = false;
+  StyleValueRef right;
+  bool hasBottom = false;
+  StyleValueRef bottom;
+  bool hasLeft = false;
+  StyleValueRef left;
+  // Padding
+  bool hasPadding = false;
+  StyleValueRef padding;
+  bool hasPaddingHorizontal = false;
+  StyleValueRef paddingHorizontal;
+  bool hasPaddingVertical = false;
+  StyleValueRef paddingVertical;
+  bool hasPaddingTop = false;
+  StyleValueRef paddingTop;
+  bool hasPaddingRight = false;
+  StyleValueRef paddingRight;
   bool hasPaddingBottom = false;
   StyleValueRef paddingBottom;
+  bool hasPaddingLeft = false;
+  StyleValueRef paddingLeft;
+  // Margin
+  bool hasMargin = false;
+  StyleValueRef margin;
+  bool hasMarginHorizontal = false;
+  StyleValueRef marginHorizontal;
+  bool hasMarginVertical = false;
+  StyleValueRef marginVertical;
+  bool hasMarginTop = false;
+  StyleValueRef marginTop;
+  bool hasMarginRight = false;
+  StyleValueRef marginRight;
   bool hasMarginBottom = false;
   StyleValueRef marginBottom;
+  bool hasMarginLeft = false;
+  StyleValueRef marginLeft;
   std::vector<TransformOp> transforms;
 };
 
@@ -525,32 +568,59 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
       }
       return applyDerived(resolved);
     };
+    // Pixel-snapped: dimensional properties must align to the physical pixel grid.
     auto applyLayout = [&](const char *name, bool hasValue, const StyleValueRef &ref) {
       if (!hasValue) return;
       double value = resolveValue(ref, std::numeric_limits<double>::quiet_NaN());
       if (std::isnan(value)) return;
-      
-      if (strcmp(name, "height") == 0) {
-        static NSInteger heightLogCount = 0;
-        if (heightLogCount++ % 30 == 0) {
-          ZYNTH_ANIMATE_LOG(@"[ZynthAnimate] Applying height %.2f to node %d", value, mapper.nodeId);
-        }
-      }
-      
       CGFloat scale = UIScreen.mainScreen.scale > 0 ? UIScreen.mainScreen.scale : 1.0;
       double snapped = std::round(value * scale) / scale;
       NSString *propName = [NSString stringWithUTF8String:name];
       [manager setProp:@(mapper.nodeId) name:propName valueAny:@(snapped)];
     };
+    // Unitless: flex factors are dimensionless ratios — pixel-snapping would
+    // quantize e.g. a 0→1 flexGrow animation to only 3 steps on a 3× screen,
+    // making it look choppy even at full 60fps.
+    auto applyRatio = [&](const char *name, bool hasValue, const StyleValueRef &ref) {
+      if (!hasValue) return;
+      double value = resolveValue(ref, std::numeric_limits<double>::quiet_NaN());
+      if (std::isnan(value)) return;
+      NSString *propName = [NSString stringWithUTF8String:name];
+      [manager setProp:@(mapper.nodeId) name:propName valueAny:@(value)];
+    };
+    // Dimensions
     applyLayout("width", mapper.hasWidth, mapper.width);
     applyLayout("height", mapper.hasHeight, mapper.height);
     applyLayout("minWidth", mapper.hasMinWidth, mapper.minWidth);
     applyLayout("minHeight", mapper.hasMinHeight, mapper.minHeight);
     applyLayout("maxWidth", mapper.hasMaxWidth, mapper.maxWidth);
     applyLayout("maxHeight", mapper.hasMaxHeight, mapper.maxHeight);
+    // Flex — use applyRatio, not applyLayout
+    applyRatio("flex", mapper.hasFlex, mapper.flex);
+    applyRatio("flexGrow", mapper.hasFlexGrow, mapper.flexGrow);
+    applyRatio("flexShrink", mapper.hasFlexShrink, mapper.flexShrink);
     applyLayout("flexBasis", mapper.hasFlexBasis, mapper.flexBasis);
+    // Position
+    applyLayout("top", mapper.hasTop, mapper.top);
+    applyLayout("right", mapper.hasRight, mapper.right);
+    applyLayout("bottom", mapper.hasBottom, mapper.bottom);
+    applyLayout("left", mapper.hasLeft, mapper.left);
+    // Padding — shorthands applied first, then individual sides override
+    applyLayout("padding", mapper.hasPadding, mapper.padding);
+    applyLayout("paddingHorizontal", mapper.hasPaddingHorizontal, mapper.paddingHorizontal);
+    applyLayout("paddingVertical", mapper.hasPaddingVertical, mapper.paddingVertical);
+    applyLayout("paddingTop", mapper.hasPaddingTop, mapper.paddingTop);
+    applyLayout("paddingRight", mapper.hasPaddingRight, mapper.paddingRight);
     applyLayout("paddingBottom", mapper.hasPaddingBottom, mapper.paddingBottom);
+    applyLayout("paddingLeft", mapper.hasPaddingLeft, mapper.paddingLeft);
+    // Margin — shorthands applied first, then individual sides override
+    applyLayout("margin", mapper.hasMargin, mapper.margin);
+    applyLayout("marginHorizontal", mapper.hasMarginHorizontal, mapper.marginHorizontal);
+    applyLayout("marginVertical", mapper.hasMarginVertical, mapper.marginVertical);
+    applyLayout("marginTop", mapper.hasMarginTop, mapper.marginTop);
+    applyLayout("marginRight", mapper.hasMarginRight, mapper.marginRight);
     applyLayout("marginBottom", mapper.hasMarginBottom, mapper.marginBottom);
+    applyLayout("marginLeft", mapper.hasMarginLeft, mapper.marginLeft);
     if (mapper.hasOpacity) {
       double opacity = resolveValue(mapper.opacity, 0.0);
       view.alpha = (CGFloat)opacity;
@@ -705,10 +775,10 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
   Object obj = value.asObject(rt);
 
   if (obj.hasProperty(rt, "opacity")) {
-    Value opacityValue = obj.getProperty(rt, "opacity");
     mapper.hasOpacity = true;
-    mapper.opacity = [self resolveStyleValue:rt value:opacityValue];
+    mapper.opacity = [self resolveStyleValue:rt value:obj.getProperty(rt, "opacity")];
   }
+  // Dimensions
   if (obj.hasProperty(rt, "width")) {
     mapper.hasWidth = true;
     mapper.width = [self resolveStyleValue:rt value:obj.getProperty(rt, "width")];
@@ -733,17 +803,97 @@ bool ZynthCancelSharedSignalAnimation(void *state, int signalId) {
     mapper.hasMaxHeight = true;
     mapper.maxHeight = [self resolveStyleValue:rt value:obj.getProperty(rt, "maxHeight")];
   }
+  // Flex
+  if (obj.hasProperty(rt, "flex")) {
+    mapper.hasFlex = true;
+    mapper.flex = [self resolveStyleValue:rt value:obj.getProperty(rt, "flex")];
+  }
+  if (obj.hasProperty(rt, "flexGrow")) {
+    mapper.hasFlexGrow = true;
+    mapper.flexGrow = [self resolveStyleValue:rt value:obj.getProperty(rt, "flexGrow")];
+  }
+  if (obj.hasProperty(rt, "flexShrink")) {
+    mapper.hasFlexShrink = true;
+    mapper.flexShrink = [self resolveStyleValue:rt value:obj.getProperty(rt, "flexShrink")];
+  }
   if (obj.hasProperty(rt, "flexBasis")) {
     mapper.hasFlexBasis = true;
     mapper.flexBasis = [self resolveStyleValue:rt value:obj.getProperty(rt, "flexBasis")];
+  }
+  // Position
+  if (obj.hasProperty(rt, "top")) {
+    mapper.hasTop = true;
+    mapper.top = [self resolveStyleValue:rt value:obj.getProperty(rt, "top")];
+  }
+  if (obj.hasProperty(rt, "right")) {
+    mapper.hasRight = true;
+    mapper.right = [self resolveStyleValue:rt value:obj.getProperty(rt, "right")];
+  }
+  if (obj.hasProperty(rt, "bottom")) {
+    mapper.hasBottom = true;
+    mapper.bottom = [self resolveStyleValue:rt value:obj.getProperty(rt, "bottom")];
+  }
+  if (obj.hasProperty(rt, "left")) {
+    mapper.hasLeft = true;
+    mapper.left = [self resolveStyleValue:rt value:obj.getProperty(rt, "left")];
+  }
+  // Padding
+  if (obj.hasProperty(rt, "padding")) {
+    mapper.hasPadding = true;
+    mapper.padding = [self resolveStyleValue:rt value:obj.getProperty(rt, "padding")];
+  }
+  if (obj.hasProperty(rt, "paddingHorizontal")) {
+    mapper.hasPaddingHorizontal = true;
+    mapper.paddingHorizontal = [self resolveStyleValue:rt value:obj.getProperty(rt, "paddingHorizontal")];
+  }
+  if (obj.hasProperty(rt, "paddingVertical")) {
+    mapper.hasPaddingVertical = true;
+    mapper.paddingVertical = [self resolveStyleValue:rt value:obj.getProperty(rt, "paddingVertical")];
+  }
+  if (obj.hasProperty(rt, "paddingTop")) {
+    mapper.hasPaddingTop = true;
+    mapper.paddingTop = [self resolveStyleValue:rt value:obj.getProperty(rt, "paddingTop")];
+  }
+  if (obj.hasProperty(rt, "paddingRight")) {
+    mapper.hasPaddingRight = true;
+    mapper.paddingRight = [self resolveStyleValue:rt value:obj.getProperty(rt, "paddingRight")];
   }
   if (obj.hasProperty(rt, "paddingBottom")) {
     mapper.hasPaddingBottom = true;
     mapper.paddingBottom = [self resolveStyleValue:rt value:obj.getProperty(rt, "paddingBottom")];
   }
+  if (obj.hasProperty(rt, "paddingLeft")) {
+    mapper.hasPaddingLeft = true;
+    mapper.paddingLeft = [self resolveStyleValue:rt value:obj.getProperty(rt, "paddingLeft")];
+  }
+  // Margin
+  if (obj.hasProperty(rt, "margin")) {
+    mapper.hasMargin = true;
+    mapper.margin = [self resolveStyleValue:rt value:obj.getProperty(rt, "margin")];
+  }
+  if (obj.hasProperty(rt, "marginHorizontal")) {
+    mapper.hasMarginHorizontal = true;
+    mapper.marginHorizontal = [self resolveStyleValue:rt value:obj.getProperty(rt, "marginHorizontal")];
+  }
+  if (obj.hasProperty(rt, "marginVertical")) {
+    mapper.hasMarginVertical = true;
+    mapper.marginVertical = [self resolveStyleValue:rt value:obj.getProperty(rt, "marginVertical")];
+  }
+  if (obj.hasProperty(rt, "marginTop")) {
+    mapper.hasMarginTop = true;
+    mapper.marginTop = [self resolveStyleValue:rt value:obj.getProperty(rt, "marginTop")];
+  }
+  if (obj.hasProperty(rt, "marginRight")) {
+    mapper.hasMarginRight = true;
+    mapper.marginRight = [self resolveStyleValue:rt value:obj.getProperty(rt, "marginRight")];
+  }
   if (obj.hasProperty(rt, "marginBottom")) {
     mapper.hasMarginBottom = true;
     mapper.marginBottom = [self resolveStyleValue:rt value:obj.getProperty(rt, "marginBottom")];
+  }
+  if (obj.hasProperty(rt, "marginLeft")) {
+    mapper.hasMarginLeft = true;
+    mapper.marginLeft = [self resolveStyleValue:rt value:obj.getProperty(rt, "marginLeft")];
   }
 
   if (obj.hasProperty(rt, "transform")) {
