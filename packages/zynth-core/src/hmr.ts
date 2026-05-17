@@ -310,6 +310,7 @@ function installRspackNativeApplyDriver(hot: any): () => void {
       lastAppliedHash: hmrState.lastAppliedHash,
       status,
     });
+
     Promise.resolve(hot.check(true)).then(
       (updatedModules) => {
         UPDATE_LOG.log("hot.check resolved", {
@@ -317,13 +318,17 @@ function installRspackNativeApplyDriver(hot: any): () => void {
           latestHash: hmrState.latestHash,
         });
 
-        // If hot.check returned modules but they weren't handled by any hot.accept
-        // (which would have called handleAppHotUpdate already), we do a fallback check.
+        // Only trigger a fallback re-render if an App-like module was updated
+        // and we haven't already handled it via a more specific hot.accept handler.
         if (Array.isArray(updatedModules) && updatedModules.length > 0) {
           const g = globalThis as any;
-          const anyAppUpdated = updatedModules.some(id => looksLikeAppModule(id));
+          const anyAppUpdated = updatedModules.some((id) =>
+            looksLikeAppModule(id),
+          );
           if (anyAppUpdated) {
-            UPDATE_LOG.log("App-like module updated; triggering fallback rerender");
+            UPDATE_LOG.log(
+              "App-like module updated; triggering fallback rerender",
+            );
             if (typeof g.__zynth_rerenderApp === "function") {
               try {
                 g.__zynth_rerenderApp();

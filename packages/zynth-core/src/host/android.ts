@@ -91,13 +91,19 @@ export function createAndroidHost(): Host {
   };
 
   const enqueueOperation = (operation: () => void) => {
-    if (isSuppressed()) return;
     queue.push({ type: "closure", func: operation });
   };
 
   const enqueueBatchOp = (op: BatchOperation) => {
-    if (isSuppressed()) return;
     queue.push({ type: "batch", op });
+  };
+
+  const maybeCallNativeHandler = (nodeId: number, name: string, handler: Function) => {
+    if (isSuppressed()) {
+      enqueueOperation(() => ui.setHandler(nodeId, name, handler));
+    } else {
+      ui.setHandler(nodeId, name, handler);
+    }
   };
 
   const formatFlushError = (error: unknown) => {
@@ -494,8 +500,8 @@ export function createAndroidHost(): Host {
   };
 
   const runFlush = () => {
-    if (batchStack.length > 0 || isNativeBatching) {
-      if (isNativeBatching) flushScheduled = true;
+    if (batchStack.length > 0 || isNativeBatching || isSuppressed()) {
+      if (isNativeBatching || isSuppressed()) flushScheduled = true;
       return; 
     }
     flushScheduled = false;
@@ -686,7 +692,7 @@ export function createAndroidHost(): Host {
     // effects, and microtasks have settled before a single atomic native flush.
     requestAnimationFrame(() => {
       if (!flushScheduled) return;
-      if (isNativeBatching) return;
+      if (isNativeBatching || isSuppressed()) return;
       runFlush();
     });
   };
@@ -841,7 +847,7 @@ export function createAndroidHost(): Host {
 
     for (const [name, handler] of Object.entries(events)) {
       if (typeof handler === "function") {
-        if (!isSuppressed()) ui.setHandler(id, name, handler);
+        maybeCallNativeHandler(id, name, handler);
       }
     }
   };
@@ -969,10 +975,10 @@ export function createAndroidHost(): Host {
         if (!tryEnqueueBatch(op)) enqueueBatchOp(op);
       }
       if (typeof props?.onPress === "function") {
-        if (!isSuppressed()) ui.setHandler(id!, "onPress", props.onPress);
+        maybeCallNativeHandler(id!, "onPress", props.onPress);
       }
       if (typeof props?.onLayout === "function") {
-        if (!isSuppressed()) ui.setHandler(id!, "onLayout", props.onLayout);
+        maybeCallNativeHandler(id!, "onLayout", props.onLayout);
       }
       if (props?.accessibilityLabel) {
         const op: BatchOperation = {
@@ -1096,7 +1102,7 @@ export function createAndroidHost(): Host {
           return;
         }
         if (typeof value === "function") {
-          if (!isSuppressed()) ui.setHandler(node.id, name, value);
+          maybeCallNativeHandler(node.id, name, value);
           schedule();
           return;
         }
@@ -1113,7 +1119,7 @@ export function createAndroidHost(): Host {
         return;
       }
       if (typeof value === "function") {
-        if (!isSuppressed()) ui.setHandler(node.id, name, value);
+        maybeCallNativeHandler(node.id, name, value);
         schedule();
         return;
       }
@@ -1357,7 +1363,7 @@ export function createAndroidHost(): Host {
       for (const [key, value] of Object.entries(props)) {
         if (key === "style") continue;
         if (typeof value === "function") {
-          if (!isSuppressed()) ui.setHandler(node.id, key, value);
+          maybeCallNativeHandler(node.id, key, value);
         } else if (value !== undefined) {
           enqueueBatchOp({
             type: "setProp",
