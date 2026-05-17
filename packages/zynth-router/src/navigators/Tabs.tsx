@@ -609,7 +609,14 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   });
 
   const TabsContent = () => {
-    onMount(() => initializeState());
+    let isDisposed = false;
+    onCleanup(() => {
+      isDisposed = true;
+    });
+
+    onMount(() => {
+      if (!isDisposed) initializeState();
+    });
 
     return (
       <Show when={initialized()}>
