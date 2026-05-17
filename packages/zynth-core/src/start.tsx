@@ -1,5 +1,5 @@
 import { Platform, OS } from "./platform";
-import { render, setHost, withHostBatch } from "./renderer";
+import { flush, render, setHost, withHostBatch } from "./renderer";
 import { createIOSHost } from "./host/ios";
 import { createAndroidHost } from "./host/android";
 import {
@@ -41,6 +41,18 @@ let disposeDevBanner: (() => void) | null = null;
 let devBannerSurfaceId: number | null = null;
 let hasStarted = false;
 
+function flushDisposedNativeRoot() {
+  if (Platform.OS !== OS.ANDROID) {
+    return;
+  }
+  try {
+    flush();
+    flush();
+  } catch (error) {
+    console.error("[ZynthRuntime] dispose flush failed", error);
+  }
+}
+
 export function start(App: () => any): () => void {
   // Native Platform Initialization
   ensureNativeHMRHooks();
@@ -69,13 +81,23 @@ export function start(App: () => any): () => void {
       return;
     }
     try {
-      withHostBatch({ kind: "hmr", scope: "app" }, () => {
+      withHostBatch(
+        {
+          kind: "hmr",
+          scope: "app",
+          extras:
+            Platform.OS === OS.ANDROID
+              ? { atomic: true, syncFrame: true }
+              : null,
+        },
+        () => {
         disposeCurrentApp?.();
         disposeCurrentApp = render(() => currentApp!(), {
           id: lastRootId,
           type: "root",
         } as any);
-      });
+        },
+      );
       // console.log("[ZynthRuntime] rerender completed");
     } catch (error) {
       const msg = String((error as any)?.message || error);
@@ -115,6 +137,7 @@ export function start(App: () => any): () => void {
     if (typeof disposeCurrentApp === "function") {
       try {
         disposeCurrentApp();
+        flushDisposedNativeRoot();
       } catch (error) {
         console.error("[ZynthRuntime] dispose failed", error);
       }

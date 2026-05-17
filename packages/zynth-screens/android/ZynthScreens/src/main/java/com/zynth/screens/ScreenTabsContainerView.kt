@@ -211,8 +211,19 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
   }
 
   fun setNativeTabBarEnabled(enabled: Boolean) {
+    if (nativeTabBarEnabled == enabled) return
     nativeTabBarEnabled = enabled
+    if (!enabled) {
+      unmountSurfaceIcons()
+      lastTabBarItemsJson = null
+    }
     updateTabBarVisibility()
+  }
+
+  override fun onDetachedFromWindow() {
+    unmountSurfaceIcons()
+    lastTabBarItemsJson = null
+    super.onDetachedFromWindow()
   }
 
   fun setTabBarOptions(json: String) {

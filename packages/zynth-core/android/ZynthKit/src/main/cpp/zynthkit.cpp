@@ -2027,12 +2027,13 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
               // Split pre-layout into TWO transactions:
               // 1. SYNC: measurement-critical topology, text props, and measured
               //    component props. Must complete before Yoga layout.
-              // 2. ASYNC: visual-only ops (removeChild, dropNode, visual props).
+              // 2. ASYNC: visual-only ops (dropNode, visual props).
               //    Can be posted to main thread without blocking JS.
               std::vector<double> syncOps;
               std::vector<double> asyncOps;
               syncOps.reserve(commit.surfaces.size() * 2 + commit.creates.size() * 4 +
-                              commit.inserts.size() * 4 + commit.textMutations.size() * 3 +
+                              commit.removes.size() * 3 + commit.inserts.size() * 4 +
+                              commit.textMutations.size() * 3 +
                               commit.textProps.size() * 5 + commit.descriptorProps.size() * 5 +
                               commit.layoutProps.size() * 5);
               asyncOps.reserve(commit.totalOpCount() * 5);
@@ -2049,13 +2050,6 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 syncOps.push_back(op.typeStringIndex);
                 syncOps.push_back(op.hasMeasure ? 1.0 : 0.0);
               }
-              // SYNC: insertChild - insertion before createNode is dropped by Kotlin
-              for (const auto& op : commit.inserts) {
-                syncOps.push_back(3);
-                syncOps.push_back(op.parentId);
-                syncOps.push_back(op.childId);
-                syncOps.push_back(op.index);
-              }
               // SYNC: removeChild - text measurement reads Kotlin child topology.
               // If removals lag behind inserts, conditional text can be composed from
               // a mixed old/new subtree during the pre-layout Yoga measurement pass.
@@ -2063,6 +2057,14 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 syncOps.push_back(4);
                 syncOps.push_back(op.parentId);
                 syncOps.push_back(op.childId);
+              }
+              // SYNC: insertChild - run after removals so Kotlin child topology matches
+              // the native renderer host before measurement and frame extraction.
+              for (const auto& op : commit.inserts) {
+                syncOps.push_back(3);
+                syncOps.push_back(op.parentId);
+                syncOps.push_back(op.childId);
+                syncOps.push_back(op.index);
               }
               // ASYNC: dropNode
               for (const auto& op : commit.drops) {

@@ -500,36 +500,27 @@ export function createAndroidHost(): Host {
     }
     flushScheduled = false;
 
+    if ((globalThis as any).__ZYNTH_HMR_DEBUG && (queue.length > 0 || pendingRemovals.size > 0)) {
+      console.log("[HOST-ANDROID] runFlush", {
+        queue: queue.length,
+        removals: pendingRemovals.size,
+      });
+    }
+
     try {
       if (
         !queue.length &&
         !pendingRemovals.size &&
         !readyForDestruction.size &&
         !pendingDrops.size
-      )
+      ) {
         return;
+      }
 
       const pending = queue.splice(0);
       let batchAccumulator: BatchOperation[] = [];
       let currentMeta: HostBatchMeta | null = null;
       let sentAnyOps = false;
-
-      const logVirtualListFlush = (
-        meta: HostBatchMeta,
-        ops: BatchOperation[]
-      ) => {
-        const counts = {
-          dropNode: 0,
-          insertChild: 0,
-          removeChild: 0,
-          setProp: 0,
-          setText: 0,
-        };
-        for (const op of ops) {
-          counts[op.type] += 1;
-        }
-        // Removed noise logs for production performance.
-      };
 
       const flushAccumulator = () => {
         if (!batchAccumulator.length) return;
@@ -538,6 +529,13 @@ export function createAndroidHost(): Host {
         }
         sentAnyOps = true;
         const meta = currentMeta ?? { kind: "flush", scope: "global" };
+
+        if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
+          console.log("[HOST-ANDROID] applyBatch", {
+            ops: batchAccumulator.length,
+            meta: { kind: meta.kind, scope: meta.scope, extras: meta.extras }
+          });
+        }
 
         if (meta.scope === "virtual-list-window") {
           logVirtualListFlush(meta, batchAccumulator);
@@ -1224,6 +1222,17 @@ export function createAndroidHost(): Host {
         descriptor: meta?.descriptor ?? null,
         extras: meta?.extras ?? null,
       };
+
+      if (batchStack.length === 0) {
+        if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
+          console.log("[HOST-ANDROID] beginBatch: flushing pending before start");
+        }
+        runFlush();
+      }
+
+      if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
+        console.log("[HOST-ANDROID] beginBatch", { kind, scope: normalizedMeta.scope });
+      }
       batchStack.push({ meta: normalizedMeta, operations: [] });
     },
     endBatch(meta) {
@@ -1236,6 +1245,12 @@ export function createAndroidHost(): Host {
           kind: meta.kind ?? context.meta.kind,
           scope: meta.scope ?? context.meta.scope,
         };
+      }
+      if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
+        console.log("[HOST-ANDROID] endBatch", { 
+          kind: context.meta.kind, 
+          ops: context.operations.length, 
+        });
       }
       if (batchStack.length) {
         batchStack[batchStack.length - 1].operations.push(
@@ -1250,10 +1265,15 @@ export function createAndroidHost(): Host {
           ops: context.operations,
         });
       }
-      // ALWAYS schedule a microtask instead of flushing synchronously.
-      // This allows SolidJS effects/renders triggered by the batch to contribute 
-      // their own operations to the same flush.
-      schedule();
+      // If syncFrame is requested, flush immediately to avoid flickering
+      if (context.meta.extras?.syncFrame) {
+        if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
+          console.log("[HOST-ANDROID] endBatch: syncFrame requested, flushing now");
+        }
+        runFlush();
+      } else {
+        schedule();
+      }
     },
     enableRecycling(containerId: number, config: RecyclingConfig): string {
       const contextId = `recycling-${containerId}-${nextContextId++}`;

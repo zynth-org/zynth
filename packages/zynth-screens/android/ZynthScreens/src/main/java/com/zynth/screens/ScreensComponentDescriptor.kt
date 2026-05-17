@@ -157,6 +157,7 @@ fun createScreenTabsContainerDescriptor(): ZynthComponentDescriptor {
       container.setSelectedIndex(0)
       container.setTabAnimationType("none")
       container.setNativeTabBarEnabled(false)
+      container.setTabBarItems("[]")
     },
   )
 }
