@@ -134,6 +134,17 @@ class ZynthRuntime(val root: ZynthRootView) {
   val rootSurfaceId: Int
     get() = root.rootId
 
+  /**
+   * Returns the current startup metrics snapshot when startup instrumentation is enabled.
+   * This is intended for benchmark export and should not be polled in a render loop.
+   */
+  fun getStartupMetricsSnapshot(): JSONObject? {
+    if (!startupMetrics.isStartupTimeEnabled()) {
+      return null
+    }
+    return startupMetrics.makeStartupSnapshot()
+  }
+
   fun getUIManager(): ZynthUIManager {
     return uiManager
   }
@@ -207,6 +218,10 @@ class ZynthRuntime(val root: ZynthRootView) {
 
       val constants = registry.exportedConstants().toMutableMap()
       constants["bridgeSessionId"] = bridgeSessionId
+      val benchmarkScenario = System.getProperty("ZYNTH_BENCHMARK_SCENARIO")?.trim()
+      if (!benchmarkScenario.isNullOrEmpty()) {
+        constants["zynthBenchmarkScenario"] = benchmarkScenario
+      }
       if (constants.isNotEmpty()) {
         val json = JSONObject(constants as Map<*, *>).toString()
         JSBridge.evaluateScript(runtimePtr, "globalThis.NativeConstants = $json;", "constants.js")
@@ -336,6 +351,19 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   fun getPerformanceOverlayStats(): Map<String, Any> {
     return ZynthNativePerformanceOverlay.getPerformanceOverlaySnapshot()
+  }
+
+  fun setPerformanceSamplingEnabled(enabled: Boolean) {
+    ZynthNativePerformanceOverlay.setPerformanceSamplingEnabled(enabled)
+    if (enabled) {
+      startPerformanceJsTicker()
+    } else {
+      stopPerformanceJsTicker()
+    }
+  }
+
+  fun resetPerformanceSamplingStats() {
+    ZynthNativePerformanceOverlay.resetPerformanceStats()
   }
 
   internal fun evaluateScript(code: String, sourceUrl: String? = null) {

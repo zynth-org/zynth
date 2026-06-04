@@ -86,6 +86,8 @@ internal object ZynthNativePerformanceOverlay {
   private var performanceLastYogaMs: Double = 0.0
   private var performanceLastYogaCalcMs: Double = 0.0
   private var performanceLastYogaMeasureMs: Double = 0.0
+  private var performanceYogaMeasureTotalMs: Double = 0.0
+  private val performanceYogaMeasureSamples = ArrayList<Double>()
   private var performanceShortestPassMs: Double = Double.MAX_VALUE
   private var performanceLongestPassMs: Double = 0.0
   private var performanceBudgetOverruns: Long = 0L
@@ -158,6 +160,7 @@ internal object ZynthNativePerformanceOverlay {
 
   @JvmStatic
   fun getPerformanceOverlaySnapshot(): Map<String, Any> {
+    val yogaMeasureSummary = summarizeSamples(performanceYogaMeasureSamples)
     return mapOf(
       "enabled" to performanceEnabled,
       "ramMb" to performanceRamMb,
@@ -165,12 +168,49 @@ internal object ZynthNativePerformanceOverlay {
       "uiFps" to performanceUiFps,
       "jsFps" to performanceJsFps,
       "lastYogaMs" to performanceLastYogaMs,
+      "lastYogaCalcMs" to performanceLastYogaCalcMs,
+      "lastYogaMeasureMs" to performanceLastYogaMeasureMs,
       "lastPassMs" to performanceLastYogaMs,
       "shortestPassMs" to if (performanceBudgetPasses > 0L) performanceShortestPassMs else 0.0,
       "longestPassMs" to performanceLongestPassMs,
       "budgetOverruns" to performanceBudgetOverruns,
       "totalPasses" to performanceBudgetPasses,
+      "avgYogaMeasureMs" to if (performanceYogaMeasureSamples.isNotEmpty()) {
+        performanceYogaMeasureTotalMs / performanceYogaMeasureSamples.size.toDouble()
+      } else {
+        0.0
+      },
+      "minYogaMeasureMs" to (yogaMeasureSummary["min"] ?: 0.0),
+      "maxYogaMeasureMs" to (yogaMeasureSummary["max"] ?: 0.0),
+      "p50YogaMeasureMs" to (yogaMeasureSummary["p50"] ?: 0.0),
+      "p90YogaMeasureMs" to (yogaMeasureSummary["p90"] ?: 0.0),
+      "p95YogaMeasureMs" to (yogaMeasureSummary["p95"] ?: 0.0),
+      "p99YogaMeasureMs" to (yogaMeasureSummary["p99"] ?: 0.0),
+      "yogaMeasureSampleCount" to performanceYogaMeasureSamples.size,
     )
+  }
+
+  @JvmStatic
+  fun setPerformanceSamplingEnabled(enabled: Boolean) {
+    mainHandler.post {
+      if (performanceEnabled == enabled) {
+        return@post
+      }
+      performanceEnabled = enabled
+      resetPerformanceCounters()
+      if (!enabled) {
+        stopUiFrameLoop()
+        dismissPerformanceOverlay()
+      }
+    }
+  }
+
+  @JvmStatic
+  fun resetPerformanceStats() {
+    mainHandler.post {
+      resetPerformanceCounters()
+      updatePerformanceOverlayLabels()
+    }
   }
 
   @JvmStatic
@@ -200,6 +240,8 @@ internal object ZynthNativePerformanceOverlay {
       performanceLastYogaMs = totalYogaMs
       performanceLastYogaCalcMs = sanitizeDuration(yogaCalculateMs)
       performanceLastYogaMeasureMs = sanitizeDuration(measureMs)
+      performanceYogaMeasureTotalMs += performanceLastYogaMeasureMs
+      performanceYogaMeasureSamples.add(performanceLastYogaMeasureMs)
       recordBudgetPass(totalYogaMs, totalYogaMs > FRAME_BUDGET_MS)
       updatePerformanceOverlayLabels()
     }
@@ -282,6 +324,8 @@ internal object ZynthNativePerformanceOverlay {
     performanceLastYogaMs = 0.0
     performanceLastYogaCalcMs = 0.0
     performanceLastYogaMeasureMs = 0.0
+    performanceYogaMeasureTotalMs = 0.0
+    performanceYogaMeasureSamples.clear()
     performanceShortestPassMs = Double.MAX_VALUE
     performanceLongestPassMs = 0.0
     performanceBudgetOverruns = 0L
@@ -531,6 +575,32 @@ internal object ZynthNativePerformanceOverlay {
   private fun sanitizeDuration(value: Double): Double {
     if (!value.isFinite() || value < 0.0) return 0.0
     return value
+  }
+
+  private fun summarizeSamples(samples: List<Double>): Map<String, Double> {
+    if (samples.isEmpty()) {
+      return emptyMap()
+    }
+    val sorted = samples.sorted()
+    return mapOf(
+      "min" to (sorted.firstOrNull() ?: 0.0),
+      "max" to (sorted.lastOrNull() ?: 0.0),
+      "p50" to percentile(sorted, 0.5),
+      "p90" to percentile(sorted, 0.9),
+      "p95" to percentile(sorted, 0.95),
+      "p99" to percentile(sorted, 0.99),
+    )
+  }
+
+  private fun percentile(sorted: List<Double>, ratio: Double): Double {
+    if (sorted.isEmpty()) {
+      return 0.0
+    }
+    val index = kotlin.math.min(
+      sorted.size - 1,
+      kotlin.math.max(0, kotlin.math.ceil(sorted.size.toDouble() * ratio).toInt() - 1),
+    )
+    return sorted[index]
   }
 
   private fun readProductionOverlayFlag(): Boolean {
