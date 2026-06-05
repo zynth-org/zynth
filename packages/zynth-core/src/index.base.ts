@@ -34,6 +34,8 @@ export type {
 } from "./polyfills/WebSocket";
 export * from "./hmr";
 export { setActiveSurface, getActiveSurface } from "./surface";
+export { createPortalSurfaceHandle } from "./portalSurface";
+export type { PortalSurfaceHandle, PortalSurfaceRoot } from "./portalSurface";
 export { ensureDevtoolsBridge, emitDevtoolsEvent, addDevtoolsListener } from "./devtools";
 export { registerWebAdapter } from "./webRegistry";
 export { createSharedSignal, captureSharedSignals, readSharedSignal } from "./sharedSignal";
@@ -86,6 +88,7 @@ export type {
   ZynthSyncSignalsBridge,
   ZynthWorkletsBridge,
   ZynthUICommandsBridge,
+  ZynthPortalBridge,
 } from "./bridge";
 export {
   CoreSystem,

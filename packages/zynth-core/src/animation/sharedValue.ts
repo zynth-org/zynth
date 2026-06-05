@@ -9,6 +9,7 @@ import {
 import type { Style } from "../host/HostTypes";
 import { Easing, type EasingFunction } from "./easing";
 import {
+  DERIVED_VALUE_MARKER,
   INTERPOLATION_MARKER,
   SHARED_VALUE_MARKER,
   animateNativeSharedValue,
@@ -80,6 +81,22 @@ type InterpolatedValueToken = {
   };
   __zynth_shared_signal_current?: number;
 };
+
+type DerivedValueToken = {
+  [DERIVED_VALUE_MARKER]: {
+    source: SharedValueToken | InterpolatedValueToken | number;
+    multiplier?: number;
+    offset?: number;
+  };
+  __zynth_shared_signal_current?: number;
+  valueOf: () => number;
+  toString: () => string;
+};
+
+export interface DerivedValueConfig {
+  multiplier?: number;
+  offset?: number;
+}
 
 const DEFAULT_DURATION = 300;
 const DEFAULT_DAMPING = 20;
@@ -474,6 +491,52 @@ function isInterpolatedValueToken(value: unknown): value is InterpolatedValueTok
   );
 }
 
+function isDerivedValueToken(value: unknown): value is DerivedValueToken {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as DerivedValueToken)[DERIVED_VALUE_MARKER] === "object",
+  );
+}
+
+function readAnimatedPreview(
+  value: SharedValueToken | InterpolatedValueToken | DerivedValueToken,
+): number {
+  const current = (value as { __zynth_shared_signal_current?: unknown })
+    .__zynth_shared_signal_current;
+  return typeof current === "number" && Number.isFinite(current) ? current : 0;
+}
+
+export function deriveAnimatedValue(
+  value: number,
+  config: DerivedValueConfig = {},
+): number {
+  const multiplier = config.multiplier ?? 1;
+  const offset = config.offset ?? 0;
+
+  if (
+    isSharedValueToken(value) ||
+    isInterpolatedValueToken(value) ||
+    isDerivedValueToken(value)
+  ) {
+    const current = readAnimatedPreview(value);
+    const next = current * multiplier + offset;
+    const token: DerivedValueToken = {
+      [DERIVED_VALUE_MARKER]: {
+        source: value,
+        multiplier,
+        offset,
+      },
+      __zynth_shared_signal_current: next,
+      valueOf: () => next,
+      toString: () => String(next),
+    };
+    return token as unknown as number;
+  }
+
+  return value * multiplier + offset;
+}
+
 function resolveTokenValue(value: unknown): {
   value: unknown;
   token?: SharedValueToken;
@@ -488,6 +551,13 @@ function resolveTokenValue(value: unknown): {
     };
   }
   if (isInterpolatedValueToken(value)) {
+    return {
+      value: (value as unknown as { __zynth_shared_signal_current?: unknown }).__zynth_shared_signal_current,
+      interpolation: value as NativeStyleMapperConfig["opacity"],
+      isDynamicMapped: true,
+    };
+  }
+  if (isDerivedValueToken(value)) {
     return {
       value: (value as unknown as { __zynth_shared_signal_current?: unknown }).__zynth_shared_signal_current,
       interpolation: value as NativeStyleMapperConfig["opacity"],
@@ -515,62 +585,50 @@ function normalizeAngleValue(value: unknown): unknown {
   return value;
 }
 
+type AnimatableLayoutKey =
+  | "width"
+  | "height"
+  | "minWidth"
+  | "minHeight"
+  | "maxWidth"
+  | "maxHeight"
+  | "flex"
+  | "flexGrow"
+  | "flexShrink"
+  | "flexBasis"
+  | "top"
+  | "right"
+  | "bottom"
+  | "left"
+  | "padding"
+  | "paddingHorizontal"
+  | "paddingVertical"
+  | "paddingTop"
+  | "paddingRight"
+  | "paddingBottom"
+  | "paddingLeft"
+  | "margin"
+  | "marginHorizontal"
+  | "marginVertical"
+  | "marginTop"
+  | "marginRight"
+  | "marginBottom"
+  | "marginLeft";
+
 function applyLayoutStyleMapping(
   style: Style,
   resolved: Style,
   mapping: NativeStyleMapperConfig,
-  key:
-    | "width"
-    | "height"
-    | "minWidth"
-    | "minHeight"
-    | "maxWidth"
-    | "maxHeight"
-    | "flexBasis",
+  key: AnimatableLayoutKey,
 ): boolean {
-  const rawValue = style[key];
+  const rawValue = (style as Record<string, unknown>)[key];
   if (rawValue === undefined) return false;
   const { value, token, interpolation, isDynamicMapped } =
     resolveTokenValue(rawValue);
   if (isDynamicMapped) {
     delete (resolved as Record<string, unknown>)[key];
-  }
-  switch (key) {
-    case "width":
-      if (!isDynamicMapped) {
-        resolved.width = rawValue as Style["width"];
-      }
-      break;
-    case "height":
-      if (!isDynamicMapped) {
-        resolved.height = rawValue as Style["height"];
-      }
-      break;
-    case "minWidth":
-      if (!isDynamicMapped) {
-        resolved.minWidth = rawValue as Style["minWidth"];
-      }
-      break;
-    case "minHeight":
-      if (!isDynamicMapped) {
-        resolved.minHeight = rawValue as Style["minHeight"];
-      }
-      break;
-    case "maxWidth":
-      if (!isDynamicMapped) {
-        resolved.maxWidth = rawValue as Style["maxWidth"];
-      }
-      break;
-    case "maxHeight":
-      if (!isDynamicMapped) {
-        resolved.maxHeight = rawValue as Style["maxHeight"];
-      }
-      break;
-    case "flexBasis":
-      if (!isDynamicMapped) {
-        resolved.flexBasis = rawValue as Style["flexBasis"];
-      }
-      break;
+  } else {
+    (resolved as Record<string, unknown>)[key] = rawValue;
   }
   if (token) {
     mapping[key] = { [SHARED_VALUE_MARKER]: token[SHARED_VALUE_MARKER] };
@@ -614,23 +672,20 @@ function buildNativeStyleMapping(style: Style): {
     }
   }
 
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "width") || hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "height") || hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "minWidth") || hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "minHeight") ||
-    hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "maxWidth") || hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "maxHeight") ||
-    hasMapping;
-  hasMapping =
-    applyLayoutStyleMapping(style, resolved, mapping, "flexBasis") ||
-    hasMapping;
+  const layoutKeys: AnimatableLayoutKey[] = [
+    "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
+    "flex", "flexGrow", "flexShrink", "flexBasis",
+    "top", "right", "bottom", "left",
+    "padding", "paddingHorizontal", "paddingVertical",
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "margin", "marginHorizontal", "marginVertical",
+    "marginTop", "marginRight", "marginBottom", "marginLeft",
+  ];
+  for (const layoutKey of layoutKeys) {
+    hasMapping =
+      applyLayoutStyleMapping(style, resolved, mapping, layoutKey) ||
+      hasMapping;
+  }
 
   if (Array.isArray(style.transform)) {
     const resolvedTransforms: Array<Record<string, unknown>> = [];

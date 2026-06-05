@@ -8,6 +8,7 @@ import {
   untrack,
 } from "solid-js";
 import type { HostNode, Style, StyleProp } from "@zynthjs/core";
+import { withHostBatch } from "@zynthjs/core";
 
 import {
   ScrollEvent,
@@ -25,7 +26,7 @@ export type VirtualListRenderItemInfo<T> = {
 export type ItemLayout = { length: number; offset: number; index: number };
 export type GetItemLayout<T> = (
   data: readonly T[] | null | undefined,
-  index: number,
+  index: number
 ) => ItemLayout;
 
 export type VirtualListScrollToOffsetParams = {
@@ -77,6 +78,14 @@ const EMPTY_RANGE: Range = { first: 0, last: -1 };
 const DEFAULT_INITIAL_RENDER = 10;
 const DEFAULT_WINDOW_SIZE = 5;
 const DEFAULT_ESTIMATED_ITEM = 56;
+const DEFAULT_DYNAMIC_ESTIMATED_ITEM = 88;
+const DEFAULT_DYNAMIC_WINDOW_SIZE = 2;
+const DEFAULT_MAX_DYNAMIC_WINDOW_ROWS = 60;
+const DEFAULT_MAX_TO_RENDER_PER_BATCH = 4;
+const DEFAULT_UPDATE_CELLS_BATCHING_PERIOD = 0;
+const SCROLL_IDLE_DELAY_MS = 120;
+const DEBUG_LOG_INTERVAL_MS = 120;
+const DEBUG_MEASUREMENT_LOG_INTERVAL_MS = 250;
 const EPSILON = 0.001;
 
 const hasNumber = (value: unknown): value is number =>
@@ -100,17 +109,70 @@ const normalizeRange = (range: Range, itemCount: number): Range => {
   return { first, last };
 };
 
+const rangeSize = (range: Range): number =>
+  range.last < range.first ? 0 : range.last - range.first + 1;
+
 const countAddedRows = (previous: Range, next: Range): number => {
   if (next.last < next.first) return 0;
   if (previous.last < previous.first) {
     return next.last - next.first + 1;
   }
-  const overlap =
-    Math.max(0, Math.min(next.last, previous.last) - Math.max(next.first, previous.first) + 1);
+  const overlap = Math.max(
+    0,
+    Math.min(next.last, previous.last) -
+      Math.max(next.first, previous.first) +
+      1
+  );
   return next.last - next.first + 1 - overlap;
 };
 
-const resolvePadding = (style?: StyleProp): {
+const limitRangeExpansion = (
+  previous: Range,
+  next: Range,
+  maxAddedRows: number
+): Range => {
+  if (maxAddedRows <= 0) return next;
+  if (rangeSize(previous) === 0) return next;
+  if (next.last < previous.first || next.first > previous.last) return next;
+
+  const addedRows = countAddedRows(previous, next);
+  if (addedRows <= maxAddedRows) return next;
+
+  const overlapFirst = Math.max(previous.first, next.first);
+  const overlapLast = Math.min(previous.last, next.last);
+  let first = overlapFirst;
+  let last = overlapLast;
+  let remaining = maxAddedRows;
+
+  const beforeNeeded = Math.max(0, overlapFirst - next.first);
+  const afterNeeded = Math.max(0, next.last - overlapLast);
+  const preferAfter = afterNeeded >= beforeNeeded;
+
+  if (preferAfter && afterNeeded > 0) {
+    const after = Math.min(afterNeeded, remaining);
+    last += after;
+    remaining -= after;
+  }
+
+  if (beforeNeeded > 0 && remaining > 0) {
+    const before = Math.min(beforeNeeded, remaining);
+    first -= before;
+    remaining -= before;
+  }
+
+  if (!preferAfter && afterNeeded > 0 && remaining > 0) {
+    const after = Math.min(afterNeeded, remaining);
+    last += after;
+  }
+
+  return { first, last };
+};
+
+const nowMs = (): number => Date.now();
+
+const resolvePadding = (
+  style?: StyleProp
+): {
   bottom: number;
   left: number;
   right: number;
@@ -163,7 +225,9 @@ const compactStyles = (
     }
     flattened.push(style);
   }
-  const hasValue = flattened.some((entry) => entry !== null && entry !== undefined);
+  const hasValue = flattened.some(
+    (entry) => entry !== null && entry !== undefined
+  );
   return hasValue ? flattened : undefined;
 };
 
@@ -196,7 +260,7 @@ const resolveInitialRange = (
   itemCount: number,
   initialScrollIndex: number | undefined,
   itemsPerRow: number,
-  initialNumToRender: number | undefined,
+  initialNumToRender: number | undefined
 ): Range => {
   if (itemCount <= 0) return EMPTY_RANGE;
   const batchSize = Math.max(1, initialNumToRender ?? DEFAULT_INITIAL_RENDER);
@@ -210,7 +274,7 @@ const resolveInitialRange = (
       first: startRow,
       last: startRow + batchSize - 1,
     },
-    totalRows,
+    totalRows
   );
 };
 
@@ -257,9 +321,7 @@ export interface VirtualListProps<T>
   /** Threshold in viewport lengths for the trailing edge callback. */
   onEndReachedThreshold?: number;
   /** Called when `scrollToIndex` cannot resolve an exact target. */
-  onScrollToIndexFailed?: (
-    info: VirtualListScrollToIndexFailedInfo,
-  ) => void;
+  onScrollToIndexFailed?: (info: VirtualListScrollToIndexFailedInfo) => void;
   /** Invoked when scrolling approaches the logical start of the dataset. */
   onStartReached?: (info: { distanceFromStart: number }) => void;
   /** Threshold in viewport lengths for the leading edge callback. */
@@ -287,15 +349,15 @@ export interface VirtualListProps<T>
 }
 
 export function VirtualList<T>(props: VirtualListProps<T>) {
-  const [scrollNode, setScrollNode] = createSignal<(HostNode & ScrollViewRef) | null>(
-    null,
-  );
+  const [scrollNode, setScrollNode] = createSignal<
+    (HostNode & ScrollViewRef) | null
+  >(null);
   const [viewportSize, setViewportSize] = createSignal(
     { width: 0, height: 0 },
     {
       equals: (left, right) =>
         left.width === right.width && left.height === right.height,
-    },
+    }
   );
   const [scrollOffset, setScrollOffset] = createSignal(0);
   const [scrollVelocity, setScrollVelocity] = createSignal(0);
@@ -305,6 +367,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   const [renderRange, setRenderRange] = createSignal<Range>(EMPTY_RANGE);
 
   const rowMetrics = new Map<number, RowMetric>();
+  const rowLayoutHandlers = new Map<
+    number,
+    (event: LayoutChangeEvent) => void
+  >();
   let measuredRowCount = 0;
   let measuredRowLengthTotal = 0;
   let highestMeasuredRowIndex = -1;
@@ -312,8 +378,59 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   let edgeStartToken = -1;
   let lastColumns = -1;
   let lastHeader = 0;
+  let lastLeadingSpacer = 0;
+  let lastTrailingSpacer = 0;
   let lastInitialScrollIndex: number | undefined;
   let initialScrollApplied = false;
+  let measurementFlushScheduled = false;
+  let measurementFlushPending = false;
+  let rangeUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+  let scrollIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  let isScrollActive = false;
+  let rangeRafPending = false;
+  let debugSeq = 0;
+  let lastScrollDebugAt = 0;
+  let lastMeasurementDebugAt = 0;
+  let lastBlankDebugAt = 0;
+  let lastSpacerDebugAt = 0;
+
+  const getDebugSnapshot = () => {
+    const range = untrack(renderRange);
+    return {
+      averageRowLength: Number(untrack(averageRowLength).toFixed(2)),
+      dataLength: props.data.length,
+      footerLength: Number(untrack(footerLength).toFixed(2)),
+      headerLength: Number(untrack(headerLength).toFixed(2)),
+      highestMeasuredRowIndex,
+      isScrollActive,
+      leadingSpacer: Number(lastLeadingSpacer.toFixed(2)),
+      maxScrollOffset: Number(untrack(maxScrollOffset).toFixed(2)),
+      measuredRowCount,
+      measurementFlushPending,
+      measurementFlushScheduled,
+      range,
+      rangeRows: rangeSize(range),
+      rowCount: untrack(rowCount),
+      scrollOffset: Number(untrack(scrollOffset).toFixed(2)),
+      scrollVelocity: Number(untrack(scrollVelocity).toFixed(2)),
+      totalContentLength: Number(untrack(totalContentLength).toFixed(2)),
+      totalRowsLength: Number(untrack(totalRowsLength).toFixed(2)),
+      trailingSpacer: Number(lastTrailingSpacer.toFixed(2)),
+      viewport: Number(untrack(axisViewportLength).toFixed(2)),
+    };
+  };
+
+  const logVirtualList = (reason: string, extra?: Record<string, unknown>) => {
+    const shouldLog = false;
+    if (!shouldLog) return;
+    debugSeq += 1;
+    console.log("[VirtualList]", {
+      extra: extra ?? null,
+      reason,
+      seq: debugSeq,
+      snapshot: getDebugSnapshot(),
+    });
+  };
 
   const syncMeasurementStats = () => {
     measuredRowCount = 0;
@@ -335,14 +452,52 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     setMeasurementVersion((value) => value + 1);
   };
 
+  const commitMeasurementVersion = () => {
+    if (!measurementFlushPending) return;
+    if (!props.getItemLayout && measuredRowCount <= 0) {
+      measurementFlushPending = false;
+      return;
+    }
+    measurementFlushPending = false;
+    logVirtualList("measurement-commit");
+    setMeasurementVersion((value) => value + 1);
+  };
+
+  const scheduleMeasurementCommit = (allowDuringScroll = false) => {
+    measurementFlushPending = true;
+    if (isScrollActive && !allowDuringScroll) {
+      const now = nowMs();
+      if (now - lastMeasurementDebugAt >= DEBUG_MEASUREMENT_LOG_INTERVAL_MS) {
+        lastMeasurementDebugAt = now;
+        logVirtualList("measurement-deferred-during-scroll");
+      }
+      return;
+    }
+    if (measurementFlushScheduled) return;
+    measurementFlushScheduled = true;
+    const flush = () => {
+      measurementFlushScheduled = false;
+      if (isScrollActive && !allowDuringScroll) return;
+      commitMeasurementVersion();
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(flush);
+      return;
+    }
+    setTimeout(flush, 0);
+  };
+
   const isHorizontal = createMemo(() => props.horizontal ?? false);
   const itemsPerRow = createMemo(() => {
     if (isHorizontal()) return 1;
     return Math.max(1, props.numColumns ?? 1);
   });
   const estimatedRowLength = createMemo(() => {
-    const base = props.estimatedItemSize ?? DEFAULT_ESTIMATED_ITEM;
-    return hasNumber(base) && base > 0 ? base : DEFAULT_ESTIMATED_ITEM;
+    const fallback = props.getItemLayout
+      ? DEFAULT_ESTIMATED_ITEM
+      : DEFAULT_DYNAMIC_ESTIMATED_ITEM;
+    const base = props.estimatedItemSize ?? fallback;
+    return hasNumber(base) && base > 0 ? base : fallback;
   });
   const averageRowLength = createMemo(() => {
     measurementVersion();
@@ -355,19 +510,22 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     return measuredRowLengthTotal / measuredRowCount;
   });
   const axisViewportLength = createMemo(() =>
-    isHorizontal() ? viewportSize().width : viewportSize().height,
+    isHorizontal() ? viewportSize().width : viewportSize().height
   );
   const contentPadding = createMemo(() =>
-    resolvePadding(props.contentContainerStyle),
+    resolvePadding(props.contentContainerStyle)
   );
   const rowCount = createMemo(() =>
-    Math.ceil(props.data.length / itemsPerRow()),
+    Math.ceil(props.data.length / itemsPerRow())
   );
 
   const getMeasuredRow = (rowIndex: number): RowMetric | null => {
     if (rowIndex < 0 || rowIndex >= rowCount()) return null;
     if (props.getItemLayout) {
-      const itemIndex = Math.min(props.data.length - 1, rowIndex * itemsPerRow());
+      const itemIndex = Math.min(
+        props.data.length - 1,
+        rowIndex * itemsPerRow()
+      );
       if (itemIndex < 0) return null;
       const layout = props.getItemLayout(props.data, itemIndex);
       return {
@@ -422,10 +580,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   });
 
   const totalContentLength = createMemo(
-    () => headerLength() + totalRowsLength() + footerLength(),
+    () => headerLength() + totalRowsLength() + footerLength()
   );
   const maxScrollOffset = createMemo(() =>
-    Math.max(0, totalContentLength() - axisViewportLength()),
+    Math.max(0, totalContentLength() - axisViewportLength())
   );
 
   const findRowAtOffset = (offset: number): number => {
@@ -466,12 +624,16 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
         props.data.length,
         props.initialScrollIndex,
         itemsPerRow(),
-        props.initialNumToRender,
+        props.initialNumToRender
       );
     }
 
     const rowOffset = Math.max(0, scrollOffset() - headerLength());
-    const visibleStart = clamp(rowOffset, 0, Math.max(0, totalRowsLength() - viewport));
+    const visibleStart = clamp(
+      rowOffset,
+      0,
+      Math.max(0, totalRowsLength() - viewport)
+    );
     const visibleEnd = visibleStart + viewport;
     const velocity = scrollVelocity();
 
@@ -482,43 +644,151 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (last < first) last = first;
 
     const average = Math.max(1, averageRowLength());
-    const targetWindow = Math.max(1, Math.min(9, props.windowSize ?? DEFAULT_WINDOW_SIZE));
+    const isDynamicList = !props.getItemLayout;
+    const hasDynamicMeasurements = isDynamicList && measuredRowCount > 0;
+    const targetWindow = Math.max(
+      1,
+      Math.min(
+        9,
+        props.windowSize ??
+          (isDynamicList ? DEFAULT_DYNAMIC_WINDOW_SIZE : DEFAULT_WINDOW_SIZE)
+      )
+    );
     const visibleRowCount = Math.max(1, last - first + 1);
     const windowRows = Math.max(
       visibleRowCount,
-      Math.ceil((targetWindow * viewport) / average),
+      Math.ceil((targetWindow * viewport) / average)
     );
     const halfWindowRows = Math.max(
       0,
-      Math.ceil((windowRows - visibleRowCount) / 2),
+      Math.ceil((windowRows - visibleRowCount) / 2)
     );
     const overscanRows = Math.max(0, Math.min(12, props.overscan ?? 2));
     const directionalRows =
-      Math.abs(velocity) > 1 ? Math.min(6, Math.ceil(Math.abs(velocity) / 400)) : 0;
-    const extraBefore = halfWindowRows + overscanRows + (velocity < -1 ? directionalRows : 0);
-    const extraAfter = halfWindowRows + overscanRows + (velocity > 1 ? directionalRows : 0);
+      Math.abs(velocity) > 1
+        ? Math.min(
+            isDynamicList ? 4 : 24,
+            Math.max(2, Math.ceil(Math.abs(velocity) / Math.max(160, average)))
+          )
+        : 0;
+    const extraBefore =
+      halfWindowRows + overscanRows + (velocity < -1 ? directionalRows : 0);
+    const extraAfter =
+      halfWindowRows + overscanRows + (velocity > 1 ? directionalRows : 0);
 
-    return normalizeRange(
+    const next = normalizeRange(
       {
         first: first - extraBefore,
         last: last + extraAfter,
       },
-      totalRows,
+      totalRows
     );
+    const boundedNext =
+      !isDynamicList || rangeSize(next) <= DEFAULT_MAX_DYNAMIC_WINDOW_ROWS
+        ? next
+        : normalizeRange(
+            velocity > 1
+              ? {
+                  first: next.last - DEFAULT_MAX_DYNAMIC_WINDOW_ROWS + 1,
+                  last: next.last,
+                }
+              : {
+                  first: next.first,
+                  last: next.first + DEFAULT_MAX_DYNAMIC_WINDOW_ROWS - 1,
+                },
+            totalRows
+          );
+    if (
+      !isRangeEqual(next, boundedNext) &&
+      !isRangeEqual(currentRange, boundedNext)
+    ) {
+      logVirtualList("window-bounded", {
+        boundedNext,
+        next,
+        velocity,
+      });
+    }
+    const limitedNext = limitRangeExpansion(
+      currentRange,
+      boundedNext,
+      Math.max(
+        1,
+        Math.floor(
+          props.maxToRenderPerBatch ?? DEFAULT_MAX_TO_RENDER_PER_BATCH
+        )
+      )
+    );
+    if (!isRangeEqual(boundedNext, limitedNext)) {
+      logVirtualList("window-expansion-limited", {
+        boundedNext,
+        currentRange,
+        limitedNext,
+      });
+    }
+
+    if (
+      currentRange.last >= currentRange.first &&
+      currentRange.first >= 0 &&
+      currentRange.last < totalRows
+    ) {
+      const guardRows = Math.max(1, Math.min(overscanRows, 4));
+      const hasVisibleRows =
+        first >= currentRange.first && last <= currentRange.last;
+      const hasHeadroom =
+        first >= currentRange.first + guardRows &&
+        last <= currentRange.last - guardRows;
+      const currentSize = currentRange.last - currentRange.first + 1;
+      const nextSize = limitedNext.last - limitedNext.first + 1;
+      const windowDidNotShrinkMuch = currentSize <= nextSize + guardRows * 2;
+
+      if (hasVisibleRows && hasHeadroom && windowDidNotShrinkMuch) {
+        return currentRange;
+      }
+    }
+
+    return limitedNext;
   };
 
   const readAxisOffsetFromEvent = (event: ScrollEvent): number =>
     isHorizontal() ? event.contentOffset.x : event.contentOffset.y;
 
   const readAxisVelocityFromEvent = (event: ScrollEvent): number =>
-    isHorizontal()
-      ? (event.velocity?.x ?? 0)
-      : (event.velocity?.y ?? 0);
+    isHorizontal() ? event.velocity?.x ?? 0 : event.velocity?.y ?? 0;
+
+  const markScrollActive = () => {
+    isScrollActive = true;
+    if (scrollIdleTimer) {
+      clearTimeout(scrollIdleTimer);
+    }
+    scrollIdleTimer = setTimeout(() => {
+      scrollIdleTimer = null;
+      isScrollActive = false;
+    }, SCROLL_IDLE_DELAY_MS);
+  };
+
+  const markScrollIdle = () => {
+    if (scrollIdleTimer) {
+      clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = null;
+    }
+    isScrollActive = false;
+    // Flush any deferred measurements as a single batch when scroll ends,
+    // preventing cascading re-layout passes from individual commit trickle.
+    if (measurementFlushPending) {
+      commitMeasurementVersion();
+    }
+  };
 
   const updateViewportFromLayout = (event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width;
     const nextHeight = event.nativeEvent.layout.height;
     if (!hasNumber(nextWidth) || !hasNumber(nextHeight)) return;
+    
+    const current = viewportSize();
+    // Use a small threshold to avoid sub-pixel layout loops
+    if (Math.abs(current.width - nextWidth) < 1.0 && Math.abs(current.height - nextHeight) < 1.0) {
+      return;
+    }
     setViewportSize({ width: nextWidth, height: nextHeight });
   };
 
@@ -528,20 +798,75 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   };
 
   const handleScroll = (event: ScrollEvent) => {
+    markScrollActive();
     const nextOffset = readAxisOffsetFromEvent(event);
-    setScrollOffset(nextOffset);
+    const prevOffset = untrack(scrollOffset);
+    if (Math.abs(prevOffset - nextOffset) >= 0.5) {
+      setScrollOffset(nextOffset);
+    }
     setScrollVelocity(readAxisVelocityFromEvent(event));
 
     const nextWidth = event.layoutMeasurement.width;
     const nextHeight = event.layoutMeasurement.height;
     if (hasNumber(nextWidth) && hasNumber(nextHeight)) {
       const current = viewportSize();
-      if (current.width !== nextWidth || current.height !== nextHeight) {
+      if (Math.abs(current.width - nextWidth) >= 1.0 || Math.abs(current.height - nextHeight) >= 1.0) {
         setViewportSize({ width: nextWidth, height: nextHeight });
       }
     }
 
+    const now = nowMs();
+    if (now - lastScrollDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+      lastScrollDebugAt = now;
+      logVirtualList("scroll", {
+        eventContentSize: event.contentSize,
+        eventOffset: event.contentOffset,
+        eventViewport: event.layoutMeasurement,
+        nextOffset,
+      });
+    }
+
     props.onScroll?.(event);
+  };
+
+  const handleScrollBeginDrag = (event: ScrollEvent) => {
+    markScrollActive();
+    logVirtualList("scroll-begin-drag", {
+      eventOffset: event.contentOffset,
+      velocity: event.velocity,
+    });
+    props.onScrollBeginDrag?.(event);
+  };
+
+  const handleScrollEndDrag = (event: ScrollEvent) => {
+    if (!event.velocity || Math.abs(readAxisVelocityFromEvent(event)) < 1) {
+      markScrollIdle();
+    } else {
+      markScrollActive();
+    }
+    logVirtualList("scroll-end-drag", {
+      eventOffset: event.contentOffset,
+      velocity: event.velocity,
+    });
+    props.onScrollEndDrag?.(event);
+  };
+
+  const handleMomentumScrollBegin = (event: ScrollEvent) => {
+    markScrollActive();
+    logVirtualList("momentum-begin", {
+      eventOffset: event.contentOffset,
+      velocity: event.velocity,
+    });
+    props.onMomentumScrollBegin?.(event);
+  };
+
+  const handleMomentumScrollEnd = (event: ScrollEvent) => {
+    markScrollIdle();
+    logVirtualList("momentum-end", {
+      eventOffset: event.contentOffset,
+      velocity: event.velocity,
+    });
+    props.onMomentumScrollEnd?.(event);
   };
 
   const handleHeaderLayout = (event: LayoutChangeEvent) => {
@@ -549,6 +874,11 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       ? event.nativeEvent.layout.width
       : event.nativeEvent.layout.height;
     if (!hasNumber(next)) return;
+    
+    const current = headerLength();
+    if (Math.abs(current - next) < 1.0) {
+      return;
+    }
     setHeaderLength(Math.max(0, next));
   };
 
@@ -557,14 +887,26 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       ? event.nativeEvent.layout.width
       : event.nativeEvent.layout.height;
     if (!hasNumber(next)) return;
+
+    const current = footerLength();
+    if (Math.abs(current - next) < 1.0) {
+      return;
+    }
     setFooterLength(Math.max(0, next));
   };
 
   const handleRowLayout = (rowIndex: number, event: LayoutChangeEvent) => {
     if (props.getItemLayout) return;
     const layout = event.nativeEvent.layout;
-    const nextLength = isHorizontal() ? layout.width : layout.height;
-    if (!hasNumber(nextLength) || nextLength <= 0) return;
+    let nextLength = isHorizontal() ? layout.width : layout.height;
+    
+    if (nextLength < 0) {
+      nextLength = Math.abs(nextLength);
+    }
+
+    if (!hasNumber(nextLength) || nextLength <= 0) {
+      return;
+    }
 
     const metric: RowMetric = {
       index: rowIndex,
@@ -572,10 +914,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       offset: 0,
     };
     const previous = rowMetrics.get(rowIndex);
-    if (
-      previous &&
-      Math.abs(previous.length - metric.length) < 0.5
-    ) {
+    if (previous && Math.abs(previous.length - metric.length) < 1.0) {
       return;
     }
 
@@ -590,7 +929,25 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (rowIndex > highestMeasuredRowIndex) {
       highestMeasuredRowIndex = rowIndex;
     }
-    setMeasurementVersion((value) => value + 1);
+    const now = nowMs();
+    if (now - lastMeasurementDebugAt >= DEBUG_MEASUREMENT_LOG_INTERVAL_MS) {
+      lastMeasurementDebugAt = now;
+      logVirtualList("row-measured", {
+        isUpdate: previous !== undefined,
+        nextLength,
+        previousLength: previous?.length ?? null,
+        rowIndex,
+      });
+    }
+    scheduleMeasurementCommit();
+  };
+
+  const getRowOnLayout = (rowIndex: number) => {
+    let handler = rowLayoutHandlers.get(rowIndex);
+    if (handler) return handler;
+    handler = (event: LayoutChangeEvent) => handleRowLayout(rowIndex, event);
+    rowLayoutHandlers.set(rowIndex, handler);
+    return handler;
   };
 
   const scrollToOffset = (params: VirtualListScrollToOffsetParams) => {
@@ -615,7 +972,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (highestMeasuredRowIndex < 0) return -1;
     return Math.min(
       props.data.length - 1,
-      highestMeasuredRowIndex * itemsPerRow() + (itemsPerRow() - 1),
+      highestMeasuredRowIndex * itemsPerRow() + (itemsPerRow() - 1)
     );
   };
 
@@ -645,7 +1002,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       headerLength() +
       Math.max(
         0,
-        metric.offset - viewPosition * Math.max(0, viewport - metric.length),
+        metric.offset - viewPosition * Math.max(0, viewport - metric.length)
       ) -
       viewOffset;
 
@@ -687,6 +1044,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       rowMetrics.delete(rowIndex);
       removed = true;
     }
+    for (const [rowIndex] of rowLayoutHandlers) {
+      if (rowIndex < totalRows) continue;
+      rowLayoutHandlers.delete(rowIndex);
+    }
     if (removed) {
       syncMeasurementStats();
       setMeasurementVersion((value) => value + 1);
@@ -713,12 +1074,60 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     }
   });
 
+  const commitRenderRange = (previous: Range, next: Range) => {
+    const addedRows = countAddedRows(previous, next);
+    logVirtualList("range-commit", {
+      addedRows,
+      next,
+      previous,
+      removedRows: Math.max(0, rangeSize(previous) - rangeSize(next) + addedRows),
+    });
+    withHostBatch(
+      {
+        kind: "update",
+        scope: "virtual-list-window",
+        extras: {
+          addedRows,
+          atomic: true,
+          first: next.first,
+          last: next.last,
+          previousFirst: previous.first,
+          previousLast: previous.last,
+          rowCount: rowCount(),
+          scrollOffset: scrollOffset(),
+          totalRowsLength: totalRowsLength(),
+          viewport: axisViewportLength(),
+        },
+      },
+      () => setRenderRange(next)
+    );
+  };
+
+  const scheduleRenderRangeCommit = () => {
+    if (rangeUpdateTimer) return;
+    const delay = Math.max(
+      0,
+      props.updateCellsBatchingPeriod ?? DEFAULT_UPDATE_CELLS_BATCHING_PERIOD
+    );
+    logVirtualList("range-commit-scheduled", { delay });
+    rangeUpdateTimer = setTimeout(() => {
+      rangeUpdateTimer = null;
+      const current = untrack(renderRange);
+      const next = computeWindowStep(current);
+      if (!isRangeEqual(current, next)) {
+        commitRenderRange(current, next);
+      }
+    }, delay);
+  };
+
   createEffect(() => {
     props.data.length;
     props.disableVirtualization;
     props.initialNumToRender;
     props.initialScrollIndex;
+    props.maxToRenderPerBatch;
     props.overscan;
+    props.updateCellsBatchingPeriod;
     props.windowSize;
     axisViewportLength();
     headerLength();
@@ -730,7 +1139,32 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const current = untrack(renderRange);
     const next = computeWindowStep(current);
     if (!isRangeEqual(current, next)) {
-      setRenderRange(next);
+      const addedRows = countAddedRows(current, next);
+      const batchingPeriod =
+        props.updateCellsBatchingPeriod ??
+        DEFAULT_UPDATE_CELLS_BATCHING_PERIOD;
+      if (addedRows > 0 && batchingPeriod > 0) {
+        scheduleRenderRangeCommit();
+        return;
+      }
+      // During active scroll, coalesce range commits to at most one per
+      // animation frame.  This prevents multiple synchronous Yoga layout
+      // passes when scrollOffset fires faster than the display refresh.
+      if (isScrollActive && typeof requestAnimationFrame === "function") {
+        if (!rangeRafPending) {
+          rangeRafPending = true;
+          requestAnimationFrame(() => {
+            rangeRafPending = false;
+            const latest = untrack(renderRange);
+            const latestNext = computeWindowStep(latest);
+            if (!isRangeEqual(latest, latestNext)) {
+              commitRenderRange(latest, latestNext);
+            }
+          });
+        }
+        return;
+      }
+      commitRenderRange(current, next);
     }
   });
 
@@ -742,11 +1176,12 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const distanceFromStart = Math.max(0, scrollOffset() - headerLength());
     const distanceFromEnd = Math.max(
       0,
-      totalRowsLength() + footerLength() - distanceFromStart - viewport,
+      totalRowsLength() + footerLength() - distanceFromStart - viewport
     );
 
     if (props.onStartReached) {
-      const threshold = Math.max(0, props.onStartReachedThreshold ?? 2) * viewport;
+      const threshold =
+        Math.max(0, props.onStartReachedThreshold ?? 2) * viewport;
       if (distanceFromStart <= threshold) {
         const token = Math.floor(distanceFromStart);
         if (edgeStartToken !== token) {
@@ -759,7 +1194,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     }
 
     if (props.onEndReached) {
-      const threshold = Math.max(0, props.onEndReachedThreshold ?? 2) * viewport;
+      const threshold =
+        Math.max(0, props.onEndReachedThreshold ?? 2) * viewport;
       if (distanceFromEnd <= threshold) {
         const token = Math.floor(distanceFromEnd);
         if (edgeEndToken !== token) {
@@ -788,6 +1224,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   });
 
   onCleanup(() => {
+    if (rangeUpdateTimer) {
+      clearTimeout(rangeUpdateTimer);
+      rangeUpdateTimer = null;
+    }
+    if (scrollIdleTimer) {
+      clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = null;
+    }
     if (props.ref) {
       props.ref(null);
     }
@@ -800,12 +1244,49 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     return Array.from({ length: count }, (_, index) => range.first + index);
   });
 
+  createEffect(() => {
+    const rows = visibleRowIndices();
+    const totalRows = rowCount();
+    const viewport = axisViewportLength();
+    const offset = scrollOffset();
+    const range = renderRange();
+    if (props.data.length > 0 && viewport > 0 && rows.length === 0) {
+      const now = nowMs();
+      if (now - lastBlankDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+        lastBlankDebugAt = now;
+        logVirtualList("blank-visible-rows", {
+          offset,
+          range,
+          totalRows,
+          viewport,
+        });
+      }
+    }
+  });
+
   const leadingSpacerLength = createMemo(() => {
     if (props.disableVirtualization) return 0;
     const rows = visibleRowIndices();
     if (rows.length <= 0) return 0;
     const firstRow = getApproxRow(rows[0]);
-    return Math.max(0, firstRow.offset);
+    const next = Math.max(0, firstRow.offset);
+    
+    // Stability guard: ignore sub-pixel shifts in spacers
+    if (Math.abs(lastLeadingSpacer - next) < 1.0) {
+      return lastLeadingSpacer;
+    }
+    const previous = lastLeadingSpacer;
+    lastLeadingSpacer = next;
+    const now = nowMs();
+    if (now - lastSpacerDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+      lastSpacerDebugAt = now;
+      logVirtualList("leading-spacer-change", {
+        next,
+        previous,
+        rows,
+      });
+    }
+    return next;
   });
 
   const trailingSpacerLength = createMemo(() => {
@@ -814,7 +1295,24 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (rows.length <= 0) return Math.max(0, totalRowsLength());
     const lastRow = getApproxRow(rows[rows.length - 1]);
     const renderedEnd = lastRow.offset + lastRow.length;
-    return Math.max(0, totalRowsLength() - renderedEnd);
+    const next = Math.max(0, totalRowsLength() - renderedEnd);
+
+    // Stability guard: ignore sub-pixel shifts in spacers
+    if (Math.abs(lastTrailingSpacer - next) < 1.0) {
+      return lastTrailingSpacer;
+    }
+    const previous = lastTrailingSpacer;
+    lastTrailingSpacer = next;
+    const now = nowMs();
+    if (now - lastSpacerDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+      lastSpacerDebugAt = now;
+      logVirtualList("trailing-spacer-change", {
+        next,
+        previous,
+        rows,
+      });
+    }
+    return next;
   });
 
   const scrollViewStyle = createMemo<StyleProp>(() => {
@@ -824,20 +1322,20 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
 
   const contentContainerStyle = createMemo<StyleProp>(() => {
     const base: Style = isHorizontal()
-      ? { alignItems: "stretch", flexDirection: "row" }
-      : { flexGrow: 1 };
+      ? { alignItems: "stretch", flexDirection: "row", height: "100%" }
+      : { flexGrow: 1, width: "100%" };
     return compactStyles(base, props.contentContainerStyle) ?? base;
   });
 
   const childInversionStyle = createMemo<Style | null>(() =>
-    props.inverted ? createInversionStyle(isHorizontal()) : null,
+    props.inverted ? createInversionStyle(isHorizontal()) : null
   );
 
   const innerContentStyle = createMemo<Style>(() => {
     if (isHorizontal()) {
-      return { alignItems: "stretch", flexDirection: "row" };
+      return { alignItems: "stretch", flexDirection: "row", height: "100%" };
     }
-    return { alignItems: "stretch" };
+    return { alignItems: "stretch", width: "100%" };
   });
 
   const manualContentSize = createMemo(() => {
@@ -847,9 +1345,15 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       : padding.top + padding.bottom;
     const axisLength = totalContentLength() + axisPadding;
     if (isHorizontal()) {
-      return { height: 0, width: axisLength };
+      return { height: "100%", width: axisLength } as unknown as {
+        height: number;
+        width: number;
+      };
     }
-    return { height: axisLength, width: 0 };
+    return { height: axisLength, width: "100%" } as unknown as {
+      height: number;
+      width: number;
+    };
   });
 
   const renderSeparatorForRow = (rowIndex: number) => {
@@ -864,7 +1368,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   return (
     <ScrollView
       bounces={props.bounces}
-      bridgeCoalescing={props.bridgeCoalescing}
+      bridgeCoalescing={props.bridgeCoalescing ?? true}
       config={props.config}
       contentContainerStyle={contentContainerStyle()}
       contentInset={props.contentInset}
@@ -886,12 +1390,12 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       minimumZoomScale={props.minimumZoomScale}
       onContentSizeChange={props.onContentSizeChange}
       onLayout={handleListLayout}
-      onMomentumScrollBegin={props.onMomentumScrollBegin}
-      onMomentumScrollEnd={props.onMomentumScrollEnd}
+      onMomentumScrollBegin={handleMomentumScrollBegin}
+      onMomentumScrollEnd={handleMomentumScrollEnd}
       onRefresh={props.onRefresh}
       onScroll={handleScroll}
-      onScrollBeginDrag={props.onScrollBeginDrag}
-      onScrollEndDrag={props.onScrollEndDrag}
+      onScrollBeginDrag={handleScrollBeginDrag}
+      onScrollEndDrag={handleScrollEndDrag}
       overScrollBehavior={props.overScrollBehavior}
       pinchGestureEnabled={props.pinchGestureEnabled}
       ref={assignRef}
@@ -918,7 +1422,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
         {props.ListHeaderComponent ? (
           <View
             onLayout={handleHeaderLayout}
-            style={compactStyles(childInversionStyle(), props.ListHeaderComponentStyle)}
+            style={compactStyles(
+              childInversionStyle(),
+              props.ListHeaderComponentStyle
+            )}
           >
             {renderSlot(props.ListHeaderComponent)}
           </View>
@@ -929,8 +1436,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
             pointerEvents="none"
             style={
               isHorizontal()
-                ? { minWidth: leadingSpacerLength(), width: leadingSpacerLength() }
-                : { minHeight: leadingSpacerLength(), height: leadingSpacerLength() }
+                ? {
+                    minWidth: leadingSpacerLength(),
+                    width: leadingSpacerLength(),
+                  }
+                : {
+                    minHeight: leadingSpacerLength(),
+                    height: leadingSpacerLength(),
+                  }
             }
           />
         ) : null}
@@ -953,16 +1466,23 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
               const base: Style = isHorizontal()
                 ? { alignSelf: "stretch", overflow: "hidden" }
                 : itemsPerRow() > 1
-                  ? { alignItems: "stretch", flexDirection: "row", width: "100%", overflow: "hidden" }
-                  : { alignItems: "stretch", width: "100%", overflow: "hidden" };
+                ? {
+                    alignItems: "stretch",
+                    flexDirection: "row",
+                    width: "100%",
+                    overflow: "hidden",
+                  }
+                : { alignItems: "stretch", width: "100%", overflow: "hidden" };
 
               if (itemsPerRow() > 1 && props.columnWrapperStyle) {
                 if (childInversionStyle()) {
-                  return compactStyles(
-                    base,
-                    childInversionStyle()!,
-                    props.columnWrapperStyle,
-                  ) ?? base;
+                  return (
+                    compactStyles(
+                      base,
+                      childInversionStyle()!,
+                      props.columnWrapperStyle
+                    ) ?? base
+                  );
                 }
                 return compactStyles(base, props.columnWrapperStyle) ?? base;
               }
@@ -973,23 +1493,25 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
               return base;
             });
 
+            const rowOnLayout = props.getItemLayout
+              ? undefined
+              : getRowOnLayout(rowIndex);
+
             return (
-              <View onLayout={(event) => handleRowLayout(rowIndex, event)} style={rowStyle()}>
+              <View onLayout={rowOnLayout} style={rowStyle()}>
                 <For each={rowItemIndices()}>
                   {(itemIndex) => {
                     const item = createMemo(() => props.data[itemIndex]);
                     const itemKey = createMemo(() =>
                       props.keyExtractor
                         ? props.keyExtractor(item(), itemIndex)
-                        : defaultKeyExtractor(item(), itemIndex),
+                        : defaultKeyExtractor(item(), itemIndex)
                     );
                     return (
                       <View
                         key={itemKey()}
                         style={
-                          itemsPerRow() > 1
-                            ? ({ flex: 1 } as Style)
-                            : undefined
+                          itemsPerRow() > 1 ? ({ flex: 1 } as Style) : undefined
                         }
                       >
                         {props.renderItem({ item: item(), index: itemIndex })}
@@ -1000,7 +1522,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
 
                 {itemsPerRow() > 1
                   ? Array.from({
-                      length: Math.max(0, itemsPerRow() - rowItemIndices().length),
+                      length: Math.max(
+                        0,
+                        itemsPerRow() - rowItemIndices().length
+                      ),
                     }).map((_, fillIndex) => (
                       <View
                         key={`virtual-fill-${rowIndex}-${fillIndex}`}
@@ -1021,8 +1546,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
             pointerEvents="none"
             style={
               isHorizontal()
-                ? { minWidth: trailingSpacerLength(), width: trailingSpacerLength() }
-                : { minHeight: trailingSpacerLength(), height: trailingSpacerLength() }
+                ? {
+                    minWidth: trailingSpacerLength(),
+                    width: trailingSpacerLength(),
+                  }
+                : {
+                    minHeight: trailingSpacerLength(),
+                    height: trailingSpacerLength(),
+                  }
             }
           />
         ) : null}
@@ -1036,7 +1567,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
         {props.ListFooterComponent ? (
           <View
             onLayout={handleFooterLayout}
-            style={compactStyles(childInversionStyle(), props.ListFooterComponentStyle)}
+            style={compactStyles(
+              childInversionStyle(),
+              props.ListFooterComponentStyle
+            )}
           >
             {renderSlot(props.ListFooterComponent)}
           </View>

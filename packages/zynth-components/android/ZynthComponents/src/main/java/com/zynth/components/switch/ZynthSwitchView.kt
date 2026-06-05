@@ -62,17 +62,50 @@ class ZynthSwitchView(context: Context) : FrameLayout(context) {
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    // Measure the switch child
-    measureChildren(widthMeasureSpec, heightMeasureSpec)
+    // Measure the switch child with a WRAP_CONTENT approach
+    val childWidthSpec = if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.UNSPECIFIED) {
+      widthMeasureSpec
+    } else {
+      MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.AT_MOST)
+    }
+    
+    val childHeightSpec = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) {
+      heightMeasureSpec
+    } else {
+      MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(heightMeasureSpec), MeasureSpec.AT_MOST)
+    }
+
+    materialSwitch.measure(childWidthSpec, childHeightSpec)
     
     // Add padding for the ripple/state layer effect
     val ripplePadding = (RIPPLE_PADDING_DP * density).roundToInt()
-    val childWidth = materialSwitch.measuredWidth + (ripplePadding * 2)
-    val childHeight = materialSwitch.measuredHeight + (ripplePadding * 2)
     
-    // Resolve the final dimensions respecting the measure specs
-    val width = resolveSize(childWidth, widthMeasureSpec)
-    val height = resolveSize(childHeight, heightMeasureSpec)
+    // Fallback to standard Material 3 Switch dimensions if measurement returns 0
+    // Standard M3 Switch is roughly 52dp x 32dp
+    val minWidth = (52 * density).roundToInt()
+    val minHeight = (32 * density).roundToInt()
+    
+    val childWidth = materialSwitch.measuredWidth.coerceAtLeast(minWidth) + (ripplePadding * 2)
+    val childHeight = materialSwitch.measuredHeight.coerceAtLeast(minHeight) + (ripplePadding * 2)
+    
+    // Resolve the final dimensions. We use a custom resolution to avoid stretching 
+    // when measured with EXACTLY large values unless they are small enough.
+    val widthMode = MeasureSpec.getMode(widthMeasureSpec)
+    val widthSize = MeasureSpec.getSize(widthMeasureSpec)
+    val heightMode = MeasureSpec.getMode(heightMeasureSpec)
+    val heightSize = MeasureSpec.getSize(heightMeasureSpec)
+
+    val width = when (widthMode) {
+      MeasureSpec.EXACTLY -> widthSize
+      MeasureSpec.AT_MOST -> childWidth.coerceAtMost(widthSize)
+      else -> childWidth
+    }
+    
+    val height = when (heightMode) {
+      MeasureSpec.EXACTLY -> heightSize
+      MeasureSpec.AT_MOST -> childHeight.coerceAtMost(heightSize)
+      else -> childHeight
+    }
     
     setMeasuredDimension(width, height)
   }
@@ -171,6 +204,9 @@ class ZynthSwitchView(context: Context) : FrameLayout(context) {
     } else {
       materialSwitch.thumbTintList = null
     }
+
+    materialSwitch.refreshDrawableState()
+    materialSwitch.invalidate()
   }
 
   private fun parseColor(colorStr: String): Int? {

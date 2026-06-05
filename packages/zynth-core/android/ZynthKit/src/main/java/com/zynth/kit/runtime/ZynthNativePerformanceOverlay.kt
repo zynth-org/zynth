@@ -37,9 +37,11 @@ internal object ZynthNativePerformanceOverlay {
   private const val PERF_LONGEST_PASS_VALUE_TAG = 94_009
   private const val PERF_OVERRUNS_VALUE_TAG = 94_010
   private const val PERF_PASSES_VALUE_TAG = 94_011
+  private const val PERF_LAST_YOGA_VALUE_TAG = 94_012
+  private const val RUNTIME_FONT_ASSET = "fonts/ZynthRuntime.ttf"
+  private const val CHEVRON_GLYPH = "\uEA07"
   private const val OVERLAY_WIDTH_DP = 330
-  private const val OVERLAY_HEIGHT_DP = 62
-  private const val OVERLAY_EXPANDED_HEIGHT_DP = 142
+  private const val OVERLAY_TAP_HEIGHT_DP = 44
   private const val FPS_WARN_OFFSET = 6
   private const val FPS_RECOVER_OFFSET = 3
   private const val FPS_WARN_SAMPLES = 3
@@ -80,11 +82,20 @@ internal object ZynthNativePerformanceOverlay {
   private var jsRecoverStreak: Int = 0
   private var performanceBudgetPasses: Long = 0L
   private var performanceLastPassMs: Double = 0.0
+  private var performanceLastLayoutMs: Double = 0.0
+  private var performanceLastYogaMs: Double = 0.0
+  private var performanceLastYogaCalcMs: Double = 0.0
+  private var performanceLastYogaMeasureMs: Double = 0.0
+  private var performanceYogaMeasureTotalMs: Double = 0.0
+  private val performanceYogaMeasureSamples = ArrayList<Double>()
   private var performanceShortestPassMs: Double = Double.MAX_VALUE
   private var performanceLongestPassMs: Double = 0.0
   private var performanceBudgetOverruns: Long = 0L
   private var performanceWindowPasses: Long = 0L
   private var performanceWindowConsumedFrames: Long = 0L
+  private var performanceOverlayAllowed: Boolean = false
+  private var performanceYogaSampleCount: Long = 0L
+  private var chevronTypeface: Typeface? = null
 
   private var isDebuggable: Boolean = false
 
@@ -93,8 +104,9 @@ internal object ZynthNativePerformanceOverlay {
 
     val context = root.context
     isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    performanceOverlayAllowed = isDebuggable || readProductionOverlayFlag()
 
-    if (isDebuggable) {
+    if (performanceOverlayAllowed) {
       installRootLayoutListener(root)
       mainHandler.post {
         if (performanceEnabled) {
@@ -114,6 +126,7 @@ internal object ZynthNativePerformanceOverlay {
     rootLayoutListener = null
     rootRef = null
     isDebuggable = false
+    performanceOverlayAllowed = false
     mainHandler.post {
       stopUiFrameLoop()
       dismissPerformanceOverlay()
@@ -124,7 +137,7 @@ internal object ZynthNativePerformanceOverlay {
 
   @JvmStatic
   fun setPerformanceOverlayEnabled(enabled: Boolean) {
-    if (!isDebuggable && enabled) return
+    if (!performanceOverlayAllowed && enabled) return
     mainHandler.post {
       if (performanceEnabled == enabled) {
         if (enabled) {
@@ -147,30 +160,90 @@ internal object ZynthNativePerformanceOverlay {
 
   @JvmStatic
   fun getPerformanceOverlaySnapshot(): Map<String, Any> {
+    val yogaMeasureSummary = summarizeSamples(performanceYogaMeasureSamples)
     return mapOf(
       "enabled" to performanceEnabled,
       "ramMb" to performanceRamMb,
       "views" to performanceNodeCount,
       "uiFps" to performanceUiFps,
       "jsFps" to performanceJsFps,
-      "lastPassMs" to performanceLastPassMs,
+      "lastYogaMs" to performanceLastYogaMs,
+      "lastYogaCalcMs" to performanceLastYogaCalcMs,
+      "lastYogaMeasureMs" to performanceLastYogaMeasureMs,
+      "lastPassMs" to performanceLastYogaMs,
       "shortestPassMs" to if (performanceBudgetPasses > 0L) performanceShortestPassMs else 0.0,
       "longestPassMs" to performanceLongestPassMs,
       "budgetOverruns" to performanceBudgetOverruns,
       "totalPasses" to performanceBudgetPasses,
+      "avgYogaMeasureMs" to if (performanceYogaMeasureSamples.isNotEmpty()) {
+        performanceYogaMeasureTotalMs / performanceYogaMeasureSamples.size.toDouble()
+      } else {
+        0.0
+      },
+      "minYogaMeasureMs" to (yogaMeasureSummary["min"] ?: 0.0),
+      "maxYogaMeasureMs" to (yogaMeasureSummary["max"] ?: 0.0),
+      "p50YogaMeasureMs" to (yogaMeasureSummary["p50"] ?: 0.0),
+      "p90YogaMeasureMs" to (yogaMeasureSummary["p90"] ?: 0.0),
+      "p95YogaMeasureMs" to (yogaMeasureSummary["p95"] ?: 0.0),
+      "p99YogaMeasureMs" to (yogaMeasureSummary["p99"] ?: 0.0),
+      "yogaMeasureSampleCount" to performanceYogaMeasureSamples.size,
     )
   }
 
   @JvmStatic
-  fun recordPerformanceFrame(frameMs: Double, overBudget: Boolean, nodeCount: Int) {
+  fun setPerformanceSamplingEnabled(enabled: Boolean) {
+    mainHandler.post {
+      if (performanceEnabled == enabled) {
+        return@post
+      }
+      performanceEnabled = enabled
+      resetPerformanceCounters()
+      if (!enabled) {
+        stopUiFrameLoop()
+        dismissPerformanceOverlay()
+      }
+    }
+  }
+
+  @JvmStatic
+  fun resetPerformanceStats() {
+    mainHandler.post {
+      resetPerformanceCounters()
+      updatePerformanceOverlayLabels()
+    }
+  }
+
+  @JvmStatic
+  fun recordPerformanceFrame(frameMs: Double, layoutMs: Double, overBudget: Boolean, nodeCount: Int) {
     val update: () -> Unit = update@{
       if (!performanceEnabled) {
         return@update
       }
       performanceNodeCount = nodeCount.coerceAtLeast(0)
       ensurePerformanceOverlay()
-      recordBudgetPass(frameMs, overBudget)
       rootView()?.bringChildToFront(performanceOverlayView)
+    }
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      update()
+    } else {
+      mainHandler.post { update() }
+    }
+  }
+
+  @JvmStatic
+  fun recordNativeYogaPass(yogaMs: Double, yogaCalculateMs: Double, measureMs: Double) {
+    val update: () -> Unit = update@{
+      if (!performanceEnabled) {
+        return@update
+      }
+      val totalYogaMs = sanitizeDuration(yogaMs)
+      performanceLastYogaMs = totalYogaMs
+      performanceLastYogaCalcMs = sanitizeDuration(yogaCalculateMs)
+      performanceLastYogaMeasureMs = sanitizeDuration(measureMs)
+      performanceYogaMeasureTotalMs += performanceLastYogaMeasureMs
+      performanceYogaMeasureSamples.add(performanceLastYogaMeasureMs)
+      recordBudgetPass(totalYogaMs, totalYogaMs > FRAME_BUDGET_MS)
+      updatePerformanceOverlayLabels()
     }
     if (Looper.myLooper() == Looper.getMainLooper()) {
       update()
@@ -247,11 +320,18 @@ internal object ZynthNativePerformanceOverlay {
     jsRecoverStreak = 0
     performanceBudgetPasses = 0L
     performanceLastPassMs = 0.0
+    performanceLastLayoutMs = 0.0
+    performanceLastYogaMs = 0.0
+    performanceLastYogaCalcMs = 0.0
+    performanceLastYogaMeasureMs = 0.0
+    performanceYogaMeasureTotalMs = 0.0
+    performanceYogaMeasureSamples.clear()
     performanceShortestPassMs = Double.MAX_VALUE
     performanceLongestPassMs = 0.0
     performanceBudgetOverruns = 0L
     performanceWindowPasses = 0L
     performanceWindowConsumedFrames = 0L
+    performanceYogaSampleCount = 0L
   }
 
   private fun startUiFrameLoop() {
@@ -301,7 +381,7 @@ internal object ZynthNativePerformanceOverlay {
           withAlpha(Color.parseColor("#6B7280"), 0.46f),
           dp(18).toFloat(),
         )
-        layoutParams = FrameLayout.LayoutParams(dp(OVERLAY_WIDTH_DP), dp(OVERLAY_HEIGHT_DP)).apply {
+        layoutParams = FrameLayout.LayoutParams(dp(OVERLAY_WIDTH_DP), FrameLayout.LayoutParams.WRAP_CONTENT).apply {
           gravity = Gravity.TOP or Gravity.START
           marginStart = dp(16)
           topMargin = topInset + dp(10)
@@ -314,7 +394,7 @@ internal object ZynthNativePerformanceOverlay {
               performanceDragStartY = event.rawY - view.y
               performanceTouchDownRawX = event.rawX
               performanceTouchDownRawY = event.rawY
-              performanceChevronPressed = event.x >= view.width - dp(52) && event.y <= dp(OVERLAY_HEIGHT_DP)
+              performanceChevronPressed = event.x >= view.width - dp(52) && event.y <= dp(OVERLAY_TAP_HEIGHT_DP)
               true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -348,14 +428,16 @@ internal object ZynthNativePerformanceOverlay {
       val header = LinearLayout(root.context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(OVERLAY_TAP_HEIGHT_DP)
       }
       val chevron = TextView(root.context).apply {
         id = PERF_CHEVRON_TAG
-        text = "v"
+        text = CHEVRON_GLYPH
         setTextColor(Color.parseColor("#E5E7EB"))
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
         gravity = Gravity.CENTER
-        typeface = Typeface.DEFAULT_BOLD
+        includeFontPadding = false
+        typeface = chevronTypeface(root.context)
       }
       header.addView(ram, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
       header.addView(views, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -369,7 +451,7 @@ internal object ZynthNativePerformanceOverlay {
         visibility = if (performanceOverlayExpanded) View.VISIBLE else View.GONE
         setPadding(0, dp(8), 0, 0)
       }
-      details.addView(performanceDetailRow(root.context, "Last Pass", PERF_LAST_PASS_VALUE_TAG))
+      details.addView(performanceDetailRow(root.context, "Last Measure", PERF_LAST_YOGA_VALUE_TAG))
       details.addView(performanceDetailRow(root.context, "Shortest", PERF_SHORTEST_PASS_VALUE_TAG))
       details.addView(performanceDetailRow(root.context, "Longest", PERF_LONGEST_PASS_VALUE_TAG))
       details.addView(performanceDetailRow(root.context, "Overruns", PERF_OVERRUNS_VALUE_TAG))
@@ -452,7 +534,7 @@ internal object ZynthNativePerformanceOverlay {
     val views = overlay.findViewById<TextView>(PERF_VIEWS_VALUE_TAG)
     val ui = overlay.findViewById<TextView>(PERF_UI_VALUE_TAG)
     val js = overlay.findViewById<TextView>(PERF_JS_VALUE_TAG)
-    val lastPass = overlay.findViewById<TextView>(PERF_LAST_PASS_VALUE_TAG)
+    val lastYoga = overlay.findViewById<TextView>(PERF_LAST_YOGA_VALUE_TAG)
     val shortestPass = overlay.findViewById<TextView>(PERF_SHORTEST_PASS_VALUE_TAG)
     val longestPass = overlay.findViewById<TextView>(PERF_LONGEST_PASS_VALUE_TAG)
     val overruns = overlay.findViewById<TextView>(PERF_OVERRUNS_VALUE_TAG)
@@ -461,7 +543,7 @@ internal object ZynthNativePerformanceOverlay {
     views?.text = performanceNodeCount.toString()
     ui?.text = performanceUiFps.toString()
     js?.text = performanceJsFps.toString()
-    lastPass?.text = formatMs(performanceLastPassMs)
+    lastYoga?.text = formatMs(performanceLastYogaMs)
     shortestPass?.text = formatMs(if (performanceBudgetPasses > 0L) performanceShortestPassMs else 0.0)
     longestPass?.text = formatMs(performanceLongestPassMs)
     overruns?.text = performanceBudgetOverruns.toString()
@@ -472,18 +554,64 @@ internal object ZynthNativePerformanceOverlay {
     js?.setTextColor(if (jsWarnActive) warn else good)
   }
 
-  private fun recordBudgetPass(frameMs: Double, overBudget: Boolean) {
-    if (!frameMs.isFinite() || frameMs < 0.0) return
+  private fun recordBudgetPass(durationMs: Double, overBudget: Boolean) {
+    if (!durationMs.isFinite() || durationMs < 0.0) return
     performanceBudgetPasses += 1L
     performanceWindowPasses += 1L
-    performanceWindowConsumedFrames += consumedFrameSlots(frameMs)
-    performanceLastPassMs = frameMs
-    performanceShortestPassMs = kotlin.math.min(performanceShortestPassMs, frameMs)
-    performanceLongestPassMs = kotlin.math.max(performanceLongestPassMs, frameMs)
+    performanceWindowConsumedFrames += consumedFrameSlots(durationMs)
+    performanceLastPassMs = durationMs
+    performanceLastLayoutMs = durationMs
+    performanceYogaSampleCount += 1L
+    performanceShortestPassMs = kotlin.math.min(performanceShortestPassMs, durationMs)
+    if (performanceYogaSampleCount > 3L) {
+      performanceLongestPassMs = kotlin.math.max(performanceLongestPassMs, durationMs)
+    }
     if (overBudget) {
       performanceBudgetOverruns += 1L
     }
     updatePerformanceOverlayLabels()
+  }
+
+  private fun sanitizeDuration(value: Double): Double {
+    if (!value.isFinite() || value < 0.0) return 0.0
+    return value
+  }
+
+  private fun summarizeSamples(samples: List<Double>): Map<String, Double> {
+    if (samples.isEmpty()) {
+      return emptyMap()
+    }
+    val sorted = samples.sorted()
+    return mapOf(
+      "min" to (sorted.firstOrNull() ?: 0.0),
+      "max" to (sorted.lastOrNull() ?: 0.0),
+      "p50" to percentile(sorted, 0.5),
+      "p90" to percentile(sorted, 0.9),
+      "p95" to percentile(sorted, 0.95),
+      "p99" to percentile(sorted, 0.99),
+    )
+  }
+
+  private fun percentile(sorted: List<Double>, ratio: Double): Double {
+    if (sorted.isEmpty()) {
+      return 0.0
+    }
+    val index = kotlin.math.min(
+      sorted.size - 1,
+      kotlin.math.max(0, kotlin.math.ceil(sorted.size.toDouble() * ratio).toInt() - 1),
+    )
+    return sorted[index]
+  }
+
+  private fun readProductionOverlayFlag(): Boolean {
+    val rawFlag = System.getProperty("ZYNTH_ANDROID_DEBUG_OVERLAY")?.trim()
+    if (rawFlag.isNullOrEmpty()) {
+      return false
+    }
+    return rawFlag == "1" ||
+      rawFlag.equals("true", ignoreCase = true) ||
+      rawFlag.equals("yes", ignoreCase = true) ||
+      rawFlag.equals("on", ignoreCase = true)
   }
 
   private fun targetFps(): Int {
@@ -640,28 +768,40 @@ internal object ZynthNativePerformanceOverlay {
 
   private fun applyPerformanceOverlayExpandedState(view: View?) {
     val overlay = view as? ViewGroup ?: return
-    overlay.findViewById<TextView>(PERF_CHEVRON_TAG)?.text =
-      if (performanceOverlayExpanded) "^" else "v"
+    overlay.findViewById<TextView>(PERF_CHEVRON_TAG)?.apply {
+      text = CHEVRON_GLYPH
+      scaleY = if (performanceOverlayExpanded) 1f else -1f
+      typeface = chevronTypeface(context)
+    }
     overlay.findViewById<View>(PERF_DETAILS_TAG)?.visibility =
       if (performanceOverlayExpanded) View.VISIBLE else View.GONE
-    val targetHeight = dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
     val params = overlay.layoutParams
-    if (params != null && params.height != targetHeight) {
-      params.height = targetHeight
+    if (params != null && params.height != ViewGroup.LayoutParams.WRAP_CONTENT) {
+      params.height = ViewGroup.LayoutParams.WRAP_CONTENT
       overlay.layoutParams = params
     }
     val width = if (overlay.width > 0) overlay.width else dp(OVERLAY_WIDTH_DP)
     val left = overlay.left
     val top = overlay.top
     val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
-    val heightSpec = View.MeasureSpec.makeMeasureSpec(targetHeight, View.MeasureSpec.EXACTLY)
+    val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     overlay.measure(widthSpec, heightSpec)
-    overlay.layout(left, top, left + width, top + targetHeight)
+    overlay.layout(left, top, left + width, top + overlay.measuredHeight)
     clampPerformanceOverlayPosition(overlay)
   }
 
   private fun formatMs(value: Double): String {
     return "%.2fms".format(value)
+  }
+
+  private fun chevronTypeface(context: Context): Typeface {
+    val cached = chevronTypeface
+    if (cached != null) return cached
+    val loaded = runCatching {
+      Typeface.createFromAsset(context.assets, RUNTIME_FONT_ASSET)
+    }.getOrNull() ?: Typeface.DEFAULT_BOLD
+    chevronTypeface = loaded
+    return loaded
   }
 
   private fun clampPerformanceOverlayPosition(view: View) {
@@ -672,7 +812,7 @@ internal object ZynthNativePerformanceOverlay {
     val rootWidth = if (root.width > 0) root.width else root.resources.displayMetrics.widthPixels
     val rootHeight = if (root.height > 0) root.height else root.resources.displayMetrics.heightPixels
     val viewWidth = if (view.width > 0) view.width else dp(OVERLAY_WIDTH_DP)
-    val viewHeight = if (view.height > 0) view.height else dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
+    val viewHeight = if (view.height > 0) view.height else view.measuredHeight.coerceAtLeast(dp(OVERLAY_TAP_HEIGHT_DP))
     val minX = dp(8).toFloat()
     val maxX = (rootWidth - viewWidth - dp(8)).toFloat().coerceAtLeast(minX)
     val minY = (topInset + dp(8)).toFloat()
@@ -739,13 +879,12 @@ internal object ZynthNativePerformanceOverlay {
       return
     }
     val width = dp(OVERLAY_WIDTH_DP)
-    val height = dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
     val left = dp(16)
     val top = topInset + dp(10)
     val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
-    val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+    val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     view.measure(widthSpec, heightSpec)
-    view.layout(left, top, left + width, top + height)
+    view.layout(left, top, left + width, top + view.measuredHeight)
     if (view.x == 0f && view.y == 0f) {
       view.x = left.toFloat()
       view.y = top.toFloat()

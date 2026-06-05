@@ -1,8 +1,8 @@
 package com.zynth.components.text
 
+import android.content.Context
 import android.graphics.Typeface
 import android.util.Log
-import android.os.SystemClock
 import android.util.TypedValue
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
@@ -28,7 +28,7 @@ private fun parseString(json: String?): String? {
 }
 
 private const val DEBUG_TEXT = false
-
+private const val TEXT_MEASURE_CACHE_KEY = "textMeasureCache"
 private fun isIconFontFamily(family: String): Boolean {
   return family.contains("Icon")
 }
@@ -39,13 +39,26 @@ private data class TextMeasureCache(
   val height: Float,
 )
 
+private data class ResolvedMeasureText(
+  val text: CharSequence,
+  val plainText: String,
+  val usesSpans: Boolean,
+)
+
+private data class MeasuredTextSize(
+  val width: Int,
+  val height: Int,
+)
+
 private fun hashMeasureKey(
-  text: CharSequence,
+  text: String,
+  usesSpans: Boolean,
   textView: TextView,
   widthSpec: Int,
   heightSpec: Int,
 ): Int {
   var result = text.hashCode()
+  result = 31 * result + usesSpans.hashCode()
   result = 31 * result + textView.textSize.toBits()
   result = 31 * result + (textView.typeface?.hashCode() ?: 0)
   result = 31 * result + textView.letterSpacing.toBits()
@@ -62,22 +75,13 @@ private fun rebuildComposedText(manager: ZynthUIManager, rootId: Int, styleKey: 
   val density = manager.getRootView().resources.displayMetrics.density
   val composer = TextComposer(density, styleKey) { id -> manager.getNodeState(id) }
   val composed = composer.compose(root)
-  if (DEBUG_TEXT) {
-    val text = composed.text.toString()
-    val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
-    val family = composed.effectiveStyle?.fontFamily
-    Log.d(
-      "ZynthText",
-      "rebuild root=${root.id} len=${text.length} sample=[$sample] family=$family",
-    )
-  }
   val previous = textView.text?.toString() ?: ""
   val next = composed.text.toString()
   // Always apply composed text so span-only style changes (color/weight/lineHeight/etc.)
   // are reflected even when the raw string is unchanged.
   applyTextSynchronously(textView, composed.text)
   if (previous != next) {
-    manager.markNodeDirty(root.id)
+    manager.markNodeDirty(root.id, "text:rebuildComposed")
   }
 }
 
@@ -86,9 +90,139 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
   if (root.type != "text") return
   val rootTextView = root.view as? TextView ?: return
   val immediateText = buildRawText(root, manager, styleKey)
-  if (rootTextView.text.toString() != immediateText) {
+  if (immediateText.isEmpty() && root.cachedText.isNotEmpty()) {
+    android.util.Log.w("ZynthLayout", "rebuildRawText: resulting text is empty for node $rootId despite cachedText='${root.cachedText}'")
+  }
+  val didChange = rootTextView.text.toString() != immediateText
+  if (didChange) {
+    val previousText = rootTextView.text?.toString() ?: ""
+    val previousSize = measureRawTextSizeForCurrentBounds(manager, rootTextView, previousText)
+    val nextSize = measureRawTextSizeForCurrentBounds(manager, rootTextView, immediateText)
     rootTextView.text = immediateText
-    manager.markNodeDirty(root.id)
+    val shouldDirty = previousSize == null || nextSize == null || previousSize != nextSize
+    if (shouldDirty) {
+      manager.markNodeDirty(root.id, "text:rebuildRaw")
+    } else {
+      root.attachments[TEXT_MEASURE_CACHE_KEY] = TextMeasureCache(
+        key = hashMeasureKey(
+          immediateText,
+          false,
+          rootTextView,
+          MeasureSpec.makeMeasureSpec(rootTextView.width.coerceAtLeast(0), MeasureSpec.AT_MOST),
+          MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+        ),
+        width = nextSize.width.toFloat(),
+        height = nextSize.height.toFloat(),
+      )
+    }
+  }
+}
+
+private fun measureRawTextSizeForCurrentBounds(
+  manager: ZynthUIManager,
+  textView: TextView,
+  text: String,
+): MeasuredTextSize? {
+  val availableWidth = textView.width.takeIf { it > 0 } ?: textView.measuredWidth.takeIf { it > 0 }
+  if (availableWidth == null) {
+    return null
+  }
+  val measureView = getMeasureView(manager, textView.context)
+  return try {
+    synchronized(measureView) {
+      measureView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textView.textSize)
+      measureView.typeface = textView.typeface
+      measureView.letterSpacing = textView.letterSpacing
+      measureView.maxLines = textView.maxLines
+      measureView.ellipsize = textView.ellipsize
+      measureView.includeFontPadding = textView.includeFontPadding
+      measureView.text = text
+      val widthSpec = MeasureSpec.makeMeasureSpec(availableWidth, MeasureSpec.AT_MOST)
+      val heightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+      measureView.measure(widthSpec, heightSpec)
+      MeasuredTextSize(
+        width = measureView.measuredWidth,
+        height = measureView.measuredHeight,
+      )
+    }
+  } catch (_: Throwable) {
+    null
+  }
+}
+
+private fun resolveTextTypeface(
+  textView: TextView,
+  style: TextStyleAttributes?,
+): Typeface {
+  val weight = style?.fontWeight
+  val isBold = weight?.let {
+    it.equals("bold", ignoreCase = true) || it.toIntOrNull()?.let { w -> w >= 600 } == true
+  } ?: false
+  val isItalic = style?.fontStyle?.equals("italic", ignoreCase = true) == true
+  val styleInt = when {
+    isBold && isItalic -> Typeface.BOLD_ITALIC
+    isBold -> Typeface.BOLD
+    isItalic -> Typeface.ITALIC
+    else -> Typeface.NORMAL
+  }
+
+  val family = style?.fontFamily
+  val cachedTypeface = family?.let { FontRegistry.getTypeface(it) }
+  val baseTypeface = when {
+    family == null -> textView.typeface ?: Typeface.DEFAULT
+    cachedTypeface != null -> cachedTypeface
+    else -> Typeface.create(family, styleInt)
+  }
+
+  return when {
+    family != null && cachedTypeface != null && isIconFontFamily(family) -> baseTypeface
+    else -> Typeface.create(baseTypeface ?: Typeface.DEFAULT, styleInt)
+  }
+}
+
+private fun resolveMeasureText(
+  node: ZynthUIManager.Node,
+  manager: ZynthUIManager,
+  textStyleKey: String,
+): ResolvedMeasureText {
+  val root = findTextRoot(node, manager)
+  val hasInlineSpans = subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)
+  val rootStyle = root.attachments[textStyleKey] as? TextStyleAttributes
+  val rootNeedsSpans = rootStyle?.let { needsRootSpanStyles(it) } ?: false
+  if (!hasInlineSpans && !rootNeedsSpans) {
+    val rawText = buildRawText(root, manager, textStyleKey)
+    return ResolvedMeasureText(
+      text = rawText,
+      plainText = rawText,
+      usesSpans = false,
+    )
+  }
+
+  val density = manager.getRootView().resources.displayMetrics.density
+  val composer = TextComposer(density, textStyleKey) { id -> manager.getNodeState(id) }
+  val composed = composer.compose(root)
+  return ResolvedMeasureText(
+    text = composed.text,
+    plainText = composed.text.toString(),
+    usesSpans = true,
+  )
+}
+
+
+private val measureViews = java.util.WeakHashMap<ZynthUIManager, TextView>()
+
+private fun getMeasureView(manager: ZynthUIManager, context: Context): TextView {
+  synchronized(measureViews) {
+    return measureViews.getOrPut(manager) {
+      ZynthTextView(context).apply {
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+        // Ensure measurement view never has padding
+        setPadding(0, 0, 0, 0)
+      }
+    }
   }
 }
 
@@ -98,7 +232,6 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
 fun createTextComponentDescriptor(): ZynthComponentDescriptor {
   val textStyleKey = "textStyle"
   val textManagerKey = "textManager"
-  val textMeasureCacheKey = "textMeasureCache"
   return ZynthComponentDescriptor(
     type = "text",
     createView = { context, _ -> ZynthTextView(context) },
@@ -106,9 +239,10 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       val textView = node.view as? TextView ?: return@ZynthComponentDescriptor
       
       // Set up measurement handler for text
-      val measureTag = "ZynthText/measure"
-      manager.getLayoutEngine().setMeasureHandler(node.id) { input ->
-        val measureStart = SystemClock.elapsedRealtimeNanos()
+      val handler: com.zynth.kit.layout.MeasureHandler = handler@{ input ->
+        if (input.height <= 0f && input.heightMode != MeasureMode.UNDEFINED) {
+          android.util.Log.v("ZynthLayout", "Text measure constraints: node=${node.id} w=${input.width}(${input.widthMode}) h=${input.height}(${input.heightMode})")
+        }
         val widthValue = when {
           input.width.isNaN() -> 0
           input.width.isInfinite() -> Int.MAX_VALUE / 2
@@ -121,59 +255,122 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         }
         
         val widthSpec = when (input.widthMode) {
-          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.EXACTLY)
-          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.AT_MOST)
+          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(widthValue.coerceAtLeast(0), MeasureSpec.EXACTLY)
+          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(widthValue.coerceAtLeast(0), MeasureSpec.AT_MOST)
           MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         }
         val heightSpec = when (input.heightMode) {
-          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.EXACTLY)
-          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.AT_MOST)
+          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(heightValue.coerceAtLeast(0), MeasureSpec.EXACTLY)
+          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(heightValue.coerceAtLeast(0), MeasureSpec.AT_MOST)
           MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         }
         
-        val currentText = textView.text ?: ""
-        val cacheKey = hashMeasureKey(currentText, textView, widthSpec, heightSpec)
-        val cached = node.attachments[textMeasureCacheKey] as? TextMeasureCache
+        val resolvedMeasureText = resolveMeasureText(node, manager, textStyleKey)
+        val currentText = resolvedMeasureText.plainText
+        val root = findTextRoot(node, manager)
+        val style = root.attachments[textStyleKey] as? TextStyleAttributes
+        val hasVolatileZeroHeightConstraint =
+          currentText.isNotEmpty() &&
+            input.height <= 0f &&
+            input.heightMode != MeasureMode.UNDEFINED
+        val effectiveHeightSpec = if (hasVolatileZeroHeightConstraint) {
+          // A transient zero-height constraint can appear while ancestor padding/margin
+          // animations cross through a collapsed content box. Measuring intrinsic text
+          // height with that exact spec makes TextView return 0 and can poison Yoga's
+          // cached measurement for the pulse.
+          MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+        } else {
+          heightSpec
+        }
+        val cacheKey = hashMeasureKey(
+          currentText,
+          resolvedMeasureText.usesSpans,
+          textView,
+          widthSpec,
+          effectiveHeightSpec,
+        )
+        val cached = node.attachments[TEXT_MEASURE_CACHE_KEY] as? TextMeasureCache
         if (cached != null && cached.key == cacheKey) {
-          return@setMeasureHandler cached.width to cached.height
+          return@handler cached.width to cached.height
         }
 
         if (currentText.isEmpty()) {
           val measuredWidth = 0f
           val measuredHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
-          node.attachments[textMeasureCacheKey] =
+          node.attachments[TEXT_MEASURE_CACHE_KEY] =
             TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
-          return@setMeasureHandler measuredWidth to measuredHeight
+          return@handler measuredWidth to measuredHeight
         }
 
-        // Temporarily clear padding for measurement as Yoga provides content-only constraints
-        // and expects content-only dimensions in return.
-        val pl = textView.paddingLeft
-        val pt = textView.paddingTop
-        val pr = textView.paddingRight
-        val pb = textView.paddingBottom
-        textView.setPadding(0, 0, 0, 0)
+        // Use a dedicated measurement view to avoid race conditions with the UI thread.
+        // The UI thread may be measuring the live textView instance during transitions,
+        // which causes IllegalStateException if measured concurrently on the JS/Layout thread.
+        val measureView = getMeasureView(manager, textView.context)
+        var measuredWidth: Float
+        var measuredHeight: Float
 
-        textView.measure(widthSpec, heightSpec)
-        val measuredWidth = textView.measuredWidth.coerceAtLeast(1).toFloat()
-        val measuredHeight = textView.measuredHeight
-          .coerceAtLeast((textView.textSize * 1.2f).roundToInt())
-          .toFloat()
-        
-        // Restore padding
-        textView.setPadding(pl, pt, pr, pb)
+        try {
+          synchronized(measureView) {
+            val resolvedTextSizePx = style?.fontSize?.let { fontSize ->
+              val density = textView.resources.displayMetrics.density
+              if (density == 0f) fontSize else fontSize * density
+            } ?: textView.textSize
 
-        node.attachments[textMeasureCacheKey] =
-          TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
-        val durationMs = (SystemClock.elapsedRealtimeNanos() - measureStart) / 1_000_000.0
-        if (durationMs > 8) {
-          Log.w(
-            measureTag,
-            "Slow text measure: node=${node.id} text='${node.cachedText.take(24)}' duration=${"%.2f".format(durationMs)}ms",
-          )
+            measureView.setTextSize(TypedValue.COMPLEX_UNIT_PX, resolvedTextSizePx)
+            measureView.typeface = resolveTextTypeface(textView, style)
+            if (resolvedMeasureText.usesSpans) {
+              measureView.setLineSpacing(0f, 1f)
+              measureView.letterSpacing = 0f
+            } else {
+              measureView.letterSpacing = textView.letterSpacing
+            }
+            if (measureView.text != resolvedMeasureText.text) {
+              measureView.text = resolvedMeasureText.text
+            }
+            measureView.maxLines = textView.maxLines
+            measureView.ellipsize = textView.ellipsize
+            measureView.includeFontPadding =
+              style?.fontFamily?.let { !isIconFontFamily(it) } ?: textView.includeFontPadding
+
+            measureView.measure(widthSpec, effectiveHeightSpec)
+            val mwResult = measureView.measuredWidth.toFloat()
+            val mhResult = measureView.measuredHeight.toFloat()
+            
+            if (mhResult <= 0f && input.heightMode != MeasureMode.UNDEFINED && currentText.isNotEmpty()) {
+                android.util.Log.w("ZynthLayout", "Text measurement returned zero height! node=${node.id} text='$currentText' width=$mwResult (inputW=${input.width}, mode=${input.widthMode}) height=$mhResult (inputH=${input.height}, mode=${input.heightMode})")
+            }
+
+            val fallbackHeight = (measureView.textSize * 1.2f).coerceAtLeast(1f)
+            measuredWidth = if (mwResult <= 0f && currentText.isNotEmpty()) {
+                measureView.paint.measureText(currentText).coerceAtLeast(1f)
+            } else {
+                mwResult.coerceAtLeast(0f)
+            }
+            measuredHeight = if (mhResult <= 0f && currentText.isNotEmpty()) {
+                fallbackHeight
+            } else {
+                mhResult.coerceAtLeast(0f)
+            }
+          }
+        } catch (error: Throwable) {
+          android.util.Log.e("ZynthLayout", "Error measuring text node ${node.id}: ${error.message}", error)
+          measuredWidth = when (input.widthMode) {
+            MeasureMode.EXACTLY -> widthValue.coerceAtLeast(0).toFloat()
+            MeasureMode.AT_MOST -> textView.paint.measureText(currentText)
+              .coerceIn(0f, widthValue.coerceAtLeast(0).toFloat())
+            MeasureMode.UNDEFINED -> textView.paint.measureText(currentText).coerceAtLeast(0f)
+          }
+          measuredHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
+        }
+        if (!hasVolatileZeroHeightConstraint) {
+          node.attachments[TEXT_MEASURE_CACHE_KEY] =
+            TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
         }
         measuredWidth to measuredHeight
       }
+      
+      node.measureHandler = handler
+      manager.getLayoutEngine().setMeasureHandler(node.id, handler)
       
       // Set appropriate layout params
       node.view.layoutParams = FrameLayout.LayoutParams(
@@ -189,24 +386,12 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       } else {
         when (name) {
           "text" -> {
-            val startNs = SystemClock.elapsedRealtimeNanos()
             val text = parseString(jsonValue) ?: ""
             if (text == node.cachedText) {
               return@ZynthComponentDescriptor true
             }
             node.cachedText = text
-            if (DEBUG_TEXT) {
-              val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
-              Log.d("ZynthText", "setProp text node=${node.id} len=${text.length} sample=[$sample]")
-            }
             updateComposedText(node, textStyleKey, textManagerKey)
-            val durationMs = (SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
-            if (durationMs > 4) {
-              Log.w(
-                "ZynthText/setProp",
-                "Slow text prop: node=${node.id} duration=${"%.2f".format(durationMs)}ms",
-              )
-            }
             true
           }
           "numberOfLines" -> {
@@ -215,7 +400,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
             val manager = node.attachments[textManagerKey] as? ZynthUIManager
             val root = manager?.let { findTextRoot(node, it) }
             if (manager != null && root != null) {
-              manager.markNodeDirty(root.id)
+              manager.markNodeDirty(root.id, "text:numberOfLines")
             }
             true
           }
@@ -224,8 +409,6 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       }
     },
     onStyleApplied = { node, style ->
-      val styleStart = SystemClock.elapsedRealtimeNanos()
-
       // Always capture text style attributes for composition (even for virtual text nodes).
       // Merge with existing to preserve previously-set props because style is applied per-key.
       val nextAttrs = TextStyleAttributes.fromStyle(style)
@@ -281,16 +464,8 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           val cachedTypeface = family?.let { FontRegistry.getTypeface(it) }
           val baseTypeface = when {
             family == null -> Typeface.DEFAULT
-            cachedTypeface != null -> {
-              if (DEBUG_TEXT) {
-                Log.d("ZynthText", "Using cached typeface for family: $family")
-              }
-              cachedTypeface
-            }
+            cachedTypeface != null -> cachedTypeface
             else -> {
-              if (DEBUG_TEXT) {
-                Log.w("ZynthText", "FontRegistry miss for family: $family, falling back to system")
-              }
               Typeface.create(family, styleInt)
             }
           }
@@ -316,20 +491,19 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           } else {
             false
           }
+        val usesSpanDrivenRendering =
+          hasInlineSpans || merged.let { needsRootSpanStyles(it) }
+        if (usesSpanDrivenRendering && textView != null) {
+          textView.setLineSpacing(0f, 1f)
+          textView.letterSpacing = 0f
+        }
         val shouldRecompose = shouldRecomposeText(existing, merged, hasInlineSpans)
         if (shouldRecompose) {
           updateComposedText(node, textStyleKey, textManagerKey)
         }
         if (didTextMetricsChange(existing, merged) && manager != null && root != null) {
-          manager.markNodeDirty(root.id)
+          manager.markNodeDirty(root.id, "text:styleMetrics")
         }
-      }
-      val durationMs = (SystemClock.elapsedRealtimeNanos() - styleStart) / 1_000_000.0
-      if (durationMs > 4) {
-        Log.w(
-          "ZynthText/style",
-          "Slow text style: node=${node.id} duration=${"%.2f".format(durationMs)}ms",
-        )
       }
     },
     onSetHandler = { _, _ ->
@@ -360,6 +534,7 @@ private fun updateComposedText(
 ) {
   val manager = node.attachments[textManagerKey] as? ZynthUIManager ?: return
   val root = findTextRoot(node, manager)
+  root.attachments.remove(TEXT_MEASURE_CACHE_KEY)
   val hasInlineSpans = subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)
   val rootStyle = root.attachments[textStyleKey] as? TextStyleAttributes
   val rootNeedsSpans = rootStyle?.let { needsRootSpanStyles(it) } ?: false
@@ -428,7 +603,7 @@ private fun didTextMetricsChange(
   previous: TextStyleAttributes?,
   next: TextStyleAttributes,
 ): Boolean {
-  if (previous == null) return true
+  if (previous == null) return false
   return previous.fontSize != next.fontSize ||
     previous.fontWeight != next.fontWeight ||
     previous.fontFamily != next.fontFamily ||

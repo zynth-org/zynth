@@ -49,6 +49,7 @@ const MODULE_NAME = "ZynthAnimate";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
 export const SHARED_VALUE_MARKER = "__zynth_shared_value";
 export const INTERPOLATION_MARKER = "__zynth_interpolation";
+export const DERIVED_VALUE_MARKER = "__zynth_derived_value";
 
 type NativeSharedValueRef = {
   [SHARED_VALUE_MARKER]: number;
@@ -64,11 +65,20 @@ type NativeInterpolationRef = {
   };
 };
 
+type NativeDerivedRef = {
+  [DERIVED_VALUE_MARKER]: {
+    source: NativeSharedValueRef | NativeInterpolationRef | number;
+    multiplier?: number;
+    offset?: number;
+  };
+};
+
 export type NativeStyleValue =
   | number
   | string
   | NativeSharedValueRef
-  | NativeInterpolationRef;
+  | NativeInterpolationRef
+  | NativeDerivedRef;
 
 export type NativeStyleMapperConfig = {
   opacity?: NativeStyleValue;
@@ -79,7 +89,28 @@ export type NativeStyleMapperConfig = {
   minHeight?: NativeStyleValue;
   maxWidth?: NativeStyleValue;
   maxHeight?: NativeStyleValue;
+  flex?: NativeStyleValue;
+  flexGrow?: NativeStyleValue;
+  flexShrink?: NativeStyleValue;
   flexBasis?: NativeStyleValue;
+  top?: NativeStyleValue;
+  right?: NativeStyleValue;
+  bottom?: NativeStyleValue;
+  left?: NativeStyleValue;
+  padding?: NativeStyleValue;
+  paddingHorizontal?: NativeStyleValue;
+  paddingVertical?: NativeStyleValue;
+  paddingTop?: NativeStyleValue;
+  paddingRight?: NativeStyleValue;
+  paddingBottom?: NativeStyleValue;
+  paddingLeft?: NativeStyleValue;
+  margin?: NativeStyleValue;
+  marginHorizontal?: NativeStyleValue;
+  marginVertical?: NativeStyleValue;
+  marginTop?: NativeStyleValue;
+  marginRight?: NativeStyleValue;
+  marginBottom?: NativeStyleValue;
+  marginLeft?: NativeStyleValue;
 };
 
 type NativeAnimateJSI = {

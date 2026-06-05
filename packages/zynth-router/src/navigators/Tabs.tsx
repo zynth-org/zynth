@@ -151,7 +151,7 @@ function DefaultTabBar(
               >
                 {(options().tab?.icon as any)?.({
                   active: isActive(),
-                  color: tintColor(),
+                  color: tintColor,
                 })}
                 <Show when={tabBarShowLabels}>
                   <Text
@@ -233,8 +233,25 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     routes: [],
     history: [],
   });
+  const [optionOverrides, setOptionOverrides] = createSignal<
+    Record<string, ScreenOptions>
+  >({});
 
   const [initialized, setInitialized] = createSignal(false);
+
+  function updateRouteOptions(routeKey: string, options: ScreenOptions) {
+    setOptionOverrides((prev) => {
+      const current = prev[routeKey] ?? {};
+      const next = { ...current, ...options };
+      if (JSON.stringify(current) === JSON.stringify(next)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [routeKey]: next,
+      };
+    });
+  }
 
   function initializeState() {
     if (initialized() || screenOrder.length === 0) return;
@@ -373,15 +390,9 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
       });
     },
     setOptions(options) {
-      setState((prev) => {
-        const routes = [...prev.routes];
-        const current = routes[prev.index];
-        routes[prev.index] = {
-          ...current,
-          options: { ...current.options, ...options },
-        };
-        return { ...prev, routes };
-      });
+      const currentRoute = state().routes[state().index];
+      if (!currentRoute) return;
+      updateRouteOptions(currentRoute.key, options);
     },
     canGoBack() {
       return (state().history?.length ?? 0) > 1;
@@ -447,7 +458,8 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
 
   function resolveOptions(
     routeOptions?: ScreenOptions,
-    screenOptions?: ScreenOptionsInput
+    screenOptions?: ScreenOptionsInput,
+    overrideOptions?: ScreenOptions
   ): ScreenOptions {
     const defaultOpts =
       typeof props.screenOptions === "function"
@@ -457,7 +469,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
       typeof screenOptions === "function"
         ? screenOptions() ?? {}
         : screenOptions ?? {};
-    return { ...defaultOpts, ...screenOpts, ...routeOptions };
+    return { ...defaultOpts, ...screenOpts, ...routeOptions, ...overrideOptions };
   }
 
   const navContextValue = createMemo<NavigationContextValue>(() => ({
@@ -481,8 +493,9 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     const result: TabBarProps["descriptors"] = {};
     for (const route of state().routes) {
       const config = screenRegistry.get(route.name);
+      const overrideOptions = optionOverrides()[route.key];
       result[route.key] = {
-        options: resolveOptions(route.options, config?.options),
+        options: resolveOptions(route.options, config?.options, overrideOptions),
         route,
       };
     }
@@ -596,7 +609,14 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   });
 
   const TabsContent = () => {
-    onMount(() => initializeState());
+    let isDisposed = false;
+    onCleanup(() => {
+      isDisposed = true;
+    });
+
+    onMount(() => {
+      if (!isDisposed) initializeState();
+    });
 
     return (
       <Show when={initialized()}>
@@ -632,7 +652,11 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                 const options = createMemo(() => {
                   const cfg = config();
                   if (!cfg) return {};
-                  return resolveOptions(routeValue().options, cfg.options);
+                  return resolveOptions(
+                    routeValue().options,
+                    cfg.options,
+                    optionOverrides()[routeValue().key]
+                  );
                 });
 
                 const [params, setParams] = createSignal(
@@ -645,28 +669,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                 const routeHelpers = createMemo(() => ({
                   ...helpers,
                   setOptions: (opts: ScreenOptions) => {
-                    setState((prev) => {
-                      const idx = prev.routes.findIndex(
-                        (r) => r.key === routeValue().key
-                      );
-                      if (idx === -1) return prev;
-                      const routes = [...prev.routes];
-                      const current = routes[idx];
-                      // Merge options
-                      const newOptions = { ...current.options, ...opts };
-                      // Optimization: If options haven't changed, don't update state
-                      if (
-                        JSON.stringify(current.options) ===
-                        JSON.stringify(newOptions)
-                      ) {
-                        return prev;
-                      }
-                      routes[idx] = {
-                        ...current,
-                        options: newOptions,
-                      };
-                      return { ...prev, routes };
-                    });
+                    updateRouteOptions(routeValue().key, opts);
                   },
                   setParams: (p: object) => {
                     setState((prev) => {

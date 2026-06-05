@@ -51,6 +51,7 @@ android {
       excludes += setOf(
         "**/libc++_shared.so",
         "**/libfbjni.so",
+        "**/libjsi.so",
       )
     }
   }

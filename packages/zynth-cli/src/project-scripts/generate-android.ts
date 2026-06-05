@@ -384,6 +384,10 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       extras.startupMetricsEnabledBuildConfig ?? "false"
     )
     .replace(
+      /\{\{\s*ZYNTH_ANDROID_DEBUG_OVERLAY\s*\}\}/g,
+      extras.androidDebugOverlayBuildConfig ?? "false"
+    )
+    .replace(
       /\{\{\s*ZYNTH_ANDROID_MINIFY_ENABLED\s*\}\}/g,
       extras.androidMinifyEnabledBuildConfig ?? "false"
     )
@@ -435,6 +439,10 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     .replace(
       /\{\{\s*ACTIVITY_ON_FIRST_FRAME_HOOKS\s*\}\}/g,
       extras.activityOnFirstFrameHooks ?? ""
+    )
+    .replace(
+      /\{\{\s*ACTIVITY_ON_CONFIGURATION_CHANGED_HOOKS\s*\}\}/g,
+      extras.activityOnConfigurationChangedHooks ?? ""
     );
 }
 
@@ -642,6 +650,7 @@ type ActivityHooks = {
   imports: string[];
   onCreate: string[];
   onFirstFrame: string[];
+  onConfigurationChanged: string[];
 };
 
 function normalizeHookLines(value: unknown): string[] {
@@ -665,10 +674,16 @@ function mergeHookLines(
 }
 
 function collectAndroidActivityHooks(appDir: string): ActivityHooks {
-  const hooks: ActivityHooks = { imports: [], onCreate: [], onFirstFrame: [] };
+  const hooks: ActivityHooks = {
+    imports: [],
+    onCreate: [],
+    onFirstFrame: [],
+    onConfigurationChanged: [],
+  };
   const seenImports = new Set<string>();
   const seenOnCreate = new Set<string>();
   const seenOnFirstFrame = new Set<string>();
+  const seenOnConfigurationChanged = new Set<string>();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
 
   function collectAppModules(): { packageDir: string; packageName: string; packageJson: any }[] {
@@ -709,6 +724,11 @@ function collectAndroidActivityHooks(appDir: string): ActivityHooks {
       hooks.onFirstFrame,
       seenOnFirstFrame,
       normalizeHookLines(activityHooks.onFirstFrame)
+    );
+    mergeHookLines(
+      hooks.onConfigurationChanged,
+      seenOnConfigurationChanged,
+      normalizeHookLines(activityHooks.onConfigurationChanged)
     );
   }
 
@@ -876,6 +896,10 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     activityHooks.onFirstFrame,
     "      "
   );
+  const activityOnConfigurationChangedHooks = formatHookBlock(
+    activityHooks.onConfigurationChanged,
+    "    "
+  );
   const devServerUrlBuildConfig = toBuildConfigStringLiteral(
     typeof config.devServerUrl === "string" ? config.devServerUrl : ""
   );
@@ -886,6 +910,9 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const startupMetricsEnabledBuildConfig = config.androidStartupMetricsEnabled
     ? "\"true\""
     : "\"false\"";
+  const androidDebugOverlayBuildConfig = config.androidDebugOverlayEnabled
+    ? "true"
+    : "false";
   const androidMinifyEnabledBuildConfig = config.androidMinifyEnabled
     ? "true"
     : "false";
@@ -980,6 +1007,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         activityHookImports,
         activityOnCreateHooks,
         activityOnFirstFrameHooks,
+        activityOnConfigurationChangedHooks,
         androidRuntimePackage,
         androidRuntimeSubdir,
         runtimeModuleImports,
@@ -987,6 +1015,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         devServerUrlBuildConfig,
         devServerTokenBuildConfig,
         startupMetricsEnabledBuildConfig,
+        androidDebugOverlayBuildConfig,
         androidMinifyEnabledBuildConfig,
         androidShrinkResourcesBuildConfig,
       });

@@ -111,9 +111,6 @@ private fun ZynthUIManager.buildScreenSnapshotOnMain(options: JSONObject?): JSON
       if (includeGlobalFrame) {
         nodeJson.put("frameGlobal", globalFrameForView(view))
       }
-      if (includeYogaStyles) {
-        nodeJson.put("yogaStyles", jsonFromMap(yogaStyleCache[nodeId]))
-      }
       if (includeResolvedStyles) {
         nodeJson.put("resolvedStyles", resolvedStylesForNode(nodeId, view))
       }
@@ -250,13 +247,12 @@ private fun Any?.toIntOrNull(): Int? {
 }
 
 private fun ZynthUIManager.resolvedStylesForNode(nodeId: Int, view: View): JSONObject {
-  val configuredElevation = yogaStyleCache[nodeId]?.get("elevation").asDoubleOrNull()
   val styleState = styleStates[nodeId]
   val output = JSONObject()
     .put("opacity", view.alpha.toDouble())
     .put("elevation", view.elevation.toDouble())
     .put("renderElevation", view.elevation.toDouble())
-    .put("configuredElevation", configuredElevation ?: JSONObject.NULL)
+    .put("configuredElevation", JSONObject.NULL)
     .put("zIndex", styleState?.zIndex?.toDouble() ?: 0.0)
     .put("renderZ", view.z.toDouble())
     .put("rotation", view.rotation.toDouble())

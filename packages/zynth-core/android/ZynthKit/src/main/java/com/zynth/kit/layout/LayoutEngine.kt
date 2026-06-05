@@ -21,6 +21,7 @@ interface LayoutEngine {
    */
   fun getAllFrames(): Map<Int, Rect>
   fun setMeasureHandler(id: Int, handler: MeasureHandler?)
+  fun getMeasureHandler(id: Int): MeasureHandler? = null
   /**
    * Mark the node as dirty so that Yoga will re-run its measure function.
    * Use this after content changes that affect intrinsic size (e.g., text updates).

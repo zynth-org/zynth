@@ -3,6 +3,7 @@ package com.zynth.kit.core
 import android.graphics.Matrix
 import android.os.Build
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 
 internal data class ZynthViewStyleState(
@@ -21,7 +22,6 @@ internal data class ZynthViewStyleState(
 internal data class OriginValue(val value: Float, val isPercent: Boolean)
 
 internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, value: Double): Boolean {
-  val isTextNode = view is TextView && nodeStates[id]?.type == "text"
   val floatVal = value.toFloat()
   when (name) {
     "borderWidth" -> {
@@ -150,71 +150,122 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       view.alpha = floatVal
       return true
     }
+    "backgroundColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      val color = value.toLong().toInt()
+      drawable.backgroundColor = color
+      if (surfaceRoots.containsKey(id)) {
+        surfaceRoots[id]?.let { root ->
+          if (root !== view) {
+            val rootDrawable = (root.background as? ZynthBorderDrawable) ?: ZynthBorderDrawable().also { root.background = it }
+            rootDrawable.backgroundColor = color
+          }
+        }
+      }
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderColor" -> {
+      val color = value.toLong().toInt()
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopColor = color
+      drawable.borderRightColor = color
+      drawable.borderBottomColor = color
+      drawable.borderLeftColor = color
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderTopColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopColor = value.toLong().toInt()
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderRightColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderRightColor = value.toLong().toInt()
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderBottomColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderBottomColor = value.toLong().toInt()
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderLeftColor" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderLeftColor = value.toLong().toInt()
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "color" -> {
+      if (view is TextView) {
+        view.setTextColor(value.toLong().toInt())
+      }
+      return true
+    }
+    "display" -> {
+      view.visibility = if (value == 0.0) View.VISIBLE else View.GONE
+      return true
+    }
+    "overflow" -> {
+      val clip = value == 1.0 || value == 2.0
+      if (view is ZynthLayoutView) {
+        view.setOverflowHidden(clip)
+      } else {
+        view.clipToOutline = clip
+        if (view is ViewGroup) {
+          view.clipToPadding = clip
+          view.clipChildren = clip
+        }
+      }
+      return true
+    }
   }
 
   if (view is TextView) {
-    if (isTextNode) {
-      when (name) {
-        "lineHeight",
-        "lineSpacing",
-        "paragraphSpacing",
-        "baselineShift",
-        "letterSpacing",
-        "minimumFontScale",
-        "textDecorationLine",
-        "textTransform",
-        "hyphenation",
-        "fontSize" -> {
-          return true
-        }
-      }
-    }
     val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
     when (name) {
       "lineHeight" -> {
         textState.lineHeight = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:lineHeight:number")
         return true
       }
       "lineSpacing" -> {
         textState.lineSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:lineSpacing:number")
         return true
       }
       "paragraphSpacing" -> {
         textState.paragraphSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:paragraphSpacing:number")
         return true
       }
       "baselineShift" -> {
         textState.baselineShift = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:baselineShift:number")
         return true
       }
       "letterSpacing" -> {
         textState.letterSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:letterSpacing:number")
         return true
       }
       "minimumFontScale" -> {
         textState.minimumFontScale = floatVal
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:minimumFontScale:number")
         return true
       }
       "fontSize" -> {
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(floatVal))
+        markSurfaceDirtyForNode(id, "textStyle:fontSize:number")
         return true
       }
     }
@@ -225,7 +276,6 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
 
 internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, value: String?): Boolean {
   if (value == null) return false
-  val isTextNode = view is TextView && nodeStates[id]?.type == "text"
   val state = styleStates.getOrPut(id) { ZynthViewStyleState() }
   when (name) {
     "background", "backgroundImage" -> {
@@ -481,6 +531,10 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       styleDirtyNodes.add(id)
       return true
     }
+    "display" -> {
+      view.visibility = if (value == "none") View.GONE else View.VISIBLE
+      return true
+    }
     "overflow" -> {
       val clip = value == "hidden" || value == "scroll"
       if (view is ZynthLayoutView) {
@@ -497,85 +551,66 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   }
 
   if (view is TextView) {
-    if (isTextNode) {
-      when (name) {
-        "lineHeight",
-        "lineSpacing",
-        "paragraphSpacing",
-        "baselineShift",
-        "letterSpacing",
-        "minimumFontScale",
-        "textDecorationLine",
-        "textTransform",
-        "hyphenation",
-        "fontSize" -> {
-          return true
-        }
-      }
-    }
     val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
     when (name) {
       "lineHeight" -> {
         textState.lineHeight = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:lineHeight:string")
         return true
       }
       "lineSpacing" -> {
         textState.lineSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:lineSpacing:string")
         return true
       }
       "paragraphSpacing" -> {
         textState.paragraphSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:paragraphSpacing:string")
         return true
       }
       "baselineShift" -> {
         textState.baselineShift = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:baselineShift:string")
         return true
       }
       "letterSpacing" -> {
         textState.letterSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:letterSpacing:string")
         return true
       }
       "minimumFontScale" -> {
         textState.minimumFontScale = value.toFloatOrNull()
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:minimumFontScale:string")
+        return true
+      }
+      "fontSize" -> {
+        val size = value.toFloatOrNull() ?: return false
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size))
+        markSurfaceDirtyForNode(id, "textStyle:fontSize:string")
         return true
       }
       "textDecorationLine" -> {
         textState.textDecorationLine = value
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:textDecorationLine")
         return true
       }
       "textTransform" -> {
         textState.textTransform = value
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:textTransform")
         return true
       }
       "hyphenation" -> {
         textState.hyphenation = value
         textState.applyTo(view)
-        yogaForNode(id).markDirty(id)
-        markSurfaceDirtyForNode(id)
+        markSurfaceDirtyForNode(id, "textStyle:hyphenation")
         return true
       }
     }
@@ -605,10 +640,14 @@ internal fun ZynthUIManager.applyTextValue(id: Int, textView: TextView, text: St
   val state = textStyleStates[id]
   if (state == null) {
     textView.text = text
+    textView.requestLayout()
+    textView.invalidate()
     return
   }
   state.rawText = text
   state.applyTo(textView)
+  textView.requestLayout()
+  textView.invalidate()
 }
 
 private fun ZynthUIManager.ensureBorderDrawable(id: Int, view: View): ZynthBorderDrawable {

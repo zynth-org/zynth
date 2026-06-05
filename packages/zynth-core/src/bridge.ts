@@ -1,7 +1,7 @@
 import type { ZynthNativeEmitterBridge } from "./nativeEmitter";
 
 export type ZynthUIBridge = {
-  createNode(type: string): number;
+  createNode(type: string, hasMeasure?: boolean): number;
   setProp(id: number, name: string, value: any): void;
   setText(id: number, text: string): void;
   insertChild(parent: number, child: number, index: number): void;
@@ -11,6 +11,12 @@ export type ZynthUIBridge = {
   flush(): void;
   applyBatch?(payload: string | Record<string, any>): void;
   setSurface?(surfaceId: number): void;
+};
+
+export type ZynthPortalBridge = {
+  setSurface?: (surfaceId: number) => void;
+  disposeSurface?: (surfaceId: number) => void;
+  resizeSurface?: (surfaceId: number, width: number, height: number) => void;
 };
 
 export type ZynthModulesBridge = {
@@ -59,6 +65,7 @@ declare global {
   var __zynth_worklets: ZynthWorkletsBridge;
   var __zynth_sync_signals: ZynthSyncSignalsBridge;
   var __zynth_ui_commands: ZynthUICommandsBridge;
+  var __zynth_portal: ZynthPortalBridge | undefined;
   /** JSI HostObject injected by the native animation runtime (ZynthAnimateJSI). */
   var __zynth_animate: ZynthAnimateJSIBridge | undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

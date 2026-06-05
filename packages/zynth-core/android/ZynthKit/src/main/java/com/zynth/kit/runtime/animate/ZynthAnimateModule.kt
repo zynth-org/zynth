@@ -630,11 +630,7 @@ class ZynthAnimateModule(
     }
 
     private fun runOnMain(block: () -> Unit) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            block()
-        } else {
-            handler.post { block() }
-        }
+        runtime.getUIManager().runOnMain(block)
     }
 
     private fun resultResponse(result: Any?): JSONObject {

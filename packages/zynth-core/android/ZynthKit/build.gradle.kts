@@ -1,6 +1,4 @@
-val reactNativeVersion = "0.84.0-rc.1"
 val hermesVersion = "250829098.0.6"
-val yogaVersion = "3.2.1"
 
 plugins {
   id("com.android.library")
@@ -30,6 +28,12 @@ android {
     jvmTarget = "17"
   }
 
+  sourceSets {
+    getByName("main") {
+      jniLibs.srcDirs("../../native/vendor/android")
+    }
+  }
+
   buildFeatures {
     prefab = true
   }
@@ -42,26 +46,28 @@ android {
 
   packaging {
     jniLibs {
-      excludes += setOf(
+      pickFirsts += setOf(
         "**/libc++_shared.so",
         "**/libhermes.so",
         "**/libhermesvm.so",
-        "**/libhermes-executor-debug.so",
-        "**/libhermes-executor-release.so",
-        "**/libfbjni.so",
-        "**/libreactnative.so"
+        "**/libjsi.so"
+      )
+      excludes += setOf(
+        // fbjni is already provided as a transitive runtime dependency.
+        // Excluding it here avoids shipping the same .so from both ZynthKit and fbjni.
+        "**/libfbjni.so"
       )
     }
   }
 }
 
 dependencies {
+  implementation("com.facebook.soloader:soloader:0.11.0")
   implementation("androidx.core:core-ktx:1.15.0")
   implementation("androidx.activity:activity-ktx:1.9.3")
   implementation("androidx.appcompat:appcompat:1.7.0")
   implementation("com.facebook.hermes:hermes-android:$hermesVersion")
-  implementation("com.facebook.yoga:yoga:$yogaVersion")
-  compileOnly("com.facebook.react:react-android:$reactNativeVersion")
+  implementation("com.facebook.fbjni:fbjni:0.6.0")
+  compileOnly("com.facebook.react:react-android:0.84.0-rc.1")
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
-  implementation("com.facebook.yoga:yoga:$yogaVersion")
 }

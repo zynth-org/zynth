@@ -1,17 +1,20 @@
 package com.zynth.kit.runtime
 
+import android.util.Log
+
 internal object JSBridge {
   init {
     try {
       System.loadLibrary("zynthkit")
-    } catch (_: Throwable) {
-      // Native bindings are not available in phase 1.
+    } catch (error: Throwable) {
+      Log.e("ZynthJSBridge", "Failed to load libzynthkit.so", error)
+      throw error
     }
   }
 
   external fun createHermesRuntime(): Long
   external fun destroyHermesRuntime(runtimePtr: Long)
-  external fun installUIBindings(runtimePtr: Long, manager: com.zynth.kit.core.ZynthUIManager)
+  external fun installUIBindings(runtimePtr: Long, manager: com.zynth.kit.core.ZynthUIManager, density: Float)
   external fun installModuleRegistry(runtimePtr: Long, registry: ZynthModuleRegistry)
   external fun evaluateScript(runtimePtr: Long, code: String, sourceUrl: String?)
   external fun loadBytecode(runtimePtr: Long, bytecode: ByteArray, sourceUrl: String?)
@@ -43,6 +46,8 @@ internal object JSBridge {
   external fun invokeLayoutEventsBatchSlice(runtimePtr: Long, payload: DoubleArray, length: Int)
   external fun invokeTimer(runtimePtr: Long, timerId: Int)
   external fun invokeAnimationFrame(runtimePtr: Long, callbackId: Int, timestampMs: Double)
+  external fun updateSurfaceSize(runtimePtr: Long, surfaceId: Int, width: Float, height: Float)
+  external fun markMeasuredNodeDirty(runtimePtr: Long, nodeId: Int)
   external fun setSharedSignal(runtimePtr: Long, id: Int, value: Double)
   external fun getSharedSignal(runtimePtr: Long, id: Int): Double
   external fun cancelSharedSignalAnimation(runtimePtr: Long, id: Int): Boolean

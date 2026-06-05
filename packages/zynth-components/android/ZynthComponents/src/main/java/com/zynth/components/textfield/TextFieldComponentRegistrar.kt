@@ -17,6 +17,7 @@ class TextFieldComponentRegistrar : ZynthComponentRegistrar {
     registry.register(
       ZynthComponentDescriptor(
         type = "text-field",
+        hasMeasureFunc = true,
         createView = { context: Context, nodeId: Int ->
           ZynthTextFieldView(context).apply {
             this.nodeId = nodeId

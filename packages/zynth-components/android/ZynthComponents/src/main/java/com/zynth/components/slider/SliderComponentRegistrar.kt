@@ -17,6 +17,7 @@ class SliderComponentRegistrar : ZynthComponentRegistrar {
     registry.register(
       ZynthComponentDescriptor(
         type = "slider-view",
+        hasMeasureFunc = true,
         createView = { context: Context, nodeId: Int ->
           ZynthSliderView(context).apply {
             this.nodeId = nodeId

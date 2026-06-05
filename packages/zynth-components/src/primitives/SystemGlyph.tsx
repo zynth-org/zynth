@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, onMount, type Component } from "solid-js";
 import { Font, Glyphs } from "@zynthjs/apis";
+import { Platform } from "@zynthjs/core";
 import { Text, type TextProps } from "./Text";
 import { createStyle } from "../hooks/createStyle";
 import "../runtimeGlyphs";
@@ -15,8 +16,9 @@ const warnedLoadFailure = new Set<string>();
 
 export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
   const resolveEntry = () => Glyphs.resolve(props.name);
+  const isNative = !Platform.isWeb;
   const [isReady, setIsReady] = createSignal(
-    resolveEntry() ? Glyphs.isLoaded(props.name) : false
+    isNative ? !!resolveEntry() : resolveEntry() ? Glyphs.isLoaded(props.name) : false
   );
   const resolvedStyle = createStyle(() => {
     const nextStyle = props.style;
@@ -44,6 +46,10 @@ export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
           `[SystemGlyph] Missing glyph "${props.name}". Did you generate/register the runtime font?`
         );
       }
+      return;
+    }
+    if (isNative) {
+      setIsReady(true);
       return;
     }
     if (Glyphs.isLoaded(props.name)) {

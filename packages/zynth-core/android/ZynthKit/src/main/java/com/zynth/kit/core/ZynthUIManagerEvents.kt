@@ -227,39 +227,51 @@ internal fun ZynthUIManager.maybeDispatchDoublePress(id: Int, event: MotionEvent
 
 internal fun ZynthUIManager.dispatchLayoutEvents() {
   if (layoutNodes.isEmpty()) return
-  if (layoutPending.isEmpty() && layoutDirtyNodes.isEmpty()) return
+  if (layoutDirtyNodes.isEmpty() && layoutEventBuffer.isEmpty()) return
+  noteLayoutDebug("dispatchLayoutEvents")
   
-  layoutEventBuffer.clear()
   val ids = LinkedHashSet<Int>()
-  ids.addAll(layoutPending)
   ids.addAll(layoutDirtyNodes)
   layoutDirtyNodes.removeAll(ids)
+  
+  val alreadyBuffered = HashSet<Int>()
+  for (event in layoutEventBuffer) {
+    alreadyBuffered.add(event.id)
+  }
   
   for (id in ids) {
     val view = nodes[id] ?: continue
     val frame = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
+    val force = layoutPendingNodes.contains(id)
     val previous = layoutFrames[id]
     val changed = previous == null ||
       previous.left != frame.left ||
       previous.top != frame.top ||
       previous.width() != frame.width() ||
       previous.height() != frame.height()
-    val force = layoutPending.contains(id)
-    if (!force && !changed) continue
+    
+    if (!force && !changed) {
+      continue
+    }
+    
     layoutFrames[id] = frame
-    layoutPending.remove(id)
-    layoutEventBuffer.add(
-      ZynthUIManager.LayoutEvent(
-        id,
-        pxToDp(frame.left.toFloat()),
-        pxToDp(frame.top.toFloat()),
-        pxToDp(frame.width().toFloat()),
-        pxToDp(frame.height().toFloat())
+    layoutPendingNodes.remove(id)
+    
+    if (!alreadyBuffered.contains(id)) {
+      layoutEventBuffer.add(
+        ZynthUIManager.LayoutEvent(
+          id,
+          pxToDp(frame.left.toFloat()),
+          pxToDp(frame.top.toFloat()),
+          pxToDp(frame.width().toFloat()),
+          pxToDp(frame.height().toFloat())
+        )
       )
-    )
+    }
   }
   
   if (layoutEventBuffer.isNotEmpty()) {
+    noteLayoutDebug("layoutEventsToJS")
     // Copy events to a new list to avoid ConcurrentModificationException
     // when runOnJS executes later and layoutEventBuffer is modified by the next frame.
     val eventsSnapshot = ArrayList(layoutEventBuffer)
@@ -329,13 +341,7 @@ internal fun ZynthUIManager.destroyNode(id: Int) {
     }
 
     try {
-      val surfaceId = nodeSurfaces[nodeId]
-      val layout = if (surfaceId != null) surfaceYoga[surfaceId] else null
-      if (layout != null) {
-        layout.removeNode(nodeId)
-      } else {
-        getLayoutEngine().removeNode(nodeId)
-      }
+      getLayoutEngine().removeNode(nodeId)
     } catch (error: Throwable) {
       android.util.Log.e("ZynthUI", "Failed to remove node $nodeId from layout engine", error)
     }
@@ -381,8 +387,7 @@ internal fun ZynthUIManager.destroyNode(id: Int) {
     lastPressTimestamps.remove(nodeId)
     pressLocalPoints.remove(nodeId)
     pressScreenPoints.remove(nodeId)
-    layoutNodes.remove(nodeId)
-    layoutPending.remove(nodeId)
+    layoutFrames.remove(nodeId)
     layoutDirtyNodes.remove(nodeId)
     layoutFrames.remove(nodeId)
     layoutTransitionFrames.remove(nodeId)
@@ -391,7 +396,6 @@ internal fun ZynthUIManager.destroyNode(id: Int) {
     styleLayoutDirtyNodes.remove(nodeId)
     styleLayoutFrames.remove(nodeId)
     textStyleStates.remove(nodeId)
-    yogaStyleCache.remove(nodeId)
     children.remove(nodeId)
 
     val listener = touchListeners.remove(nodeId)

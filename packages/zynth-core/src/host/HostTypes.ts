@@ -6,11 +6,12 @@ export type NodeType =
   | "text"
   | "image"
   | "marker"
+  | "text-field"
   | "text-input"
   | "secure-text-input"
   | "scroll-view"
-  | "switch"
-  | "slider"
+  | "switch-view"
+  | "slider-view"
   | "progress-indicator";
 
 export interface HostNode {

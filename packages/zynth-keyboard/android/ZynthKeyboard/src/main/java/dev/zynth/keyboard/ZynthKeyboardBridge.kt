@@ -14,7 +14,7 @@ class ZynthKeyboardBridge(
     
     override val name: String = "ZynthKeyboard"
 
-    override val exportedMethods: List<String> = listOf("dismiss", "getState")
+    override val exportedMethods: List<String> = listOf("dismiss", "getState", "setHeightSignalId")
 
     override val constants: Map<String, Any>?
         get() = keyboardModule.getInitialState().toMap()
@@ -23,8 +23,15 @@ class ZynthKeyboardBridge(
         return when (method) {
             "dismiss" -> resultResponse(handleDismiss())
             "getState" -> resultResponse(handleGetState())
+            "setHeightSignalId" -> resultResponse(handleSetHeightSignalId(args))
             else -> throw IllegalArgumentException("Unsupported method: $method")
         }
+    }
+
+    private fun handleSetHeightSignalId(args: ZynthArgs): JSONObject {
+        val id = args.getInt("id") ?: return JSONObject().put("success", false)
+        keyboardModule.setHeightSignalId(id)
+        return JSONObject().put("success", true)
     }
 
     private fun handleDismiss(): JSONObject {

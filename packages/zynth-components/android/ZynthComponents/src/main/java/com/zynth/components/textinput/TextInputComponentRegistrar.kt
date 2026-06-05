@@ -128,13 +128,15 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
 
       val paddingWidth = input.paddingLeft + input.paddingRight
       val paddingHeight = input.paddingTop + input.paddingBottom
+
       val measuredWidth = input.measuredWidth.takeIf { it > 0 } ?: widthValue
       val rawMeasuredHeight = input.measuredHeight.takeIf { it > 0 }
         ?: input.lineHeight
       val measuredHeight = rawMeasuredHeight.coerceAtLeast(1)
 
       val contentWidth = (measuredWidth - paddingWidth).coerceAtLeast(0)
-      val contentHeight = (measuredHeight - paddingHeight).coerceAtLeast(0)
+      // Empty inputs still need a text content box; Yoga adds styled padding around this size.
+      val contentHeight = (measuredHeight - paddingHeight).coerceAtLeast(input.lineHeight)
 
       val resolvedWidth = when (measureInput.widthMode) {
         MeasureMode.EXACTLY -> widthValue.toFloat()
@@ -156,6 +158,7 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
     registry.register(
       ZynthComponentDescriptor(
         type = "text-input",
+        hasMeasureFunc = true,
         createView = { context: Context, _: Int ->
           val container = ZynthTextInputContainer(context)
           val input = ZynthTextInputView(context)
@@ -260,6 +263,7 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
     registry.register(
       ZynthComponentDescriptor(
         type = "secure-text-input",
+        hasMeasureFunc = true,
         createView = { context: Context, _: Int ->
           val container = ZynthTextInputContainer(context)
           val input = ZynthSecureTextInputView(context)

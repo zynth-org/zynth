@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <dlfcn.h>
+#include <fbjni/fbjni.h>
 #include <jsi/jsi.h>
 
 #include <algorithm>
@@ -22,6 +23,7 @@ constexpr const char *kTag = "ZynthAnimate";
 constexpr const char *kAnimateKey = "__zynth_animate";
 constexpr const char *kSharedValueKey = "__zynth_shared_value";
 constexpr const char *kInterpolationKey = "__zynth_interpolation";
+constexpr const char *kDerivedValueKey = "__zynth_derived_value";
 
 JavaVM *gVm = nullptr;
 jclass gFrameClockClass = nullptr;
@@ -34,13 +36,15 @@ using SetSharedSignalFn = bool (*)(void *, int, double);
 using ApplyAnimatedStyleFn =
     void (*)(void *, int, float, float, float, float, float, float, float, float, float, float, float);
 using ApplyAnimatedLayoutStyleFn =
-    void (*)(void *, int, float, float, float, float, float, float, float);
+    void (*)(void *, int, const ZynthAnimatedLayoutProps*);
+using PerformNativeLayoutFn = void (*)(void *);
 
 CreateSharedSignalFn gCreateSharedSignal = nullptr;
 GetSharedSignalFn gGetSharedSignal = nullptr;
 SetSharedSignalFn gSetSharedSignal = nullptr;
 ApplyAnimatedStyleFn gApplyAnimatedStyle = nullptr;
 ApplyAnimatedLayoutStyleFn gApplyAnimatedLayoutStyle = nullptr;
+PerformNativeLayoutFn gPerformNativeLayout = nullptr;
 
 using RegisterInstallerFn = void (*)(ZynthJSIPluginInstaller);
 using RegisterSharedSignalCallbackFn = void (*)(ZynthSharedSignalChangedCallback);
@@ -48,10 +52,13 @@ RegisterInstallerFn gRegisterInstaller = nullptr;
 RegisterSharedSignalCallbackFn gRegisterSharedSignalCallback = nullptr;
 
 JNIEnv *getEnv() {
-  if (!gVm) return nullptr;
+  if (!gVm) return facebook::jni::Environment::current();
   JNIEnv *env = nullptr;
-  if (gVm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) {
-    if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) return nullptr;
+  if (gVm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) == JNI_OK) {
+    return env;
+  }
+  if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+    return nullptr;
   }
   return env;
 }
@@ -88,6 +95,8 @@ void resolveCoreSymbols() {
       dlsym(handle, "ZynthApplyAnimatedStyle"));
   gApplyAnimatedLayoutStyle = reinterpret_cast<ApplyAnimatedLayoutStyleFn>(
       dlsym(handle, "ZynthApplyAnimatedLayoutStyle"));
+  gPerformNativeLayout = reinterpret_cast<PerformNativeLayoutFn>(
+      dlsym(handle, "ZynthPerformNativeLayout"));
 }
 
 struct SharedAnimation {
@@ -122,6 +131,8 @@ struct MappedValue {
   bool isInterpolation = false;
   int sharedId = 0;
   double numberValue = 0.0;
+  double multiplier = 1.0;
+  double offset = 0.0;
   std::vector<double> inputRange;
   std::vector<double> outputRange;
   std::string extrapolateLeft = "clamp";
@@ -149,7 +160,28 @@ struct StyleMapper {
   MappedValue minHeight;
   MappedValue maxWidth;
   MappedValue maxHeight;
+  MappedValue flex;
+  MappedValue flexGrow;
+  MappedValue flexShrink;
   MappedValue flexBasis;
+  MappedValue top;
+  MappedValue right;
+  MappedValue bottom;
+  MappedValue left;
+  MappedValue padding;
+  MappedValue paddingHorizontal;
+  MappedValue paddingVertical;
+  MappedValue paddingTop;
+  MappedValue paddingRight;
+  MappedValue paddingBottom;
+  MappedValue paddingLeft;
+  MappedValue margin;
+  MappedValue marginHorizontal;
+  MappedValue marginVertical;
+  MappedValue marginTop;
+  MappedValue marginRight;
+  MappedValue marginBottom;
+  MappedValue marginLeft;
 };
 
 bool extractSharedValueId(Runtime &rt, const Value &value, int &outId) {
@@ -188,11 +220,43 @@ bool parseAngleString(const std::string &input, double &outDegrees) {
 }
 
 bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool isAngle = false) {
+  if (value.isObject()) {
+    Object obj = value.getObject(rt);
+    if (obj.hasProperty(rt, kDerivedValueKey)) {
+      Value derivedValue = obj.getProperty(rt, kDerivedValueKey);
+      if (!derivedValue.isObject()) return false;
+      Object derivedObj = derivedValue.getObject(rt);
+      if (!derivedObj.hasProperty(rt, "source")) return false;
+
+      MappedValue source;
+      if (!parseMappedValue(rt, derivedObj.getProperty(rt, "source"), source, isAngle)) {
+        return false;
+      }
+
+      out = source;
+      if (derivedObj.hasProperty(rt, "multiplier")) {
+        Value multiplierValue = derivedObj.getProperty(rt, "multiplier");
+        if (multiplierValue.isNumber()) {
+          out.multiplier = multiplierValue.asNumber();
+        }
+      }
+      if (derivedObj.hasProperty(rt, "offset")) {
+        Value offsetValue = derivedObj.getProperty(rt, "offset");
+        if (offsetValue.isNumber()) {
+          out.offset = offsetValue.asNumber();
+        }
+      }
+      return true;
+    }
+  }
+
   int sharedId = 0;
   if (extractSharedValueId(rt, value, sharedId)) {
     out.hasValue = true;
     out.isShared = true;
     out.sharedId = sharedId;
+    out.multiplier = 1.0;
+    out.offset = 0.0;
     return true;
   }
   if (value.isObject()) {
@@ -236,6 +300,8 @@ bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool is
       out.isInterpolation = true;
       out.isShared = false;
       out.sharedId = sourceId;
+      out.multiplier = 1.0;
+      out.offset = 0.0;
       out.inputRange.clear();
       out.outputRange.clear();
       out.inputRange.reserve(count);
@@ -270,7 +336,10 @@ bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool is
   if (value.isNumber()) {
     out.hasValue = true;
     out.isShared = false;
+    out.isInterpolation = false;
     out.numberValue = value.asNumber();
+    out.multiplier = 1.0;
+    out.offset = 0.0;
     return true;
   }
   if (isAngle && value.isString()) {
@@ -279,7 +348,10 @@ bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool is
     if (parseAngleString(text, degrees)) {
       out.hasValue = true;
       out.isShared = false;
+      out.isInterpolation = false;
       out.numberValue = degrees;
+      out.multiplier = 1.0;
+      out.offset = 0.0;
       return true;
     }
   }
@@ -321,20 +393,25 @@ double interpolateMappedValue(const MappedValue &value, double source, double fa
 
 double resolveMappedValue(const MappedValue &value, void *state, double fallback) {
   if (!value.hasValue) return fallback;
+  auto applyDerived = [&](double base) -> double {
+    if (!std::isfinite(base)) return fallback;
+    return base * value.multiplier + value.offset;
+  };
   if (value.isInterpolation) {
     if (!gGetSharedSignal) return fallback;
     bool found = false;
     double source = gGetSharedSignal(state, value.sharedId, &found);
     if (!found || !std::isfinite(source)) return fallback;
-    return interpolateMappedValue(value, source, fallback);
+    return applyDerived(interpolateMappedValue(value, source, fallback));
   }
   if (value.isShared) {
     if (!gGetSharedSignal) return fallback;
     bool found = false;
     double result = gGetSharedSignal(state, value.sharedId, &found);
-    return found ? result : fallback;
+    return found ? applyDerived(result) : fallback;
   }
-  return value.numberValue;
+
+  return applyDerived(value.numberValue);
 }
 
 class ZynthAnimateRuntime {
@@ -361,7 +438,7 @@ class ZynthAnimateRuntime {
   void install() {
     auto createSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "createSharedValue"), 1,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
           if (!gCreateSharedSignal || count < 1 || !args[0].isNumber()) {
             return Value::undefined();
           }
@@ -371,7 +448,7 @@ class ZynthAnimateRuntime {
 
     auto getSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "getSharedValue"), 1,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
           if (!gGetSharedSignal || count < 1 || !args[0].isNumber()) {
             return Value::undefined();
           }
@@ -383,7 +460,7 @@ class ZynthAnimateRuntime {
 
     auto setSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "setSharedValue"), 2,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
           if (!gSetSharedSignal || count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
             return Value::undefined();
           }
@@ -456,7 +533,7 @@ class ZynthAnimateRuntime {
 
     auto cancelSharedValue = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "cancelSharedValue"), 1,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
           if (count < 1 || !args[0].isNumber()) return Value::undefined();
           int id = static_cast<int>(args[0].asNumber());
           {
@@ -538,8 +615,8 @@ class ZynthAnimateRuntime {
 
     auto removeStyleMapper = Function::createFromHostFunction(
         runtime, PropNameID::forAscii(runtime, "removeStyleMapper"), 1,
-        [this](Runtime &, const Value &, const Value *args, size_t count) -> Value {
-          if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        [this](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+          if (count < 1 || !args[0].isObject()) return Value::undefined();
           int mapperId = static_cast<int>(args[0].asNumber());
           std::lock_guard<std::mutex> lock(mutex);
           styleMappers.erase(mapperId);
@@ -617,6 +694,13 @@ class ZynthAnimateRuntime {
       }
     }
     applyStyleMappers();
+    
+    // Trigger synchronous native layout pass for all surfaces affected by animations in this frame.
+    // This extracts new frames from Yoga and commits them to the UI thread.
+    if (gPerformNativeLayout) {
+      gPerformNativeLayout(state);
+    }
+
     if (hasActiveAnimations()) {
       ensureFrame();
     }
@@ -683,6 +767,69 @@ class ZynthAnimateRuntime {
     }
     if (styleObj.hasProperty(rt, "flexBasis")) {
       parseMappedValue(rt, styleObj.getProperty(rt, "flexBasis"), mapper.flexBasis);
+    }
+    if (styleObj.hasProperty(rt, "flex")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "flex"), mapper.flex);
+    }
+    if (styleObj.hasProperty(rt, "flexGrow")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "flexGrow"), mapper.flexGrow);
+    }
+    if (styleObj.hasProperty(rt, "flexShrink")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "flexShrink"), mapper.flexShrink);
+    }
+    if (styleObj.hasProperty(rt, "top")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "top"), mapper.top);
+    }
+    if (styleObj.hasProperty(rt, "right")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "right"), mapper.right);
+    }
+    if (styleObj.hasProperty(rt, "bottom")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "bottom"), mapper.bottom);
+    }
+    if (styleObj.hasProperty(rt, "left")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "left"), mapper.left);
+    }
+    if (styleObj.hasProperty(rt, "padding")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "padding"), mapper.padding);
+    }
+    if (styleObj.hasProperty(rt, "paddingHorizontal")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "paddingHorizontal"), mapper.paddingHorizontal);
+    }
+    if (styleObj.hasProperty(rt, "paddingVertical")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "paddingVertical"), mapper.paddingVertical);
+    }
+    if (styleObj.hasProperty(rt, "paddingTop")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "paddingTop"), mapper.paddingTop);
+    }
+    if (styleObj.hasProperty(rt, "paddingRight")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "paddingRight"), mapper.paddingRight);
+    }
+    if (styleObj.hasProperty(rt, "paddingBottom")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "paddingBottom"), mapper.paddingBottom);
+    }
+    if (styleObj.hasProperty(rt, "paddingLeft")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "paddingLeft"), mapper.paddingLeft);
+    }
+    if (styleObj.hasProperty(rt, "margin")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "margin"), mapper.margin);
+    }
+    if (styleObj.hasProperty(rt, "marginHorizontal")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "marginHorizontal"), mapper.marginHorizontal);
+    }
+    if (styleObj.hasProperty(rt, "marginVertical")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "marginVertical"), mapper.marginVertical);
+    }
+    if (styleObj.hasProperty(rt, "marginTop")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "marginTop"), mapper.marginTop);
+    }
+    if (styleObj.hasProperty(rt, "marginRight")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "marginRight"), mapper.marginRight);
+    }
+    if (styleObj.hasProperty(rt, "marginBottom")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "marginBottom"), mapper.marginBottom);
+    }
+    if (styleObj.hasProperty(rt, "marginLeft")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "marginLeft"), mapper.marginLeft);
     }
     if (styleObj.hasProperty(rt, "transform")) {
       Value transformValue = styleObj.getProperty(rt, "transform");
@@ -779,38 +926,98 @@ class ZynthAnimateRuntime {
         perspective);
 
     if (gApplyAnimatedLayoutStyle) {
-      float width = mapper.width.hasValue
+      ZynthAnimatedLayoutProps props;
+      props.width = mapper.width.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.width, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
-      float height = mapper.height.hasValue
+      props.height = mapper.height.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.height, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
       
-      float minWidth = mapper.minWidth.hasValue
+      props.minWidth = mapper.minWidth.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.minWidth, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
-      float minHeight = mapper.minHeight.hasValue
+      props.minHeight = mapper.minHeight.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.minHeight, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
-      float maxWidth = mapper.maxWidth.hasValue
+      props.maxWidth = mapper.maxWidth.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.maxWidth, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
-      float maxHeight = mapper.maxHeight.hasValue
+      props.maxHeight = mapper.maxHeight.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.maxHeight, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
-      float flexBasis = mapper.flexBasis.hasValue
+      
+      props.flex = mapper.flex.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.flex, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.flexGrow = mapper.flexGrow.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.flexGrow, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.flexShrink = mapper.flexShrink.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.flexShrink, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.flexBasis = mapper.flexBasis.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.flexBasis, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
-      gApplyAnimatedLayoutStyle(
-          state,
-          mapper.nodeId,
-          width,
-          height,
-          minWidth,
-          minHeight,
-          maxWidth,
-          maxHeight,
-          flexBasis);
+          
+      props.top = mapper.top.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.top, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.right = mapper.right.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.right, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.bottom = mapper.bottom.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.bottom, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.left = mapper.left.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.left, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+
+      props.padding = mapper.padding.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.padding, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.paddingHorizontal = mapper.paddingHorizontal.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.paddingHorizontal, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.paddingVertical = mapper.paddingVertical.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.paddingVertical, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.paddingTop = mapper.paddingTop.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.paddingTop, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.paddingRight = mapper.paddingRight.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.paddingRight, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.paddingBottom = mapper.paddingBottom.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.paddingBottom, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.paddingLeft = mapper.paddingLeft.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.paddingLeft, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+
+      props.margin = mapper.margin.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.margin, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.marginHorizontal = mapper.marginHorizontal.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.marginHorizontal, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.marginVertical = mapper.marginVertical.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.marginVertical, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.marginTop = mapper.marginTop.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.marginTop, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.marginRight = mapper.marginRight.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.marginRight, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.marginBottom = mapper.marginBottom.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.marginBottom, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      props.marginLeft = mapper.marginLeft.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.marginLeft, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+          
+      gApplyAnimatedLayoutStyle(state, mapper.nodeId, &props);
     }
   }
 

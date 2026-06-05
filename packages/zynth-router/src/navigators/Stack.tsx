@@ -462,8 +462,15 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
 
   // Inner component that renders after children have registered
   const ScreensRenderer = () => {
+    let isDisposed = false;
+    onCleanup(() => {
+      isDisposed = true;
+    });
+
     // Trigger initialization after children have rendered
-    queueMicrotask(() => initializeState());
+    queueMicrotask(() => {
+      if (!isDisposed) initializeState();
+    });
 
     const currentRoute = createMemo(() => state().routes[state().index]);
     const currentOptions = createMemo<ScreenOptions | undefined>(() => {

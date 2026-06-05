@@ -2,11 +2,13 @@ package com.zynth.kit.runtime
 
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
 internal class ZynthStartupMetrics {
   private val lock = Any()
+  private val startupLogTag = "ZynthStartup"
   private val enabledFeatures = HashSet<String>()
   @Volatile private var startupTimeEnabled: Boolean = false
 
@@ -32,6 +34,9 @@ internal class ZynthStartupMetrics {
   private val phaseThreads = LinkedHashMap<String, String>()
   private val moduleInitStarts = HashMap<String, Double>()
   private val moduleInitTimings = ArrayList<ModuleInitTiming>()
+  private val customPhaseStarts = HashMap<String, Double>()
+  private val customPhaseTimings = ArrayList<CustomPhaseTiming>()
+  private val customPoints = ArrayList<CustomPoint>()
 
   private var syncWaitCount: Int = 0
   private var syncWaitMainThreadCount: Int = 0
@@ -44,6 +49,20 @@ internal class ZynthStartupMetrics {
     val startMs: Double,
     val endMs: Double,
     val durationMs: Double,
+    val thread: String,
+  )
+
+  data class CustomPhaseTiming(
+    val name: String,
+    val startMs: Double,
+    val endMs: Double,
+    val durationMs: Double,
+    val thread: String,
+  )
+
+  data class CustomPoint(
+    val name: String,
+    val atMs: Double,
     val thread: String,
   )
 
@@ -226,6 +245,7 @@ internal class ZynthStartupMetrics {
         startRequestedMs = nowMs()
       }
       markPhaseThread("startRequested")
+      Log.i(startupLogTag, "point=startRequested atMs=${"%.3f".format(startRequestedMs)} thread=${currentThreadLabel()}")
     }
   }
 
@@ -237,6 +257,10 @@ internal class ZynthStartupMetrics {
         firstCommitMs = nowMs()
       }
       markPhaseThread("firstCommit")
+      Log.i(
+        startupLogTag,
+        "point=firstCommit atMs=${"%.3f".format(firstCommitMs)} startToFirstCommitMs=${"%.3f".format(duration(startRequestedMs, firstCommitMs) ?: 0.0)} thread=${currentThreadLabel()}"
+      )
     }
   }
 
@@ -248,6 +272,10 @@ internal class ZynthStartupMetrics {
         firstFrameAtMs = nowMs()
       }
       markPhaseThread("firstFrame")
+      Log.i(
+        startupLogTag,
+        "point=firstFrame atMs=${"%.3f".format(firstFrameAtMs)} startToFirstFrameMs=${"%.3f".format(duration(startRequestedMs, firstFrameAtMs) ?: 0.0)} runtimeToFirstFrameMs=${"%.3f".format(duration(runtimeInitMs, firstFrameAtMs) ?: 0.0)} thread=${currentThreadLabel()}"
+      )
     }
   }
 
@@ -259,6 +287,11 @@ internal class ZynthStartupMetrics {
         firstInteractiveMs = nowMs()
       }
       markPhaseThread("firstInteractive")
+      Log.i(
+        startupLogTag,
+        "point=firstInteractive atMs=${"%.3f".format(firstInteractiveMs)} startToFirstInteractiveMs=${"%.3f".format(duration(startRequestedMs, firstInteractiveMs) ?: 0.0)} firstFrameToInteractiveMs=${"%.3f".format(duration(firstFrameAtMs, firstInteractiveMs) ?: 0.0)} thread=${currentThreadLabel()}"
+      )
+      Log.i(startupLogTag, "summary=${makeStartupSnapshotLocked().toString()}")
     }
   }
 
@@ -290,6 +323,62 @@ internal class ZynthStartupMetrics {
         syncWaitMainThreadTotalMs += safeWait
       }
       markPhaseThread("runOnJSSyncWait")
+      Log.i(
+        startupLogTag,
+        "phase=runOnJSSyncWait durationMs=${"%.3f".format(safeWait)} caller=${if (callerOnMainThread) "main" else "background"} thread=${currentThreadLabel()}"
+      )
+    }
+  }
+
+  fun markCustomPhaseStart(name: String) {
+    if (!startupTimeEnabled || name.isEmpty()) return
+    synchronized(lock) {
+      if (!startupTimeEnabled || name.isEmpty()) return
+      customPhaseStarts[name] = nowMs()
+    }
+  }
+
+  fun markCustomPhaseEnd(name: String) {
+    if (!startupTimeEnabled || name.isEmpty()) return
+    synchronized(lock) {
+      if (!startupTimeEnabled || name.isEmpty()) return
+      val endMs = nowMs()
+      val startMs = customPhaseStarts.remove(name) ?: return
+      val durationMs = kotlin.math.max(0.0, endMs - startMs)
+      val thread = currentThreadLabel()
+      customPhaseTimings.add(
+        CustomPhaseTiming(
+          name = name,
+          startMs = startMs,
+          endMs = endMs,
+          durationMs = durationMs,
+          thread = thread,
+        )
+      )
+      Log.i(
+        startupLogTag,
+        "phase=$name durationMs=${"%.3f".format(durationMs)} startMs=${"%.3f".format(startMs)} endMs=${"%.3f".format(endMs)} thread=$thread"
+      )
+    }
+  }
+
+  fun markPoint(name: String) {
+    if (!startupTimeEnabled || name.isEmpty()) return
+    synchronized(lock) {
+      if (!startupTimeEnabled || name.isEmpty()) return
+      val atMs = nowMs()
+      val thread = currentThreadLabel()
+      customPoints.add(
+        CustomPoint(
+          name = name,
+          atMs = atMs,
+          thread = thread,
+        )
+      )
+      Log.i(
+        startupLogTag,
+        "point=$name atMs=${"%.3f".format(atMs)} thread=$thread"
+      )
     }
   }
 
@@ -363,6 +452,8 @@ internal class ZynthStartupMetrics {
       .putNullable("avgLayoutMsToFirstRender", avgLayoutMs)
       .put("threadByPhase", makeThreadByPhaseObject())
       .put("syncWait", makeSyncWaitObject())
+      .put("customPhases", makeCustomPhaseArray())
+      .put("customPoints", makeCustomPointArray())
       .put("moduleInitBreakdown", makeModuleBreakdownArray())
   }
 
@@ -400,6 +491,36 @@ internal class ZynthStartupMetrics {
           .put("endMs", timing.endMs)
           .put("durationMs", timing.durationMs)
           .put("thread", timing.thread)
+      )
+    }
+    return result
+  }
+
+  private fun makeCustomPhaseArray(): JSONArray {
+    val sorted = customPhaseTimings.sortedBy { it.startMs }
+    val result = JSONArray()
+    for (timing in sorted) {
+      result.put(
+        JSONObject()
+          .put("name", timing.name)
+          .put("startMs", timing.startMs)
+          .put("endMs", timing.endMs)
+          .put("durationMs", timing.durationMs)
+          .put("thread", timing.thread)
+      )
+    }
+    return result
+  }
+
+  private fun makeCustomPointArray(): JSONArray {
+    val sorted = customPoints.sortedBy { it.atMs }
+    val result = JSONArray()
+    for (point in sorted) {
+      result.put(
+        JSONObject()
+          .put("name", point.name)
+          .put("atMs", point.atMs)
+          .put("thread", point.thread)
       )
     }
     return result

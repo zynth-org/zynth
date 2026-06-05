@@ -53,6 +53,11 @@ export interface NativeKeyboardModule {
    * Internal: Dismiss request flag
    */
   _dismissRequested?: boolean;
+
+  /**
+   * Internal: Link a shared signal for native height animation
+   */
+  setHeightSignalId(id: number): void;
 }
 
 /**
@@ -122,6 +127,9 @@ function createEmitterModule(): NativeKeyboardModule | null {
     },
     dismiss() {
       void callNative("ZynthKeyboard", "dismiss", {});
+    },
+    setHeightSignalId(id: number) {
+      void callNative("ZynthKeyboard", "setHeightSignalId", { id });
     },
     _updateState(state: KeyboardState) {
       latest = state;

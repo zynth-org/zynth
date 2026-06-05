@@ -1,6 +1,7 @@
 import { useContext, createMemo, type Accessor } from "solid-js";
-import { KeyboardContext } from "./KeyboardProvider";
+import { KeyboardContext, KeyboardSharedContext } from "./KeyboardProvider";
 import type { KeyboardState } from "./types";
+import type { SharedValue } from "@zynthjs/core/motion";
 
 /**
  * Hook to access the current keyboard state.
@@ -74,4 +75,14 @@ export function useKeyboardHeight(): Accessor<number> {
 export function useKeyboardAnimating(): Accessor<boolean> {
   const keyboard = useContext(KeyboardContext);
   return createMemo(() => keyboard().isAnimating);
+}
+
+/**
+ * Hook to get the keyboard height as a shared value.
+ * Used for high-performance layout animations on the native UI thread.
+ */
+export function useKeyboardHeightSharedValue():
+  | SharedValue<number>
+  | undefined {
+  return useContext(KeyboardSharedContext);
 }

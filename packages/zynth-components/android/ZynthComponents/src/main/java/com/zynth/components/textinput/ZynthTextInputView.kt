@@ -930,7 +930,8 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   )
 
   private fun updateGravity() {
-    gravity = if (multiline) {
+    val hasVerticalPadding = styledPaddingTop > 0 || styledPaddingBottom > 0
+    gravity = if (multiline || hasVerticalPadding) {
       Gravity.START or Gravity.TOP
     } else {
       Gravity.START or Gravity.CENTER_VERTICAL
@@ -962,6 +963,9 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     styledPaddingRight = right
     styledPaddingBottom = bottom
     setActualPadding(left, top, right, bottom)
+    if (changed) {
+      updateGravity()
+    }
     return changed
   }
 
@@ -979,11 +983,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
       super.setPadding(left, top, right, bottom)
       return
     }
-    styledPaddingLeft = left
-    styledPaddingTop = top
-    styledPaddingRight = right
-    styledPaddingBottom = bottom
-    setActualPadding(left, top, right, bottom)
+    // Drop all external setPadding calls since we are strictly styled by Yoga
   }
 
   private fun applyInputHandler(

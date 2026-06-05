@@ -16,6 +16,7 @@ export interface AppConfig {
   androidConfig: any;
   devServerUrl?: string;
   androidStartupMetricsEnabled?: boolean;
+  androidDebugOverlayEnabled?: boolean;
   androidMinifyEnabled?: boolean;
   androidShrinkResources?: boolean;
 }
@@ -146,6 +147,8 @@ export function getAppConfig(appDir: string): AppConfig {
     devServerUrl: appConfig.devServerUrl,
     androidStartupMetricsEnabled:
       appConfig.android?.startupMetrics?.enabled === true,
+    androidDebugOverlayEnabled:
+      appConfig.android?.debug?.overlay === true,
     androidMinifyEnabled: appConfig.android?.build?.minifyEnabled === true,
     androidShrinkResources: appConfig.android?.build?.shrinkResources === true,
   };

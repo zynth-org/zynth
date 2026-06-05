@@ -90,13 +90,19 @@ export function createIOSHost(): Host {
   };
 
   const enqueueOperation = (operation: () => void) => {
-    if (isSuppressed()) return;
     queue.push({ type: "closure", func: operation });
   };
 
   const enqueueBatchOp = (op: BatchOperation) => {
-    if (isSuppressed()) return;
     queue.push({ type: "batch", op });
+  };
+
+  const maybeCallNativeHandler = (nodeId: number, name: string, handler: Function) => {
+    if (isSuppressed()) {
+      enqueueOperation(() => ui.setHandler(nodeId, name, handler));
+    } else {
+      ui.setHandler(nodeId, name, handler);
+    }
   };
 
   const encodeTypedBatch = (ops: BatchOperation[]) => {
@@ -287,7 +293,10 @@ export function createIOSHost(): Host {
   };
 
   const runFlush = () => {
-    if (batchStack.length > 0) return; // Wait for the outer-most batch to finish
+    if (batchStack.length > 0 || isNativeBatching || isSuppressed()) {
+      if (isNativeBatching || isSuppressed()) flushScheduled = true;
+      return; 
+    }
     flushScheduled = false;
 
     try {
@@ -411,11 +420,17 @@ export function createIOSHost(): Host {
     if (flushScheduled || batchStack.length > 0) return;
     flushScheduled = true;
 
+    const flushWrapper = () => {
+      if (!flushScheduled) return;
+      if (isNativeBatching || isSuppressed()) return;
+      runFlush();
+    };
+
     if (typeof queueMicrotask === "function") {
-      queueMicrotask(runFlush);
+      queueMicrotask(flushWrapper);
       return;
     }
-    setTimeout(runFlush, 0);
+    setTimeout(flushWrapper, 0);
   };
 
   const ensure = (id: number) =>
@@ -601,7 +616,7 @@ export function createIOSHost(): Host {
 
     for (const [name, handler] of Object.entries(eventHandlers)) {
       if (typeof handler === "function") {
-        enqueueOperation(() => ui.setHandler(id, name, handler));
+        if (!isSuppressed()) ui.setHandler(id, name, handler);
       }
     }
   };
@@ -682,10 +697,10 @@ export function createIOSHost(): Host {
         }
       }
       if (typeof props?.onPress === "function") {
-        enqueueOperation(() => ui.setHandler(id!, "onPress", props.onPress));
+        maybeCallNativeHandler(id!, "onPress", props.onPress);
       }
       if (typeof props?.onLayout === "function") {
-        enqueueOperation(() => ui.setHandler(id!, "onLayout", props.onLayout));
+        maybeCallNativeHandler(id!, "onLayout", props.onLayout);
       }
       if (props?.accessibilityLabel) {
         const op: BatchOperation = {
@@ -809,7 +824,7 @@ export function createIOSHost(): Host {
       }
       if (name === "handler") {
         if (typeof value === "function") {
-          enqueueOperation(() => ui.setHandler(node.id, name, value));
+          if (!isSuppressed()) ui.setHandler(node.id, name, value);
           schedule();
           return;
         }
@@ -820,7 +835,7 @@ export function createIOSHost(): Host {
         return;
       }
       if (typeof value === "function") {
-        enqueueOperation(() => ui.setHandler(node.id, name, value));
+        maybeCallNativeHandler(node.id, name, value);
         schedule();
         return;
       }
@@ -1090,7 +1105,7 @@ export function createIOSHost(): Host {
       for (const [key, value] of Object.entries(props)) {
         if (key === "style") continue;
         if (typeof value === "function") {
-          enqueueOperation(() => ui.setHandler(node.id, key, value));
+          maybeCallNativeHandler(node.id, key, value);
         } else if (value !== undefined) {
           if (
             tryEnqueueBatch({

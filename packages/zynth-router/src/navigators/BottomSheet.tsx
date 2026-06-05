@@ -392,7 +392,14 @@ export function BottomSheetNavigator(
   });
 
   const ScreensRenderer = () => {
-    queueMicrotask(() => initializeState());
+    let isDisposed = false;
+    onCleanup(() => {
+      isDisposed = true;
+    });
+
+    queueMicrotask(() => {
+      if (!isDisposed) initializeState();
+    });
 
     const currentRoute = createMemo(() => state().routes[state().index]);
     const currentOptions = createMemo<ScreenOptions | undefined>(() => {

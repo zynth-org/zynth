@@ -531,6 +531,10 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   const hasStartIcon = createMemo(() => !!local.startIcon);
   const hasEndIcon = createMemo(() => !!local.endIcon);
   const hasAffixes = createMemo(() => hasStartIcon() || hasEndIcon());
+  const hasExplicitButtonWidth = createMemo(() => {
+    const style = local.style as Style | undefined;
+    return local.fullWidth || style?.width !== undefined;
+  });
   const contentStyle = createMemo<Style>(() => {
     const metrics = sizeMetrics[resolvedSize()] ?? sizeMetrics.md;
     const base: Style = {
@@ -539,7 +543,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       justifyContent: "center",
     };
     base.gap = metrics.gap;
-    if (local.fullWidth) {
+    if (hasExplicitButtonWidth()) {
       base.width = "100%";
     }
     return base;
@@ -697,8 +701,6 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (color) setProperty(node, "baseColor", color);
     if (useNativeTitle()) {
       setProperty(node, "title", titleContent());
-    } else {
-      setProperty(node, "title", null);
     }
 
     setProperty(node, "tone", resolvedTone());
@@ -802,6 +804,12 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     return toneColorMap[resolvedTone()] ?? toneColorMap.primary;
   });
 
+  const shouldUseFlexibleLabel = createMemo(() => {
+    if (hasAffixes()) return true;
+    if (computedLoading()) return true;
+    return false;
+  });
+
   // If using native title, we don't render text children.
   // Otherwise, render a Text node for string content so it participates in layout.
   const renderContent = () => {
@@ -811,6 +819,16 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       const textStyle: Style = {
         fontSize,
         color: resolvedTextColor(),
+        textAlign: "center",
+        ...(shouldUseFlexibleLabel()
+          ? {
+              flexGrow: 1,
+              flexShrink: 1,
+              minWidth: 0,
+            }
+          : {
+              width: "100%",
+            }),
         ...((local.labelStyle as Style) ?? {}),
       };
       return <Text style={textStyle}>{titleContent()}</Text>;
@@ -818,6 +836,14 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (isStringContent()) return null;
     return local.children;
   };
+
+  const shouldUseContentWrapper = createMemo(() => {
+    if (hasExplicitButtonWidth()) return true;
+    if (!isStringContent()) return true;
+    if (hasAffixes()) return true;
+    if (computedLoading()) return true;
+    return false;
+  });
 
   return (
     <button
@@ -843,36 +869,44 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       }}
       testID={local.testID}
     >
-      <View style={contentStyle()}>
-        {shouldHideContentForOverlay() && local.loadingIndicator !== false ? (
-          <>
-            {local.loadingIndicator ?? (
-              <ProgressIndicator
-                color={resolvedTextColor()}
-                size={
-                  resolvedSize() === "xs" || resolvedSize() === "sm"
-                    ? "small"
-                    : "small"
-                }
-              />
-            )}
-            {local.loadingAriaLabel ? (
-              <Text
-                style={{
-                  fontSize: sizeFontMap[resolvedSize()] ?? sizeFontMap.md,
-                  color: resolvedTextColor(),
-                  ...((local.labelStyle as Style) ?? {}),
-                }}
-              >
-                {local.loadingAriaLabel}
-              </Text>
-            ) : null}
-          </>
-        ) : null}
-        {!shouldHideContentForOverlay() ? local.startIcon : null}
-        {!shouldHideContentForOverlay() ? renderContent() : null}
-        {!shouldHideContentForOverlay() ? local.endIcon : null}
-      </View>
+      {shouldUseContentWrapper() ? (
+        <View style={contentStyle()}>
+          {shouldHideContentForOverlay() && local.loadingIndicator !== false ? (
+            <>
+              {local.loadingIndicator ?? (
+                <ProgressIndicator
+                  color={resolvedTextColor()}
+                  size={
+                    resolvedSize() === "xs" || resolvedSize() === "sm"
+                      ? "small"
+                      : "small"
+                  }
+                />
+              )}
+              {local.loadingAriaLabel ? (
+                <Text
+                  style={{
+                    fontSize: sizeFontMap[resolvedSize()] ?? sizeFontMap.md,
+                    color: resolvedTextColor(),
+                    ...((local.labelStyle as Style) ?? {}),
+                  }}
+                >
+                  {local.loadingAriaLabel}
+                </Text>
+              ) : null}
+            </>
+          ) : null}
+          {!shouldHideContentForOverlay() && local.startIcon && (
+            <View style={{ flexShrink: 0 }}>{local.startIcon}</View>
+          )}
+          {!shouldHideContentForOverlay() ? renderContent() : null}
+          {!shouldHideContentForOverlay() && local.endIcon && (
+            <View style={{ flexShrink: 0 }}>{local.endIcon}</View>
+          )}
+        </View>
+      ) : (
+        renderContent()
+      )}
     </button>
   );
 };

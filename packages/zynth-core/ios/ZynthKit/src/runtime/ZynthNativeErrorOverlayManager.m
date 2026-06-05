@@ -44,11 +44,11 @@
 }
 @end
 
-static NSString *const ZynthGlyphArrowRight = @"\uea05";
-static NSString *const ZynthGlyphTerminal = @"\uea07";
-static NSString *const ZynthGlyphAlert = @"\uea09";
-static NSString *const ZynthGlyphClose = @"\uea0a";
-static NSString *const ZynthGlyphRefresh = @"\uea0e";
+static NSString *const ZynthGlyphArrowRight = @"\uea06";
+static NSString *const ZynthGlyphTerminal = @"\uea08";
+static NSString *const ZynthGlyphAlert = @"\uea0a";
+static NSString *const ZynthGlyphClose = @"\uea0b";
+static NSString *const ZynthGlyphRefresh = @"\uea0f";
 static NSInteger const ZynthWarningTitleTag = 91001;
 static NSInteger const ZynthWarningSubtitleTag = 91002;
 static NSInteger const ZynthWarningIconWrapTag = 91003;

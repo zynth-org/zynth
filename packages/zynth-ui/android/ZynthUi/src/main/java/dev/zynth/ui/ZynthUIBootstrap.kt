@@ -1,6 +1,7 @@
 package dev.zynth.ui
 
 import android.app.Activity
+import android.content.res.Configuration
 import android.util.Log
 import com.zynth.kit.runtime.ZynthRuntime
 
@@ -19,6 +20,11 @@ object ZynthUIBootstrap {
 
         moduleInstance = ZynthAppearanceModule(activity, runtime)
         Log.d("ZynthUIBootstrap", "Module initialized")
+    }
+
+    @JvmStatic
+    fun onConfigurationChanged(newConfig: Configuration) {
+        moduleInstance?.onConfigurationChanged(newConfig)
     }
 
     @JvmStatic

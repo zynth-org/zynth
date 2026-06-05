@@ -65,6 +65,11 @@
         "className": "ZynthUIBootstrap",
         "method": "initialize",
         "package": "dev.zynth.ui"
+      },
+      "activityHooks": {
+        "onConfigurationChanged": [
+          "ZynthUIBootstrap.onConfigurationChanged(newConfig)"
+        ]
       }
     }
   }

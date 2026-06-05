@@ -1,0 +1,204 @@
+// Benchmark-only additions for:
+// apps/components/android/app/src/main/java/com/x64bits/zynth/components/MainActivity.kt
+//
+// This app tree is generated and ignored by Git, so keep this file as the source
+// of truth when reapplying the benchmark hook on another branch.
+
+companion object {
+  private const val STARTUP_METRICS_EXPORT_TAG = "ZynthStartupMetrics"
+  private const val LAYOUT_METRICS_EXPORT_TAG = "ZynthLayoutMetrics"
+  private const val STARTUP_METRICS_MAX_EXPORT_ATTEMPTS = 40
+  private const val STARTUP_METRICS_EXPORT_DELAY_MS = 50L
+}
+
+// In onCreate(), read benchmark extras from the launch intent:
+val startupMetricsEnabled = launchIntent.getBooleanExtra(
+  "ZYNTH_STARTUP_METRICS",
+  BuildConfig.ZYNTH_STARTUP_METRICS_ENABLED,
+)
+val benchmarkScenario = launchIntent.getStringExtra("ZYNTH_BENCHMARK_SCENARIO")
+  ?.trim()
+  ?.takeIf { it.isNotEmpty() }
+val startupMetricsDumpFile = launchIntent.getStringExtra("ZYNTH_STARTUP_METRICS_DUMP_FILE")
+  ?.trim()
+  ?.takeIf { it.isNotEmpty() }
+val layoutMetricsDumpFile = launchIntent.getStringExtra("ZYNTH_LAYOUT_METRICS_DUMP_FILE")
+  ?.trim()
+  ?.takeIf { it.isNotEmpty() }
+val layoutMetricsWarmupMs = launchIntent.getLongExtra("ZYNTH_LAYOUT_METRICS_WARMUP_MS", 0L)
+val layoutMetricsMeasureMs = launchIntent.getLongExtra("ZYNTH_LAYOUT_METRICS_MEASURE_MS", 0L)
+val benchmarkFinishOnComplete = launchIntent.getBooleanExtra(
+  "ZYNTH_BENCHMARK_FINISH_ON_COMPLETE",
+  false,
+)
+
+// In onCreate(), set or clear runtime properties:
+if (startupMetricsEnabled) {
+  System.setProperty("ZYNTH_STARTUP_METRICS", "true")
+} else {
+  System.clearProperty("ZYNTH_STARTUP_METRICS")
+}
+if (!benchmarkScenario.isNullOrBlank()) {
+  System.setProperty("ZYNTH_BENCHMARK_SCENARIO", benchmarkScenario)
+} else {
+  System.clearProperty("ZYNTH_BENCHMARK_SCENARIO")
+}
+
+// In root.post { ... } after runtime.loadInitialBundle(...):
+if (!benchmarkScenario.isNullOrBlank()) {
+  runtime.setPerformanceSamplingEnabled(true)
+}
+
+scheduleStartupMetricsExport(
+  root = root,
+  runtime = runtime,
+  benchmarkScenario = benchmarkScenario,
+  dumpFileRelativePath = startupMetricsDumpFile,
+  finishOnComplete = benchmarkFinishOnComplete,
+)
+scheduleLayoutMetricsExport(
+  root = root,
+  runtime = runtime,
+  benchmarkScenario = benchmarkScenario,
+  dumpFileRelativePath = layoutMetricsDumpFile,
+  warmupMs = layoutMetricsWarmupMs,
+  measureMs = layoutMetricsMeasureMs,
+)
+
+private fun scheduleStartupMetricsExport(
+  root: ZynthRootView,
+  runtime: ZynthRuntime,
+  benchmarkScenario: String?,
+  dumpFileRelativePath: String?,
+  finishOnComplete: Boolean,
+) {
+  if (dumpFileRelativePath.isNullOrBlank()) {
+    return
+  }
+
+  var attempts = 0
+  val exporter = object : Runnable {
+    override fun run() {
+      val snapshot = runtime.getStartupMetricsSnapshot()
+      val ready = snapshot?.optBoolean("ready") == true
+      val hasInteractive = snapshot != null && !snapshot.isNull("firstInteractiveMs")
+      if ((ready && hasInteractive) || attempts >= STARTUP_METRICS_MAX_EXPORT_ATTEMPTS) {
+        writeStartupMetricsExport(
+          snapshot = snapshot,
+          benchmarkScenario = benchmarkScenario,
+          dumpFileRelativePath = dumpFileRelativePath,
+          finishOnComplete = finishOnComplete,
+        )
+        return
+      }
+      attempts += 1
+      root.postDelayed(this, STARTUP_METRICS_EXPORT_DELAY_MS)
+    }
+  }
+
+  root.postDelayed(exporter, STARTUP_METRICS_EXPORT_DELAY_MS)
+}
+
+private fun writeStartupMetricsExport(
+  snapshot: JSONObject?,
+  benchmarkScenario: String?,
+  dumpFileRelativePath: String,
+  finishOnComplete: Boolean,
+) {
+  try {
+    val payload = JSONObject()
+      .put("schemaVersion", 1)
+      .put("collectedAtEpochMs", System.currentTimeMillis())
+      .put("packageName", packageName)
+      .put("buildType", BuildConfig.BUILD_TYPE)
+      .put("benchmarkScenario", benchmarkScenario ?: JSONObject.NULL)
+      .put("startupTime", snapshot ?: JSONObject.NULL)
+
+    val outFile = File(filesDir, dumpFileRelativePath)
+    outFile.parentFile?.mkdirs()
+    outFile.writeText(payload.toString())
+
+    val externalDir = getExternalFilesDir(null)
+    if (externalDir != null) {
+      val externalOutFile = File(externalDir, dumpFileRelativePath)
+      externalOutFile.parentFile?.mkdirs()
+      externalOutFile.writeText(payload.toString())
+    }
+
+    Log.i(STARTUP_METRICS_EXPORT_TAG, payload.toString())
+  } catch (error: Exception) {
+    Log.e("MainActivity", "Failed to export startup metrics", error)
+  }
+
+  if (finishOnComplete) {
+    finishAndRemoveTask()
+  }
+}
+
+private fun scheduleLayoutMetricsExport(
+  root: ZynthRootView,
+  runtime: ZynthRuntime,
+  benchmarkScenario: String?,
+  dumpFileRelativePath: String?,
+  warmupMs: Long,
+  measureMs: Long,
+) {
+  if (dumpFileRelativePath.isNullOrBlank()) {
+    return
+  }
+  if (benchmarkScenario != "layout-apphub") {
+    return
+  }
+  if (measureMs <= 0L) {
+    return
+  }
+
+  root.postDelayed(
+    {
+      runtime.resetPerformanceSamplingStats()
+    },
+    warmupMs.coerceAtLeast(0L),
+  )
+
+  root.postDelayed(
+    {
+      writeLayoutMetricsExport(
+        snapshot = JSONObject(runtime.getPerformanceOverlayStats()),
+        benchmarkScenario = benchmarkScenario,
+        dumpFileRelativePath = dumpFileRelativePath,
+      )
+    },
+    warmupMs.coerceAtLeast(0L) + measureMs,
+  )
+}
+
+private fun writeLayoutMetricsExport(
+  snapshot: JSONObject,
+  benchmarkScenario: String?,
+  dumpFileRelativePath: String,
+) {
+  try {
+    val payload = JSONObject()
+      .put("schemaVersion", 1)
+      .put("collectedAtEpochMs", System.currentTimeMillis())
+      .put("packageName", packageName)
+      .put("buildType", BuildConfig.BUILD_TYPE)
+      .put("benchmarkScenario", benchmarkScenario ?: JSONObject.NULL)
+      .put("nativeYoga", snapshot)
+
+    val outFile = File(filesDir, dumpFileRelativePath)
+    outFile.parentFile?.mkdirs()
+    outFile.writeText(payload.toString())
+
+    val externalDir = getExternalFilesDir(null)
+    if (externalDir != null) {
+      val externalOutFile = File(externalDir, dumpFileRelativePath)
+      externalOutFile.parentFile?.mkdirs()
+      externalOutFile.writeText(payload.toString())
+    }
+
+    Log.i(LAYOUT_METRICS_EXPORT_TAG, payload.toString())
+  } catch (error: Exception) {
+    Log.e("MainActivity", "Failed to export layout metrics", error)
+  }
+}

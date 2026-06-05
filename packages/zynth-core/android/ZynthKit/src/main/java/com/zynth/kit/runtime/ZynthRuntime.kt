@@ -33,19 +33,39 @@ class ZynthRuntime(val root: ZynthRootView) {
   private var isBundleLoaded: Boolean = false
   private var pendingStartRootId: Int? = null
   val bridgeSessionId: String = java.util.UUID.randomUUID().toString()
+
+  private inline fun <T> traceStartupPhase(name: String, block: () -> T): T {
+    if (!startupMetrics.isStartupTimeEnabled()) {
+      return block()
+    }
+    startupMetrics.markCustomPhaseStart(name)
+    try {
+      return block()
+    } finally {
+      startupMetrics.markCustomPhaseEnd(name)
+    }
+  }
+
   init {
-    if (isStartupMetricsBootstrapEnabled()) {
+    val budgetEnabled = isBudgetMetricsBootstrapEnabled()
+    val startupEnabled = isStartupMetricsBootstrapEnabled() || budgetEnabled
+
+    if (startupEnabled) {
       startupMetrics.enableFeatures(listOf("startupTime"))
     }
-    if (isBudgetMetricsBootstrapEnabled()) {
+    if (budgetEnabled) {
       uiManager.budgetMetrics.enable(true)
     }
+    startupMetrics.markPoint("runtime.init.enter")
     startupMetrics.markRuntimeConstructStart()
     runtimePtr = JSBridge.createHermesRuntime()
     startupMetrics.markRuntimeConstructEnd()
     startupMetrics.markRuntimeCreated()
-    jsThread.start()
+    traceStartupPhase("runtime.jsThread.start") {
+      jsThread.start()
+    }
     jsHandler = Handler(jsThread.looper)
+    startupMetrics.markPoint("runtime.jsHandler.ready")
     uiManager.setJSHandler(jsHandler)
     uiManager.setRuntimePtr(runtimePtr)
     uiManager.firstMountCommitListener = {
@@ -53,7 +73,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     }
     uiManager.setFrameProfiler { frameMs, layoutMs, overBudget, nodeCount ->
       startupMetrics.recordFrame(frameMs, layoutMs)
-      ZynthNativePerformanceOverlay.recordPerformanceFrame(frameMs, overBudget, nodeCount)
+      ZynthNativePerformanceOverlay.recordPerformanceFrame(frameMs, layoutMs, overBudget, nodeCount)
       runOnJS {
         JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
       }
@@ -66,10 +86,17 @@ class ZynthRuntime(val root: ZynthRootView) {
         }
       }
     }
-    installDefaultModules()
+    traceStartupPhase("runtime.installDefaultModules") {
+      installDefaultModules()
+    }
     installCrashHandler()
-    ZynthNativeErrorOverlay.attach(this, root)
-    ZynthNativePerformanceOverlay.attach(root)
+    traceStartupPhase("runtime.attachErrorOverlay") {
+      ZynthNativeErrorOverlay.attach(this, root)
+    }
+    traceStartupPhase("runtime.attachPerformanceOverlay") {
+      ZynthNativePerformanceOverlay.attach(root)
+    }
+    startupMetrics.markPoint("runtime.init.exit")
   }
 
   private fun isStartupMetricsBootstrapEnabled(): Boolean {
@@ -130,6 +157,17 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   val rootSurfaceId: Int
     get() = root.rootId
+
+  /**
+   * Returns the current startup metrics snapshot when startup instrumentation is enabled.
+   * This is intended for benchmark export and should not be polled in a render loop.
+   */
+  fun getStartupMetricsSnapshot(): JSONObject? {
+    if (!startupMetrics.isStartupTimeEnabled()) {
+      return null
+    }
+    return startupMetrics.makeStartupSnapshot()
+  }
 
   fun getUIManager(): ZynthUIManager {
     return uiManager
@@ -193,30 +231,47 @@ class ZynthRuntime(val root: ZynthRootView) {
       pendingStartRootId = null
       isBundleLoaded = !shouldDeferStartUntilBundleReady
     }
+    startupMetrics.markPoint("runtime.loadInitialBundle.schedule")
 
     runOnJS {
+      startupMetrics.markPoint("runtime.loadInitialBundle.js.enter")
       startupMetrics.markJsRuntimeSetupStart()
-      JSBridge.installUIBindings(runtimePtr, uiManager)
+      traceStartupPhase("runtime.installUIBindings") {
+        JSBridge.installUIBindings(runtimePtr, uiManager, uiManager.density)
+      }
       registry.setSessionId(bridgeSessionId)
-      JSBridge.installModuleRegistry(runtimePtr, registry)
-      installHmrShim()
+      traceStartupPhase("runtime.installModuleRegistry") {
+        JSBridge.installModuleRegistry(runtimePtr, registry)
+      }
+      traceStartupPhase("runtime.installHmrShim") {
+        installHmrShim()
+      }
       startupMetrics.markJsRuntimeSetupEnd()
 
       val constants = registry.exportedConstants().toMutableMap()
       constants["bridgeSessionId"] = bridgeSessionId
+      val benchmarkScenario = System.getProperty("ZYNTH_BENCHMARK_SCENARIO")?.trim()
+      if (!benchmarkScenario.isNullOrEmpty()) {
+        constants["zynthBenchmarkScenario"] = benchmarkScenario
+      }
       if (constants.isNotEmpty()) {
         val json = JSONObject(constants as Map<*, *>).toString()
-        JSBridge.evaluateScript(runtimePtr, "globalThis.NativeConstants = $json;", "constants.js")
+        traceStartupPhase("runtime.injectConstants") {
+          JSBridge.evaluateScript(runtimePtr, "globalThis.NativeConstants = $json;", "constants.js")
+        }
       }
 
       if (!devServerUrl.isNullOrBlank()) {
+        startupMetrics.markPoint("runtime.devServer.deferStart")
         dispatchPendingStartOnJSIfReady()
         return@runOnJS
       }
 
       if (preloadedBytecode != null) {
         startupMetrics.markHermesEvalStart()
-        JSBridge.loadBytecode(runtimePtr, preloadedBytecode, "main.hbc")
+        traceStartupPhase("runtime.loadBytecode") {
+          JSBridge.loadBytecode(runtimePtr, preloadedBytecode, "main.hbc")
+        }
         startupMetrics.markHermesEvalEnd()
       } else {
         startupMetrics.markBundleReadStart()
@@ -230,13 +285,16 @@ class ZynthRuntime(val root: ZynthRootView) {
         }
         startupMetrics.markBundleReadEnd()
         startupMetrics.markHermesEvalStart()
-        JSBridge.evaluateScript(runtimePtr, code, "main.js")
+        traceStartupPhase("runtime.evaluateMainBundle") {
+          JSBridge.evaluateScript(runtimePtr, code, "main.js")
+        }
         startupMetrics.markHermesEvalEnd()
       }
 
       synchronized(startupStateLock) {
         isBundleLoaded = true
       }
+      startupMetrics.markPoint("runtime.bundle.ready")
       dispatchPendingStartOnJSIfReady()
     }
   }
@@ -294,6 +352,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     startupMetrics.markStartRequested()
     if (shouldDispatchStart) {
       runOnJS {
+        startupMetrics.markPoint("runtime.start.dispatchQueued")
         dispatchPendingStartOnJSIfReady()
       }
     }
@@ -333,6 +392,27 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   fun getPerformanceOverlayStats(): Map<String, Any> {
     return ZynthNativePerformanceOverlay.getPerformanceOverlaySnapshot()
+  }
+
+  fun setPerformanceSamplingEnabled(enabled: Boolean) {
+    ZynthNativePerformanceOverlay.setPerformanceSamplingEnabled(enabled)
+    if (enabled) {
+      startPerformanceJsTicker()
+    } else {
+      stopPerformanceJsTicker()
+    }
+  }
+
+  fun resetPerformanceSamplingStats() {
+    ZynthNativePerformanceOverlay.resetPerformanceStats()
+  }
+
+  fun resetBudgetMetricsStats() {
+    uiManager.budgetMetrics.reset()
+  }
+
+  fun getBudgetMetricsSnapshot(): JSONObject {
+    return uiManager.budgetMetrics.makeSnapshot()
   }
 
   internal fun evaluateScript(code: String, sourceUrl: String? = null) {
@@ -384,7 +464,9 @@ class ZynthRuntime(val root: ZynthRootView) {
       }
     }
     if (rootId == null) return
-    JSBridge.callGlobalDouble(runtimePtr, "__startApp", rootId.toDouble())
+    traceStartupPhase("runtime.callStartApp") {
+      JSBridge.callGlobalDouble(runtimePtr, "__startApp", rootId.toDouble())
+    }
   }
 
   private fun startPerformanceJsTicker() {

@@ -81,13 +81,6 @@ internal class TextComposer(
 
     buildTypeface(style)?.let { tf ->
       builder.setSpan(CustomTypefaceSpan(tf), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-      if (DEBUG_TEXT && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-        val text = builder.toString()
-        if (text.isNotEmpty()) {
-          val p = android.graphics.Paint().apply { typeface = tf }
-          Log.d("ZynthText", "applySpans hasGlyph=${p.hasGlyph(text)} family=${style.fontFamily}")
-        }
-      }
     }
 
     style.textDecorationLine?.let { deco ->
@@ -130,9 +123,6 @@ internal class TextComposer(
       val customTypeface = FontRegistry.getTypeface(family)
       if (customTypeface != null) {
         if (isIconFontFamily(family)) {
-          if (DEBUG_TEXT) {
-            Log.d("ZynthText", "buildTypeface icon family=$family (custom)")
-          }
           customTypeface.also { if (canCache) typefaceCache[cacheKey] = it }
         } else if (tfStyle != Typeface.NORMAL) {
           Typeface.create(customTypeface, tfStyle).also { if (canCache) typefaceCache[cacheKey] = it }
@@ -140,9 +130,6 @@ internal class TextComposer(
           customTypeface.also { if (canCache) typefaceCache[cacheKey] = it }
         }
       } else {
-        if (DEBUG_TEXT) {
-          Log.d("ZynthText", "buildTypeface system family=$family style=$tfStyle")
-        }
         Typeface.create(family, tfStyle).also { if (canCache) typefaceCache[cacheKey] = it }
       }
     } else if (tfStyle != Typeface.NORMAL) {

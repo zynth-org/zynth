@@ -58,7 +58,7 @@ export const Text: ParentComponent<TextProps> = (props) => {
   const coalescedChildren = createMemo(() => {
     const children = resolvedChildren();
     if (Array.isArray(children)) {
-      const result: any[] = [];
+      const result: unknown[] = [];
       let currentString = "";
       for (const child of children) {
         if (typeof child === "string" || typeof child === "number") {
@@ -73,11 +73,32 @@ export const Text: ParentComponent<TextProps> = (props) => {
       }
       if (currentString) result.push(currentString);
       if (result.length === 0) return "";
-      // Force array return to avoid Solid's replaceText(getFirstChild(parent)) optimization
-      // which is causing null node errors on both platforms under high churn.
+      if (
+        result.length === 1 &&
+        (typeof result[0] === "string" || typeof result[0] === "number")
+      ) {
+        return String(result[0]);
+      }
+      // Preserve arrays for mixed content so nested text nodes still compose correctly.
       return result;
     }
     return children ?? "";
+  });
+
+  const directTextContent = createMemo(() => {
+    if (props.text != null) return props.text;
+    const children = coalescedChildren();
+    if (typeof children === "string" || typeof children === "number") {
+      return String(children);
+    }
+    if (
+      Array.isArray(children) &&
+      children.length === 1 &&
+      (typeof children[0] === "string" || typeof children[0] === "number")
+    ) {
+      return String(children[0]);
+    }
+    return undefined;
   });
 
   return (
@@ -87,10 +108,10 @@ export const Text: ParentComponent<TextProps> = (props) => {
           ? undefined
           : (resolvedStyle() as JSX.Element)) as JSX.Element
       }
-      text={props.text}
+      text={directTextContent()}
       ref={refProp as unknown as any}
     >
-      {coalescedChildren()}
+      {directTextContent() === undefined ? coalescedChildren() : undefined}
     </text>
   );
 };

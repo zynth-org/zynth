@@ -5,39 +5,47 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.view.View.MeasureSpec
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.LinearLayout
-import android.os.SystemClock
-import android.view.ViewTreeObserver
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.children
 import com.google.android.material.bottomnavigation.BottomNavigationItemView
 import com.google.android.material.bottomnavigation.BottomNavigationMenuView
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.navigation.NavigationBarView
 import com.zynth.kit.core.ZynthColorParser
-import com.zynth.kit.core.ZynthRootView
+import com.zynth.kit.core.ZynthPortalSurface
 import com.zynth.kit.core.ZynthUIManager
+import com.zynth.kit.core.createPortalSurface
 import org.json.JSONArray
 import org.json.JSONObject
 
 @SuppressLint("ViewConstructor")
-class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
+class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
 
   companion object {
-    private const val SURFACE_ICON_TAG_PREFIX = "zynth_tab_surface_icon:"
+    private const val SURFACE_ICON_SIZE_DP = 24f
+    private const val ICON_POSITION_FRAMES = 4
   }
+
+  private data class SurfaceIconSlot(
+    val routeKey: String,
+    val index: Int,
+    val portal: ZynthPortalSurface,
+    val wrapper: FrameLayout,
+  )
 
   private var uiManager: ZynthUIManager? = null
   private var nodeId: Int = -1
   private val contentContainer: FrameLayout
   private val bottomNav: BottomNavigationView
+  private val iconOverlay: FrameLayout
 
   private var selectedIndex: Int = 0
   private var visibleIndex: Int = 0
@@ -47,16 +55,15 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
   private var tabAnimation: ScreenAnimation = ScreenAnimation.NONE
   private var nativeTabBarEnabled: Boolean = false
   private var tabBarVisible: Boolean = true
-  private val iconSurfaces = mutableMapOf<String, Int>()
   private var lastTabBarItemsJson: String? = null
   private val pendingInsertIndices = HashMap<View, Int>()
   private val renderedIndices = HashSet<Int>()
+  private val surfaceIcons = mutableMapOf<String, SurfaceIconSlot>()
   private val minHoldMs = 200L
   private val switchTimeoutMs = 700L
   private val baseBottomNavPaddingBottom: Int
 
   init {
-    orientation = VERTICAL
     clipChildren = false
     clipToPadding = false
 
@@ -67,54 +74,73 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
       }
 
       override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-        // Preserve Yoga-driven child layouts set by the UI manager.
         for (i in 0 until childCount) {
           val child = getChildAt(i)
           child.layout(child.left, child.top, child.right, child.bottom)
         }
       }
     }
-    val contentParams = LayoutParams(LayoutParams.MATCH_PARENT, 0)
-    contentParams.weight = 1f
-    super.addView(contentContainer, contentParams)
 
-    bottomNav = BottomNavigationView(context)
-    bottomNav.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-    bottomNav.clipChildren = false
-    bottomNav.clipToPadding = false
-    bottomNav.labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
-    bottomNav.setOnItemSelectedListener { item ->
-      val index = item.itemId
-      if (index != selectedIndex) {
-        if (uiManager != null && nodeId != -1) {
+    bottomNav = BottomNavigationView(context).apply {
+      clipChildren = false
+      clipToPadding = false
+      labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
+      isItemActiveIndicatorEnabled = true
+      itemActiveIndicatorWidth = dpToPx(64f)
+      itemActiveIndicatorHeight = dpToPx(32f)
+      setOnItemSelectedListener { item ->
+        val index = item.itemId
+        if (index != selectedIndex && uiManager != null && nodeId != -1) {
           val event = JSONObject()
           event.put("index", index)
           uiManager?.dispatchEvent(nodeId, "onNativeTabSelect", event)
         }
+        true
       }
-      true
+      visibility = View.GONE
     }
-    bottomNav.visibility = View.GONE
-    super.addView(bottomNav)
+
+    iconOverlay = FrameLayout(context).apply {
+      clipChildren = false
+      clipToPadding = false
+      isClickable = false
+      isFocusable = false
+      visibility = View.GONE
+      elevation = dpToPx(16f).toFloat()
+      translationZ = dpToPx(16f).toFloat()
+    }
+
+    super.addView(
+      contentContainer,
+      LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+    )
+    super.addView(
+      bottomNav,
+      LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM),
+    )
+    super.addView(
+      iconOverlay,
+      LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM),
+    )
 
     baseBottomNavPaddingBottom = bottomNav.paddingBottom
   }
 
   override fun addView(child: View?, index: Int, params: ViewGroup.LayoutParams?) {
-    if (child === contentContainer || child === bottomNav) {
+    if (child === contentContainer || child === bottomNav || child === iconOverlay) {
       super.addView(child, index, params)
-    } else {
-      val desiredIndex = child?.let { pendingInsertIndices.remove(it) } ?: index
-      contentContainer.addView(child, desiredIndex, params)
+      return
     }
+    val desiredIndex = child?.let { pendingInsertIndices.remove(it) } ?: index
+    contentContainer.addView(child, desiredIndex, params)
   }
 
   override fun removeView(child: View?) {
-    if (child === contentContainer || child === bottomNav) {
+    if (child === contentContainer || child === bottomNav || child === iconOverlay) {
       super.removeView(child)
-    } else {
-      contentContainer.removeView(child)
+      return
     }
+    contentContainer.removeView(child)
   }
 
   fun trackInsertIndex(child: View, index: Int) {
@@ -124,6 +150,19 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     val measuredWidth = MeasureSpec.getSize(widthMeasureSpec)
     val measuredHeight = MeasureSpec.getSize(heightMeasureSpec)
+    val shouldShow = shouldShowNativeTabBar()
+    val tabBarHeight = measureTabBar(measuredWidth, measuredHeight, shouldShow)
+    val contentHeight = (measuredHeight - tabBarHeight).coerceAtLeast(0)
+    val widthSpec = MeasureSpec.makeMeasureSpec(measuredWidth, MeasureSpec.EXACTLY)
+
+    contentContainer.measure(
+      widthSpec,
+      MeasureSpec.makeMeasureSpec(contentHeight, MeasureSpec.EXACTLY),
+    )
+    iconOverlay.measure(
+      widthSpec,
+      MeasureSpec.makeMeasureSpec(tabBarHeight, MeasureSpec.EXACTLY),
+    )
     setMeasuredDimension(measuredWidth, measuredHeight)
   }
 
@@ -132,52 +171,39 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
     val height = bottom - top
     if (width <= 0 || height <= 0) return
 
-    val shouldShow = nativeTabBarEnabled && tabBarVisible
-    val tabBarHeight = if (shouldShow) {
-      val insets = ViewCompat.getRootWindowInsets(this)
-      val insetBottom = insets?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
-      val desiredPadding = baseBottomNavPaddingBottom + insetBottom
-      if (bottomNav.paddingBottom != desiredPadding) {
-        bottomNav.setPadding(
-          bottomNav.paddingLeft,
-          bottomNav.paddingTop,
-          bottomNav.paddingRight,
-          desiredPadding,
-        )
-      }
-      val widthSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
-      val heightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.AT_MOST)
-      bottomNav.measure(widthSpec, heightSpec)
-      bottomNav.measuredHeight
-    } else {
-      0
-    }
-
+    val shouldShow = shouldShowNativeTabBar()
+    val tabBarHeight = measureTabBar(width, height, shouldShow)
     val contentBottom = height - tabBarHeight
-    contentContainer.layout(0, 0, width, contentBottom)
 
+    contentContainer.layout(0, 0, width, contentBottom)
     if (shouldShow) {
-      bottomNav.layout(0, contentBottom, width, contentBottom + tabBarHeight)
+      bottomNav.layout(0, contentBottom, width, height)
+      iconOverlay.layout(0, contentBottom, width, height)
+      iconOverlay.bringToFront()
+    } else {
+      bottomNav.layout(0, height, width, height)
+      iconOverlay.layout(0, height, width, height)
     }
+    scheduleIconPositions()
   }
 
   fun setUIManager(manager: ZynthUIManager) {
-    this.uiManager = manager
+    uiManager = manager
   }
 
   fun setNodeId(id: Int) {
-    this.nodeId = id
+    nodeId = id
   }
 
   fun setSelectedIndex(index: Int) {
-    if (selectedIndex != index) {
-      selectedIndex = index
-      if (nativeTabBarEnabled && bottomNav.menu.size() > index) {
-        bottomNav.menu.getItem(index).isChecked = true
-      }
-      startDeferredSwitch(index)
-      notifySurfacesUpdate()
+    if (selectedIndex == index) return
+    selectedIndex = index
+    if (nativeTabBarEnabled && bottomNav.menu.size() > index) {
+      bottomNav.menu.getItem(index).isChecked = true
     }
+    startDeferredSwitch(index)
+    notifySurfaceIcons()
+    scheduleIconPositions()
   }
 
   fun setTabAnimationType(type: String?) {
@@ -185,8 +211,19 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
   }
 
   fun setNativeTabBarEnabled(enabled: Boolean) {
+    if (nativeTabBarEnabled == enabled) return
     nativeTabBarEnabled = enabled
+    if (!enabled) {
+      unmountSurfaceIcons()
+      lastTabBarItemsJson = null
+    }
     updateTabBarVisibility()
+  }
+
+  override fun onDetachedFromWindow() {
+    unmountSurfaceIcons()
+    lastTabBarItemsJson = null
+    super.onDetachedFromWindow()
   }
 
   fun setTabBarOptions(json: String) {
@@ -202,11 +239,11 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
         bottomNav.setBackgroundColor(backgroundColor)
         bottomNav.backgroundTintList = ColorStateList.valueOf(backgroundColor)
       }
-
       if (activeIndicatorColor != null) {
         bottomNav.itemActiveIndicatorColor = ColorStateList.valueOf(activeIndicatorColor)
+      } else {
+        bottomNav.itemActiveIndicatorColor = ColorStateList.valueOf(Color.parseColor("#E8DEF8"))
       }
-
       if (activeColor != null || inactiveColor != null) {
         val active = activeColor ?: Color.BLUE
         val inactive = inactiveColor ?: Color.GRAY
@@ -216,12 +253,13 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
       }
 
       val showLabels = options.optBoolean("showLabels", true)
-      bottomNav.labelVisibilityMode = if (showLabels)
+      bottomNav.labelVisibilityMode = if (showLabels) {
         NavigationBarView.LABEL_VISIBILITY_LABELED
-      else
+      } else {
         NavigationBarView.LABEL_VISIBILITY_UNLABELED
+      }
     } catch (_: Exception) {
-      // Ignore malformed options
+      return
     }
 
     updateTabBarVisibility()
@@ -233,44 +271,19 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
 
     try {
       val items = JSONArray(json)
-      val menu = bottomNav.menu
-
-      uiManager?.let { manager ->
-        iconSurfaces.values.forEach { surfaceId ->
-          runCatching { manager.unregisterSurface(surfaceId) }
-        }
-      }
-
-      menu.clear()
-      iconSurfaces.clear()
-      val iconSizePx = dpToPx(24f)
-      bottomNav.itemIconSize = iconSizePx
-
+      unmountSurfaceIcons()
+      bottomNav.menu.clear()
       val pendingSurfaceIcons = mutableListOf<Pair<Int, String>>()
+      val iconSizePx = dpToPx(SURFACE_ICON_SIZE_DP)
+      bottomNav.itemIconSize = iconSizePx
 
       for (i in 0 until items.length()) {
         val item = items.getJSONObject(i)
         val routeKey = item.getString("key")
         val label = item.optString("label", routeKey)
+        val menuItem = bottomNav.menu.add(0, i, i, label)
 
-        val menuItem = menu.add(0, i, i, label)
-
-        if (item.has("badge")) {
-          val badge = bottomNav.getOrCreateBadge(i)
-          val badgeVal = item.getString("badge")
-          try {
-            badge.number = badgeVal.toInt()
-            badge.isVisible = true
-          } catch (_: NumberFormatException) {
-            badge.isVisible = true
-          }
-          if (item.has("badgeColor")) {
-            val badgeColor = parseColor(item.getString("badgeColor"))
-            if (badgeColor != null) badge.backgroundColor = badgeColor
-          }
-        } else {
-          bottomNav.removeBadge(i)
-        }
+        applyBadge(i, item)
 
         val icon = item.optJSONObject("icon")
         if (icon != null) {
@@ -287,264 +300,273 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
         }
       }
 
-      if (menu.size() > selectedIndex) {
-        menu.getItem(selectedIndex).isChecked = true
+      if (bottomNav.menu.size() > selectedIndex) {
+        bottomNav.menu.getItem(selectedIndex).isChecked = true
       }
 
       if (pendingSurfaceIcons.isNotEmpty()) {
         bottomNav.post {
-          bottomNav.post {
-            pendingSurfaceIcons.forEach { (index, routeKey) ->
-              mountSurfaceIcon(index, routeKey)
-            }
+          pendingSurfaceIcons.forEach { (index, routeKey) ->
+            mountSurfaceIcon(index, routeKey)
           }
+          scheduleIconPositions()
         }
       }
     } catch (_: Exception) {
-      // Ignore malformed items
+      return
     }
   }
 
-  @SuppressLint("RestrictedApi")
-  private fun mountSurfaceIcon(index: Int, routeKey: String) {
-    val manager = uiManager ?: return
-
-    val menuView = bottomNav.getChildAt(0) as? BottomNavigationMenuView ?: return
-    if (index >= menuView.childCount) return
-    val itemView = menuView.getChildAt(index) as? BottomNavigationItemView ?: return
-
-    val existingWrapper = itemView.findViewWithTag<View>("$SURFACE_ICON_TAG_PREFIX$routeKey")
-    if (existingWrapper != null) {
-      val existingSurface = (existingWrapper as? ViewGroup)
-        ?.children
-        ?.firstOrNull { it is ZynthRootView } as? ZynthRootView
-      if (existingSurface != null) {
-        iconSurfaces[routeKey] = existingSurface.rootId
-        val event = JSONObject()
-        event.put("surfaceId", existingSurface.rootId)
-        event.put("routeKey", routeKey)
-        event.put("active", index == selectedIndex)
-        manager.dispatchEvent(nodeId, "onNativeTabUpdate", event)
-      }
+  private fun applyBadge(index: Int, item: JSONObject) {
+    if (!item.has("badge")) {
+      bottomNav.removeBadge(index)
       return
     }
 
-    for (i in 0 until itemView.childCount) {
-      val child = itemView.getChildAt(i)
-      if (child is ZynthRootView) {
-        iconSurfaces[routeKey] = child.rootId
-        val event = JSONObject()
-        event.put("surfaceId", child.rootId)
-        event.put("routeKey", routeKey)
-        event.put("active", index == selectedIndex)
-        manager.dispatchEvent(nodeId, "onNativeTabUpdate", event)
-        return
-      }
+    val badge = bottomNav.getOrCreateBadge(index)
+    val badgeValue = item.getString("badge")
+    badge.isVisible = true
+    runCatching {
+      badge.number = badgeValue.toInt()
     }
-
-    fun findIconView(group: ViewGroup): ImageView? {
-      for (i in 0 until group.childCount) {
-        val child = group.getChildAt(i)
-        if (child is ImageView) return child
-        if (child is ViewGroup) {
-          val found = findIconView(child)
-          if (found != null) return found
-        }
-      }
-      return null
+    if (item.has("badgeColor")) {
+      val badgeColor = parseColor(item.getString("badgeColor"))
+      if (badgeColor != null) badge.backgroundColor = badgeColor
     }
+  }
 
-    val defaultIcon: ImageView? = findIconView(itemView)
-    val iconContainer: ViewGroup? =
-      itemView.findViewById(com.google.android.material.R.id.navigation_bar_item_icon_container)
-        as? ViewGroup
-        ?: (defaultIcon?.parent as? ViewGroup)
+  private fun mountSurfaceIcon(index: Int, routeKey: String) {
+    val manager = uiManager ?: return
+    if (surfaceIcons.containsKey(routeKey)) return
 
-    val rootId = ZynthRootView.allocateRootId()
-    val surfaceView = ZynthRootView(context, rootId)
-    surfaceView.isClickable = false
-    surfaceView.isFocusable = false
-
-    val iconSizePx = dpToPx(24f)
+    val iconSizePx = dpToPx(SURFACE_ICON_SIZE_DP)
+    val portal = manager.createPortalSurface(iconSizePx, iconSizePx)
     val wrapper = FrameLayout(context).apply {
-      tag = "$SURFACE_ICON_TAG_PREFIX$routeKey"
       clipChildren = false
       clipToPadding = false
-      layoutParams = FrameLayout.LayoutParams(iconSizePx, iconSizePx).apply {
-        gravity = Gravity.CENTER
-      }
-      addView(
-        surfaceView,
-        FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.MATCH_PARENT,
-          ViewGroup.LayoutParams.MATCH_PARENT,
-        ),
-      )
+      isClickable = false
+      isFocusable = false
+      elevation = dpToPx(16f).toFloat()
+      translationZ = dpToPx(16f).toFloat()
+      addView(portal.rootView, LayoutParams(iconSizePx, iconSizePx))
     }
 
-    itemView.clipChildren = false
-    itemView.clipToPadding = false
-
-    if (iconContainer != null) {
-      iconContainer.clipChildren = false
-      iconContainer.clipToPadding = false
-      iconContainer.minimumWidth = dpToPx(64f)
-      iconContainer.minimumHeight = dpToPx(32f)
-      var insertIndex = -1
-      if (defaultIcon != null) {
-        insertIndex = iconContainer.indexOfChild(defaultIcon)
-        defaultIcon.visibility = View.VISIBLE
-      }
-
-      if (insertIndex >= 0) {
-        iconContainer.addView(wrapper, insertIndex)
-      } else {
-        iconContainer.addView(wrapper)
-      }
-      iconContainer.requestLayout()
-    } else {
-      (wrapper.layoutParams as? FrameLayout.LayoutParams)?.apply {
-        gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
-        topMargin = dpToPx(12f)
-      }
-      itemView.addView(wrapper)
-    }
-    itemView.requestLayout()
-    bottomNav.requestLayout()
+    iconOverlay.addView(wrapper, LayoutParams(iconSizePx, iconSizePx))
+    val slot = SurfaceIconSlot(routeKey, index, portal, wrapper)
+    surfaceIcons[routeKey] = slot
+    hideMaterialIcon(index)
+    positionSurfaceIcon(slot)
+    dispatchSurfaceIconEvent("onNativeTabMount", slot)
 
     wrapper.post {
-      val wrapperW = wrapper.width
-      val wrapperH = wrapper.height
-      val surfaceW = surfaceView.width
-      val surfaceH = surfaceView.height
-      if (wrapperW == 0 || wrapperH == 0 || surfaceW == 0 || surfaceH == 0) {
-        val sizeSpec = MeasureSpec.makeMeasureSpec(iconSizePx, MeasureSpec.EXACTLY)
-        runCatching {
-          wrapper.measure(sizeSpec, sizeSpec)
-          wrapper.layout(0, 0, iconSizePx, iconSizePx)
-          surfaceView.measure(sizeSpec, sizeSpec)
-          surfaceView.layout(0, 0, iconSizePx, iconSizePx)
-        }
+      positionSurfaceIcon(slot)
+      dispatchSurfaceIconEvent("onNativeTabUpdate", slot)
+    }
+    wrapper.postOnAnimation {
+      positionSurfaceIcon(slot)
+      dispatchSurfaceIconEvent("onNativeTabUpdate", slot)
+    }
+  }
+
+  private fun unmountSurfaceIcons() {
+    surfaceIcons.values.forEach { slot ->
+      iconOverlay.removeView(slot.wrapper)
+      slot.portal.dispose()
+    }
+    surfaceIcons.clear()
+  }
+
+  private fun hideMaterialIcon(index: Int) {
+    val itemView = itemViewAt(index) ?: return
+    val iconView = findIconView(itemView) ?: return
+    iconView.visibility = View.VISIBLE
+    iconView.alpha = 0f
+  }
+
+  @SuppressLint("RestrictedApi")
+  private fun itemViewAt(index: Int): BottomNavigationItemView? {
+    val menuView = bottomNav.getChildAt(0) as? BottomNavigationMenuView ?: return null
+    if (index < 0 || index >= menuView.childCount) return null
+    return menuView.getChildAt(index) as? BottomNavigationItemView
+  }
+
+  private fun findIconView(group: ViewGroup): ImageView? {
+    for (i in 0 until group.childCount) {
+      val child = group.getChildAt(i)
+      if (child is ImageView) return child
+      if (child is ViewGroup) {
+        val found = findIconView(child)
+        if (found != null) return found
       }
+    }
+    return null
+  }
 
-      val desiredContainerW = dpToPx(64f)
-      val desiredContainerH = dpToPx(32f)
+  private fun scheduleIconPositions(frames: Int = ICON_POSITION_FRAMES) {
+    positionSurfaceIcons()
+    if (frames <= 0) return
+    iconOverlay.postOnAnimation {
+      positionSurfaceIcons()
+      scheduleIconPositions(frames - 1)
+    }
+  }
 
-      if (iconContainer != null &&
-        (iconContainer.width != desiredContainerW || iconContainer.height != desiredContainerH)
-      ) {
-        val containerWSpec = MeasureSpec.makeMeasureSpec(desiredContainerW, MeasureSpec.EXACTLY)
-        val containerHSpec = MeasureSpec.makeMeasureSpec(desiredContainerH, MeasureSpec.EXACTLY)
+  private fun positionSurfaceIcons() {
+    surfaceIcons.values.forEach { slot ->
+      positionSurfaceIcon(slot)
+    }
+  }
 
-        val currentW = iconContainer.width
-        val dx = (desiredContainerW - currentW) / 2
-        val newLeft = iconContainer.left - dx
-
-        runCatching {
-          iconContainer.measure(containerWSpec, containerHSpec)
-          iconContainer.layout(
-            newLeft,
-            iconContainer.top,
-            newLeft + desiredContainerW,
-            iconContainer.top + desiredContainerH,
-          )
-        }
+  private fun positionSurfaceIcon(slot: SurfaceIconSlot) {
+    val iconSizePx = dpToPx(SURFACE_ICON_SIZE_DP)
+    val itemView = itemViewAt(slot.index) ?: return
+    val iconView = findIconView(itemView)
+    val activeIndicator = findActiveIndicatorView(itemView)
+    
+    if (activeIndicator != null) {
+      val desiredWidth = dpToPx(64f)
+      val desiredHeight = dpToPx(32f)
+      if (activeIndicator.layoutParams?.width != desiredWidth || activeIndicator.layoutParams?.height != desiredHeight) {
+        activeIndicator.layoutParams?.width = desiredWidth
+        activeIndicator.layoutParams?.height = desiredHeight
+        activeIndicator.requestLayout()
       }
-
-      val activeIndicator = itemView.findViewById<View>(
-        com.google.android.material.R.id.navigation_bar_item_active_indicator_view
-      )
-      if (activeIndicator != null && (activeIndicator.width == 0 || activeIndicator.height == 0)) {
-        val targetW = dpToPx(64f)
-        val targetH = dpToPx(32f)
-
-        val wSpec = MeasureSpec.makeMeasureSpec(targetW, MeasureSpec.EXACTLY)
-        val hSpec = MeasureSpec.makeMeasureSpec(targetH, MeasureSpec.EXACTLY)
-
-        runCatching {
-          activeIndicator.measure(wSpec, hSpec)
-
-          val parentW = if (iconContainer != null && iconContainer.width > 0)
-            iconContainer.width
-          else
-            targetW
-          val parentH = if (iconContainer != null && iconContainer.height > 0)
-            iconContainer.height
-          else
-            targetH
-
-          val left = (parentW - targetW) / 2
-          val top = (parentH - targetH) / 2
-
-          activeIndicator.layout(left, top, left + targetW, top + targetH)
-          activeIndicator.translationY = dpToPx(1f).toFloat()
-          activeIndicator.alpha = if (index == selectedIndex) 1f else 0f
-          activeIndicator.visibility = View.VISIBLE
-        }
+      if (activeIndicator.visibility != View.VISIBLE) {
+        activeIndicator.visibility = View.VISIBLE
       }
     }
 
-    manager.registerSurface(rootId, surfaceView)
-    iconSurfaces[routeKey] = rootId
+    val anchor = iconView ?: itemView
+    if (anchor.width <= 0 || anchor.height <= 0 || iconOverlay.width <= 0) return
 
+    val overlayLocation = IntArray(2)
+    val itemLocation = IntArray(2)
+    val anchorLocation = IntArray(2)
+    iconOverlay.getLocationInWindow(overlayLocation)
+    itemView.getLocationInWindow(itemLocation)
+    anchor.getLocationInWindow(anchorLocation)
+
+    val slotLeft = itemLocation[0] - overlayLocation[0]
+    val slotTop = itemLocation[1] - overlayLocation[1]
+    val slotWidth = itemView.width
+    val slotHeight = itemView.height
+    if (slotWidth <= 0 || slotHeight <= 0) return
+
+    if (
+      slot.wrapper.left != slotLeft ||
+      slot.wrapper.top != slotTop ||
+      slot.wrapper.width != slotWidth ||
+      slot.wrapper.height != slotHeight
+    ) {
+      slot.wrapper.measure(
+        MeasureSpec.makeMeasureSpec(slotWidth, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(slotHeight, MeasureSpec.EXACTLY),
+      )
+      slot.wrapper.layout(slotLeft, slotTop, slotLeft + slotWidth, slotTop + slotHeight)
+    }
+
+    val rootLeft = anchorLocation[0] - itemLocation[0] + ((anchor.width - iconSizePx) / 2f)
+    val rootTop = anchorLocation[1] - itemLocation[1] + ((anchor.height - iconSizePx) / 2f)
+    slot.portal.resizePx(iconSizePx, iconSizePx)
+    slot.portal.rootView.layout(
+      rootLeft.toInt(),
+      rootTop.toInt(),
+      rootLeft.toInt() + iconSizePx,
+      rootTop.toInt() + iconSizePx,
+    )
+
+    slot.wrapper.visibility = if (shouldShowNativeTabBar()) View.VISIBLE else View.INVISIBLE
+    slot.wrapper.bringToFront()
+    slot.portal.rootView.bringToFront()
+    if (iconView != null) {
+      iconView.visibility = View.VISIBLE
+      iconView.alpha = 0f
+    }
+  }
+
+  private fun notifySurfaceIcons() {
+    post {
+      positionSurfaceIcons()
+      surfaceIcons.values.forEach { slot ->
+        dispatchSurfaceIconEvent("onNativeTabUpdate", slot)
+      }
+    }
+  }
+
+  fun replaySurfaceIconMounts() {
+    post {
+      positionSurfaceIcons()
+      surfaceIcons.values.forEach { slot ->
+        dispatchSurfaceIconEvent("onNativeTabMount", slot)
+      }
+    }
+  }
+
+  private fun dispatchSurfaceIconEvent(eventName: String, slot: SurfaceIconSlot) {
+    val manager = uiManager ?: return
+    if (nodeId == -1) return
     val event = JSONObject()
-    event.put("surfaceId", rootId)
-    event.put("routeKey", routeKey)
-    event.put("active", index == selectedIndex)
-    manager.dispatchEvent(nodeId, "onNativeTabMount", event)
+    event.put("surfaceId", slot.portal.surfaceId)
+    event.put("routeKey", slot.routeKey)
+    event.put("active", slot.index == selectedIndex)
+    manager.dispatchEvent(nodeId, eventName, event)
+  }
+
+  private fun findActiveIndicatorView(itemView: BottomNavigationItemView): View? {
+    return itemView.findViewById(
+      com.google.android.material.R.id.navigation_bar_item_active_indicator_view,
+    )
+  }
+
+  private fun viewFrame(view: View?): String {
+    if (view == null) return "null"
+    return "(${view.left},${view.top},${view.width},${view.height})" +
+      "[measured=${view.measuredWidth}x${view.measuredHeight} vis=${view.visibility} alpha=${"%.2f".format(view.alpha)} ty=${"%.1f".format(view.translationY)}]"
+  }
+
+  private fun measureTabBar(width: Int, height: Int, shouldShow: Boolean): Int {
+    if (!shouldShow) return 0
+    val insets = ViewCompat.getRootWindowInsets(this)
+    val insetBottom = insets?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+    val desiredPadding = baseBottomNavPaddingBottom + insetBottom
+    if (bottomNav.paddingBottom != desiredPadding) {
+      bottomNav.setPadding(
+        bottomNav.paddingLeft,
+        bottomNav.paddingTop,
+        bottomNav.paddingRight,
+        desiredPadding,
+      )
+    }
+
+    bottomNav.measure(
+      MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(height, MeasureSpec.AT_MOST),
+    )
+    return bottomNav.measuredHeight
   }
 
   private fun dpToPx(dp: Float): Int {
     return (dp * context.resources.displayMetrics.density).toInt()
   }
 
-  private fun notifySurfacesUpdate() {
-    post {
-      val manager = uiManager ?: return@post
-      if (nodeId == -1) return@post
-
-      iconSurfaces.forEach { (routeKey, surfaceId) ->
-        val event = JSONObject()
-        event.put("surfaceId", surfaceId)
-        event.put("routeKey", routeKey)
-        manager.dispatchEvent(nodeId, "onNativeTabUpdate", event)
-      }
-    }
-  }
-
   private fun updateTabVisibility() {
     for (i in 0 until contentContainer.childCount) {
       val child = contentContainer.getChildAt(i)
-      val shouldBeVisible = (i == visibleIndex)
-      val shouldBePending = (pendingIndex != null && i == pendingIndex)
+      val shouldBeVisible = i == visibleIndex
+      val shouldBePending = pendingIndex != null && i == pendingIndex
 
       if (shouldBeVisible) {
-        if (child.visibility != View.VISIBLE) {
-          child.visibility = View.VISIBLE
-          child.translationZ = 10f
-          child.alpha = 1f
-        } else {
-          if (child.translationZ != 10f) child.translationZ = 10f
-          if (child.alpha != 1f) child.alpha = 1f
-        }
+        child.visibility = View.VISIBLE
+        child.translationZ = 10f
+        child.alpha = 1f
       } else if (shouldBePending) {
-        if (child.visibility != View.VISIBLE) {
-          child.visibility = View.VISIBLE
-          child.translationZ = 20f
-          child.alpha = 0f
-        } else {
-          if (child.translationZ != 20f) child.translationZ = 20f
-          if (child.alpha != 0f) child.alpha = 0f
-        }
+        child.visibility = View.VISIBLE
+        child.translationZ = 20f
+        child.alpha = 0f
       } else {
-        if (child.visibility != View.INVISIBLE) {
-          child.visibility = View.INVISIBLE
-          child.translationZ = 0f
-          child.alpha = 0f
-        } else {
-          if (child.translationZ != 0f) child.translationZ = 0f
-          if (child.alpha != 0f) child.alpha = 0f
-        }
+        child.visibility = View.INVISIBLE
+        child.translationZ = 0f
+        child.alpha = 0f
       }
     }
   }
@@ -593,7 +615,7 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
       }
 
       val now = SystemClock.uptimeMillis()
-      val timedOut = (now - pendingStartMs) >= switchTimeoutMs
+      val timedOut = now - pendingStartMs >= switchTimeoutMs
       if (timedOut || shouldCompleteSwitch(pending)) {
         completePendingSwitch(pending)
       } else {
@@ -617,9 +639,7 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
     val now = SystemClock.uptimeMillis()
     val elapsed = now - pendingStartMs
     val ready = isChildReady(index)
-    if (ready) {
-      renderedIndices.add(index)
-    }
+    if (ready) renderedIndices.add(index)
     if (!renderedIndices.contains(index) && elapsed < minHoldMs) return false
     return ready
   }
@@ -630,8 +650,14 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
   }
 
   private fun updateTabBarVisibility() {
-    val shouldShow = nativeTabBarEnabled && tabBarVisible
-    bottomNav.visibility = if (shouldShow) View.VISIBLE else View.GONE
+    val visible = shouldShowNativeTabBar()
+    bottomNav.visibility = if (visible) View.VISIBLE else View.GONE
+    iconOverlay.visibility = if (visible) View.VISIBLE else View.GONE
+    requestLayout()
+  }
+
+  private fun shouldShowNativeTabBar(): Boolean {
+    return nativeTabBarEnabled && tabBarVisible
   }
 
   private fun parseColor(colorString: String?): Int? {
@@ -645,11 +671,7 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
       intArrayOf(-android.R.attr.state_checked),
       intArrayOf(),
     )
-    val colors = intArrayOf(
-      activeColor,
-      inactiveColor,
-      inactiveColor,
-    )
+    val colors = intArrayOf(activeColor, inactiveColor, inactiveColor)
     return ColorStateList(states, colors)
   }
 }

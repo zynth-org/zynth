@@ -6,6 +6,13 @@
 
 #include "UICommandsRegistry.h"
 #include "ZynthJSIPluginRegistry.h"
+#include "ZynthRendererTelemetry.h"
+#include "ZynthProp.h"
+#include "ZynthCommit.h"
+#include "ZynthCommitDecoder.h"
+#include "ZynthRendererHost.h"
+#include "ZynthYogaTree.h"
+#include "ZynthMeasureRegistry.h"
 
 #include <memory>
 #include <mutex>
@@ -13,11 +20,9 @@
 #include <string>
 #include <unordered_map>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <cstdint>
-#include <signal.h>
-#include <thread>
-#include <unistd.h>
 #include <vector>
 #include <limits>
 #include <algorithm>
@@ -27,9 +32,7 @@ using namespace facebook::jsi;
 
 namespace {
 JavaVM *gVm = nullptr;
-int gCrashPipe[2] = {-1, -1};
 std::atomic<bool> gCrashHandlerInstalled{false};
-std::atomic<bool> gCrashThreadStarted{false};
 jclass gDevtoolsClass = nullptr;
 jmethodID gDevtoolsEmitMethod = nullptr;
 jclass gNativeOverlayClass = nullptr;
@@ -37,6 +40,7 @@ jmethodID gNativeOverlayHandleRawMethod = nullptr;
 std::mutex gPluginMutex;
 std::vector<ZynthJSIPluginInstaller> gPluginInstallers;
 std::vector<ZynthSharedSignalChangedCallback> gSharedSignalCallbacks;
+constexpr const char *kStartupLogTag = "ZynthStartup";
 
 struct TimerEntry {
   std::shared_ptr<Function> callback;
@@ -78,9 +82,13 @@ struct RuntimeState {
   jclass jsBridgeClass = nullptr;
   jclass devtoolsClass = nullptr;
   jclass nativeOverlayClass = nullptr;
+  jclass performanceOverlayClass = nullptr;
   jmethodID createNode = nullptr;
+  jmethodID createNodeWithId = nullptr;
+  jmethodID dropNode = nullptr;
   jmethodID setProp = nullptr;
   jmethodID setText = nullptr;
+  jmethodID measureNode = nullptr;
   jmethodID syncTextInputState = nullptr;
   jmethodID insertChild = nullptr;
   jmethodID removeChild = nullptr;
@@ -90,6 +98,9 @@ struct RuntimeState {
   jmethodID applyBatch = nullptr;
   jmethodID applyBatchTypedPacked = nullptr;
   jmethodID applyBatchTypedBuffer = nullptr;
+  jmethodID applyMountTransaction = nullptr;
+  jmethodID applyMountTransactionSync = nullptr;
+  jmethodID setNativeCommitEnabled = nullptr;
   jmethodID beginAtomicCommit = nullptr;
   jmethodID endAtomicCommit = nullptr;
   jmethodID setSurface = nullptr;
@@ -105,6 +116,7 @@ struct RuntimeState {
   jmethodID devtoolsEmit = nullptr;
   jmethodID devtoolsIsConnected = nullptr;
   jmethodID nativeOverlayHandleRaw = nullptr;
+  jmethodID performanceOverlayRecordYoga = nullptr;
   jobject moduleRegistry = nullptr;
   jclass moduleRegistryClass = nullptr;
   jmethodID moduleCall = nullptr;
@@ -131,7 +143,51 @@ struct RuntimeState {
   std::mutex syncSignalsMutex;
   std::unordered_map<int, int> syncSignalBindings; // nodeId -> signalId
   std::mutex syncSignalBindingsMutex;
+
+  // Phase 0-2: Native renderer commit pipeline
+  bool useNativeCommit = true; ///< Runtime flag: true = native decode, false = legacy Kotlin decode
+  zynth::ZynthCommit nativeCommit; ///< Reusable commit buffer to avoid per-batch allocation
+  zynth::ZynthRendererHost rendererHost; ///< Phase 2: authoritative native node/surface state
+  
+  // Phase 3: Native Yoga Ownership
+  std::unique_ptr<zynth::ZynthYogaTree> yogaTree;
+  
+  // Phase 5: Text Measurement Cache
+  zynth::ZynthMeasureRegistry measureRegistry;
+  zynth::ZynthCommitTelemetry* currentTelemetry = nullptr;
+  bool startupTelemetryEnabled = false;
+  bool startupFirstCommitLogged = false;
+  
+  RuntimeState() : yogaTree(std::make_unique<zynth::ZynthYogaTree>(&rendererHost)) {
+    // We will set measureFunc_ and callback after JNI is initialized
+  }
 };
+
+thread_local RuntimeState* g_currentLayoutState = nullptr;
+
+static YGSize zynthYogaMeasureFunc(YGNodeConstRef node, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode) {
+  if (!g_currentLayoutState) return {0, 0};
+  int32_t nodeId = static_cast<int32_t>(reinterpret_cast<intptr_t>(YGNodeGetContext(node)));
+  
+  auto* record = g_currentLayoutState->rendererHost.getNode(nodeId);
+  if (!record) return {0, 0};
+  
+  uint32_t hits = 0;
+  uint32_t misses = 0;
+  uint32_t bypasses = 0;
+  int64_t dummy = 0;
+  zynth::ZynthPhaseTimer timer(g_currentLayoutState->currentTelemetry ? g_currentLayoutState->currentTelemetry->measureCallbackUs : dummy);
+  
+  YGSize res = g_currentLayoutState->measureRegistry.measure(
+      nodeId, record->contentRevision, width, widthMode, height, heightMode, hits, misses, bypasses);
+      
+  if (g_currentLayoutState->currentTelemetry) {
+      g_currentLayoutState->currentTelemetry->measureCacheHits += hits;
+      g_currentLayoutState->currentTelemetry->measureCacheMisses += misses;
+      g_currentLayoutState->currentTelemetry->measureCacheBypasses += bypasses;
+  }
+  return res;
+}
 
 std::mutex gStateMutex;
 std::unordered_map<facebook::hermes::HermesRuntime *, std::shared_ptr<RuntimeState>> gStates;
@@ -174,8 +230,54 @@ void removeHandlersForNode(facebook::hermes::HermesRuntime *runtime, int nodeId)
   }
 }
 
+bool parseBooleanLike(const std::string &value) {
+  if (value == "1") return true;
+  std::string lowered = value;
+  std::transform(
+      lowered.begin(),
+      lowered.end(),
+      lowered.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return lowered == "true" || lowered == "yes" || lowered == "on";
+}
+
+bool readSystemBooleanProperty(JNIEnv *env, const char *name) {
+  if (!env || !name) return false;
+  jclass systemClass = env->FindClass("java/lang/System");
+  if (!systemClass) return false;
+  jmethodID getProperty =
+      env->GetStaticMethodID(systemClass, "getProperty", "(Ljava/lang/String;)Ljava/lang/String;");
+  if (!getProperty) {
+    env->DeleteLocalRef(systemClass);
+    return false;
+  }
+  jstring jName = env->NewStringUTF(name);
+  jstring rawValue = static_cast<jstring>(
+      env->CallStaticObjectMethod(systemClass, getProperty, jName));
+  env->DeleteLocalRef(jName);
+  env->DeleteLocalRef(systemClass);
+  if (!rawValue) return false;
+  const char *utf8 = env->GetStringUTFChars(rawValue, nullptr);
+  std::string value = utf8 ? utf8 : "";
+  if (utf8) env->ReleaseStringUTFChars(rawValue, utf8);
+  env->DeleteLocalRef(rawValue);
+  return parseBooleanLike(value);
+}
+
+std::optional<std::string> stringifyDevtoolsPayload(Runtime &rt, const Value &value);
+
 JNIEnv *getEnv() {
-  return facebook::jni::Environment::current();
+  if (!gVm) return facebook::jni::Environment::current();
+  JNIEnv *env = nullptr;
+  if (gVm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) == JNI_OK) {
+    return env;
+  }
+  // Do not pair this with ThreadScope/DetachCurrentThread: the JS runtime runs
+  // on a Java HandlerThread, and ART aborts if a Java-owned thread is detached.
+  if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+    return nullptr;
+  }
+  return env;
 }
 
 void callSetProp(JNIEnv *env, RuntimeState *state, jint nodeId, const std::string &name,
@@ -322,7 +424,7 @@ std::string jsonEscape(const std::string &value) {
   out.reserve(value.size() + 8);
   for (unsigned char ch : value) {
     switch (ch) {
-      case '\"':
+      case '"':
         out += "\\\"";
         break;
       case '\\':
@@ -370,6 +472,7 @@ void emitDevtoolsEvent(RuntimeState *state,
                         "\",\"tag\":\"" + jsonEscape(tag) +
                         "\",\"data\":\"" + jsonEscape(data) + "\"}";
 
+
   if (state->nativeOverlayClass && state->nativeOverlayHandleRaw) {
     jstring jPayload = env->NewStringUTF(payload.c_str());
     env->CallStaticVoidMethod(state->nativeOverlayClass, state->nativeOverlayHandleRaw, jPayload);
@@ -400,87 +503,27 @@ void emitDevtoolsEvent(RuntimeState *state,
   }
 }
 
-const char *signalName(int sig) {
-  switch (sig) {
-    case SIGSEGV:
-      return "SIGSEGV";
-    case SIGABRT:
-      return "SIGABRT";
-    case SIGBUS:
-      return "SIGBUS";
-    case SIGILL:
-      return "SIGILL";
-    case SIGFPE:
-      return "SIGFPE";
-    default:
-      return "SIGNAL";
-  }
-}
-
-void crashSignalHandler(int sig, siginfo_t *, void *) {
-  if (gCrashPipe[1] != -1) {
-    char buf[64];
-    int len = snprintf(buf, sizeof(buf), "%s(%d)\n", signalName(sig), sig);
-    if (len > 0) {
-      write(gCrashPipe[1], buf, static_cast<size_t>(len));
-    }
-  }
-  signal(sig, SIG_DFL);
-  raise(sig);
-}
-
-void startCrashWatcherThread() {
-  if (gCrashThreadStarted.exchange(true)) return;
-  std::thread([]() {
-    if (gVm == nullptr) return;
-    JNIEnv *env = nullptr;
-    if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) return;
-    char buf[128];
-    while (true) {
-      ssize_t readBytes = read(gCrashPipe[0], buf, sizeof(buf) - 1);
-      if (readBytes <= 0) {
-        break;
-      }
-      buf[readBytes] = '\0';
-      if ((!gDevtoolsClass || !gDevtoolsEmitMethod) &&
-          (!gNativeOverlayClass || !gNativeOverlayHandleRawMethod)) {
-        continue;
-      }
-      std::string data(buf);
-      std::string payload =
-          std::string("{\"topic\":\"crash/native\",\"level\":\"error\",\"tag\":\"crash\",\"data\":\"") +
-          jsonEscape(data) + "\"}";
-      if (gDevtoolsClass && gDevtoolsEmitMethod) {
-        jstring jPayload = env->NewStringUTF(payload.c_str());
-        env->CallStaticVoidMethod(gDevtoolsClass, gDevtoolsEmitMethod, jPayload);
-        env->DeleteLocalRef(jPayload);
-      }
-      if (gNativeOverlayClass && gNativeOverlayHandleRawMethod) {
-        jstring jPayload = env->NewStringUTF(payload.c_str());
-        env->CallStaticVoidMethod(gNativeOverlayClass, gNativeOverlayHandleRawMethod, jPayload);
-        env->DeleteLocalRef(jPayload);
-      }
-    }
-    gVm->DetachCurrentThread();
-  }).detach();
+void recordNativeYogaTelemetry(RuntimeState *state, const zynth::ZynthCommitTelemetry &telemetry) {
+  if (!state) return;
+  if (!state->performanceOverlayClass || !state->performanceOverlayRecordYoga) return;
+  JNIEnv *env = getEnv();
+  if (!env) return;
+  const double yogaMs = (telemetry.yogaMutateUs + telemetry.yogaCalculateUs) / 1000.0;
+  const double yogaCalculateMs = telemetry.yogaCalculateUs / 1000.0;
+  const double measureMs = telemetry.measureCallbackUs / 1000.0;
+  env->CallStaticVoidMethod(
+      state->performanceOverlayClass,
+      state->performanceOverlayRecordYoga,
+      static_cast<jdouble>(yogaMs),
+      static_cast<jdouble>(yogaCalculateMs),
+      static_cast<jdouble>(measureMs));
 }
 
 void installCrashSignalHandlers() {
-  if (gCrashHandlerInstalled.exchange(true)) return;
-  if (pipe(gCrashPipe) != 0) {
-    return;
-  }
-  startCrashWatcherThread();
-  struct sigaction action;
-  memset(&action, 0, sizeof(action));
-  action.sa_sigaction = crashSignalHandler;
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = SA_SIGINFO | SA_ONSTACK;
-  sigaction(SIGSEGV, &action, nullptr);
-  sigaction(SIGABRT, &action, nullptr);
-  sigaction(SIGBUS, &action, nullptr);
-  sigaction(SIGILL, &action, nullptr);
-  sigaction(SIGFPE, &action, nullptr);
+  // Let ART/debuggerd own fatal signal handling. Zynth's previous crash
+  // watcher used JNI from crash-adjacent paths and could mask the real fault
+  // behind recursive ART/Binder aborts during scroll stress.
+  gCrashHandlerInstalled.store(true);
 }
 
 void installConsole(Runtime &rt, RuntimeState *state) {
@@ -583,8 +626,45 @@ void installGlobals(Runtime &rt) {
         return Value::undefined();
       });
 
+  auto startupTraceFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__zynthStartupTrace"), 4,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isString() || !args[1].isString()) {
+          return Value::undefined();
+        }
+        const std::string kind = args[0].asString(rt).utf8(rt);
+        const std::string name = args[1].asString(rt).utf8(rt);
+        const double durationMs =
+            count > 2 && args[2].isNumber() ? args[2].asNumber() : -1.0;
+        std::string detail;
+        if (count > 3) {
+          auto payload = stringifyDevtoolsPayload(rt, args[3]);
+          if (payload && !payload->empty()) {
+            detail = *payload;
+          }
+        }
+        if (kind == "phase") {
+          __android_log_print(
+              ANDROID_LOG_INFO,
+              kStartupLogTag,
+              "phase=js.%s durationMs=%.3f detail=%s",
+              name.c_str(),
+              durationMs,
+              detail.empty() ? "{}" : detail.c_str());
+        } else {
+          __android_log_print(
+              ANDROID_LOG_INFO,
+              kStartupLogTag,
+              "point=js.%s detail=%s",
+              name.c_str(),
+              detail.empty() ? "{}" : detail.c_str());
+        }
+        return Value::undefined();
+      });
+
   globalThis.setProperty(rt, "queueMicrotask", queueMicrotaskFn);
   globalThis.setProperty(rt, "setImmediate", setImmediateFn);
+  globalThis.setProperty(rt, "__zynthStartupTrace", startupTraceFn);
 }
 
 std::optional<std::string> stringifyDevtoolsPayload(Runtime &rt, const Value &value) {
@@ -838,30 +918,171 @@ extern "C" JNIEXPORT void ZynthApplyAnimatedStyle(
 extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
     void *state,
     int nodeId,
-    float width,
-    float height,
-    float minWidth,
-    float minHeight,
-    float maxWidth,
-    float maxHeight,
-    float flexBasis) {
+    const ZynthAnimatedLayoutProps* props) {
   auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
-  if (!runtimeState || !runtimeState->uiManager || !runtimeState->applyAnimatedLayoutStyle) {
+  if (!runtimeState || !props) {
     return;
   }
-  JNIEnv *env = getEnv();
-  if (!env) return;
-  env->CallVoidMethod(
-      runtimeState->uiManager,
-      runtimeState->applyAnimatedLayoutStyle,
-      nodeId,
-      width,
-      height,
-      minWidth,
-      minHeight,
-      maxWidth,
-      maxHeight,
-      flexBasis);
+
+  // 1. Update Native Yoga Styles immediately for high-performance UI thread animations
+  auto* nodeRecord = runtimeState->rendererHost.getNode(nodeId);
+  if (nodeRecord && nodeRecord->yoga) {
+    bool changed = false;
+    auto update = [&](zynth::ZynthPropId prop, float val) {
+      if (!std::isnan(val)) {
+        zynth::ZynthPropValue v;
+        v.kind = zynth::ZynthValueKind::Number;
+        v.number = val;
+        
+        zynth::ZynthPropMutation mut;
+        mut.nodeId = nodeId;
+        mut.prop = prop;
+        mut.value = v;
+        
+        if (runtimeState->yogaTree->applyProp(nodeRecord->yoga, mut)) {
+          changed = true;
+        }
+      }
+    };
+    
+    update(zynth::ZynthPropId::Width, props->width);
+    update(zynth::ZynthPropId::Height, props->height);
+    update(zynth::ZynthPropId::MinWidth, props->minWidth);
+    update(zynth::ZynthPropId::MinHeight, props->minHeight);
+    update(zynth::ZynthPropId::MaxWidth, props->maxWidth);
+    update(zynth::ZynthPropId::MaxHeight, props->maxHeight);
+    update(zynth::ZynthPropId::Flex, props->flex);
+    update(zynth::ZynthPropId::FlexGrow, props->flexGrow);
+    update(zynth::ZynthPropId::FlexShrink, props->flexShrink);
+    update(zynth::ZynthPropId::FlexBasis, props->flexBasis);
+    update(zynth::ZynthPropId::Top, props->top);
+    update(zynth::ZynthPropId::Right, props->right);
+    update(zynth::ZynthPropId::Bottom, props->bottom);
+    update(zynth::ZynthPropId::Left, props->left);
+
+    // Padding shorthands
+    if (!std::isnan(props->padding)) {
+      update(zynth::ZynthPropId::PaddingTop, props->padding);
+      update(zynth::ZynthPropId::PaddingRight, props->padding);
+      update(zynth::ZynthPropId::PaddingBottom, props->padding);
+      update(zynth::ZynthPropId::PaddingLeft, props->padding);
+    }
+    if (!std::isnan(props->paddingHorizontal)) {
+      update(zynth::ZynthPropId::PaddingRight, props->paddingHorizontal);
+      update(zynth::ZynthPropId::PaddingLeft, props->paddingHorizontal);
+    }
+    if (!std::isnan(props->paddingVertical)) {
+      update(zynth::ZynthPropId::PaddingTop, props->paddingVertical);
+      update(zynth::ZynthPropId::PaddingBottom, props->paddingVertical);
+    }
+    update(zynth::ZynthPropId::PaddingTop, props->paddingTop);
+    update(zynth::ZynthPropId::PaddingRight, props->paddingRight);
+    update(zynth::ZynthPropId::PaddingBottom, props->paddingBottom);
+    update(zynth::ZynthPropId::PaddingLeft, props->paddingLeft);
+
+    // Margin shorthands
+    if (!std::isnan(props->margin)) {
+      update(zynth::ZynthPropId::MarginTop, props->margin);
+      update(zynth::ZynthPropId::MarginRight, props->margin);
+      update(zynth::ZynthPropId::MarginBottom, props->margin);
+      update(zynth::ZynthPropId::MarginLeft, props->margin);
+    }
+    if (!std::isnan(props->marginHorizontal)) {
+      update(zynth::ZynthPropId::MarginRight, props->marginHorizontal);
+      update(zynth::ZynthPropId::MarginLeft, props->marginHorizontal);
+    }
+    if (!std::isnan(props->marginVertical)) {
+      update(zynth::ZynthPropId::MarginTop, props->marginVertical);
+      update(zynth::ZynthPropId::MarginBottom, props->marginVertical);
+    }
+    update(zynth::ZynthPropId::MarginTop, props->marginTop);
+    update(zynth::ZynthPropId::MarginRight, props->marginRight);
+    update(zynth::ZynthPropId::MarginBottom, props->marginBottom);
+    update(zynth::ZynthPropId::MarginLeft, props->marginLeft);
+    
+    if (changed) {
+      runtimeState->rendererHost.markSurfaceDirty(nodeRecord->surfaceId);
+    }
+  }
+
+  // Layout updates are committed to Android views exclusively through
+  // ZynthPerformNativeLayout → applyMountTransaction.  Calling the Kotlin
+  // applyAnimatedLayoutStyle callback here would cause a redundant, conflicting
+  // view-level update (view.setPadding / layoutParams / requestLayout) that
+  // races with the authoritative Yoga-driven mount transaction.
+}
+
+extern "C" JNIEXPORT void ZynthPerformNativeLayout(void *state) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState || !runtimeState->useNativeCommit) {
+    return;
+  }
+
+  // 1. Calculate Layout for all surfaces marked dirty by animated style changes
+  zynth::ZynthCommit commit;
+  zynth::ZynthCommitTelemetry telemetry;
+  
+  // calculateLayoutForDirtySurfaces may throw if Yoga encounters invalid
+  // constraints (e.g. indefinite availableHeight with incompatible sizing
+  // mode).  Catch and log rather than crashing the entire layout pass.
+  try {
+    g_currentLayoutState = runtimeState;
+    runtimeState->currentTelemetry = &telemetry;
+    runtimeState->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
+    runtimeState->currentTelemetry = nullptr;
+    g_currentLayoutState = nullptr;
+  } catch (const std::exception &e) {
+    runtimeState->currentTelemetry = nullptr;
+    g_currentLayoutState = nullptr;
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthAnimate",
+                        "Yoga layout failed: %s", e.what());
+    return;
+  } catch (...) {
+    runtimeState->currentTelemetry = nullptr;
+    g_currentLayoutState = nullptr;
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthAnimate",
+                        "Yoga layout failed (unknown exception)");
+    return;
+  }
+
+  // 2. If layout changed, send the new frames to Kotlin
+  if (!commit.layoutFrames.empty()) {
+    JNIEnv *env = getEnv();
+    if (!env || !runtimeState->uiManager || !runtimeState->applyMountTransaction) {
+      return;
+    }
+
+    std::vector<double> postLayoutOps;
+    postLayoutOps.reserve(commit.layoutFrames.size() * 6);
+    
+    // OPCODE 6: frame (nodeId, left, top, width, height)
+    for (const auto& op : commit.layoutFrames) {
+      postLayoutOps.push_back(6);
+      postLayoutOps.push_back(static_cast<double>(op.nodeId));
+      postLayoutOps.push_back(static_cast<double>(op.left));
+      postLayoutOps.push_back(static_cast<double>(op.top));
+      postLayoutOps.push_back(static_cast<double>(op.width));
+      postLayoutOps.push_back(static_cast<double>(op.height));
+    }
+
+    jobject jBuffer = env->NewDirectByteBuffer(
+        postLayoutOps.data(),
+        static_cast<jlong>(postLayoutOps.size() * sizeof(double)));
+    
+    if (jBuffer) {
+      jobjectArray jStrings = env->NewObjectArray(0, runtimeState->stringClass, nullptr);
+
+      env->CallVoidMethod(
+          runtimeState->uiManager, 
+          runtimeState->applyMountTransaction,
+          jBuffer, 
+          static_cast<jint>(postLayoutOps.size()), 
+          jStrings);
+
+      env->DeleteLocalRef(jBuffer);
+      if (jStrings) env->DeleteLocalRef(jStrings);
+    }
+  }
 }
 
 void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
@@ -1519,7 +1740,7 @@ void installWorkletsBridge(Runtime &rt, facebook::hermes::HermesRuntime *runtime
 
 void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
   auto createNode = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "createNode"), 1,
+      rt, PropNameID::forAscii(rt, "createNode"), 2,
       [runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isString()) return Value::undefined();
         RuntimeState *state = stateFor(runtime);
@@ -1528,8 +1749,14 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!env) return Value::undefined();
         std::string type = args[0].asString(rt).utf8(rt);
         jstring jType = env->NewStringUTF(type.c_str());
+        jboolean jHasMeasure = (count >= 2 && args[1].isBool() && args[1].getBool()) ? JNI_TRUE : JNI_FALSE;
         jint nodeId = env->CallIntMethod(state->uiManager, state->createNode, jType);
         env->DeleteLocalRef(jType);
+        // Phase 2: Register node in native renderer state
+        if (state->useNativeCommit && nodeId > 0) {
+          state->rendererHost.createNode(
+              nodeId, type, state->rendererHost.activeSurfaceId(), jHasMeasure == JNI_TRUE);
+        }
         return Value(static_cast<double>(nodeId));
       });
 
@@ -1616,10 +1843,16 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        env->CallVoidMethod(state->uiManager, state->insertChild,
-                            static_cast<jint>(args[0].asNumber()),
-                            static_cast<jint>(args[1].asNumber()),
-                            static_cast<jint>(args[2].asNumber()));
+        jint parentId = static_cast<jint>(args[0].asNumber());
+        jint childId = static_cast<jint>(args[1].asNumber());
+        jint index = static_cast<jint>(args[2].asNumber());
+        // Phase 2: Update native tree topology
+        if (state->useNativeCommit) {
+          state->rendererHost.insertChild(parentId, childId, index);
+        } else {
+          env->CallVoidMethod(state->uiManager, state->insertChild,
+                              parentId, childId, index);
+        }
         return Value::undefined();
       });
 
@@ -1632,9 +1865,15 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        env->CallVoidMethod(state->uiManager, state->removeChild,
-                            static_cast<jint>(args[0].asNumber()),
-                            static_cast<jint>(args[1].asNumber()));
+        jint parentId = static_cast<jint>(args[0].asNumber());
+        jint childId = static_cast<jint>(args[1].asNumber());
+        // Phase 2: Update native tree topology
+        if (state->useNativeCommit) {
+          state->rendererHost.removeChild(parentId, childId);
+        } else {
+          env->CallVoidMethod(state->uiManager, state->removeChild,
+                              parentId, childId);
+        }
         return Value::undefined();
       });
 
@@ -1773,95 +2012,373 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           if (!stringTableObject.isArray(rt)) return Value::undefined();
           Array stringTable = stringTableObject.asArray(rt);
           const size_t stringCount = stringTable.length(rt);
-          jdoubleArray jOps = nullptr;
-          if (opsObject.isArrayBuffer(rt)) {
-            ArrayBuffer buffer = opsObject.getArrayBuffer(rt);
-            const size_t byteLength = buffer.size(rt);
-            const size_t opCount = byteLength / sizeof(double);
-            if (state->applyBatchTypedBuffer) {
-              jobject jBuffer = env->NewDirectByteBuffer(buffer.data(rt), static_cast<jlong>(byteLength));
-              if (!jBuffer) return Value::undefined();
 
-              jclass stringClass = state->stringClass;
-              if (!stringClass) {
-                jclass localStringClass = env->FindClass("java/lang/String");
-                if (!localStringClass) {
-                  env->DeleteLocalRef(jBuffer);
-                  return Value::undefined();
-                }
-                stringClass = localStringClass;
-                state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
-                env->DeleteLocalRef(localStringClass);
-              }
-              jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
-              for (size_t i = 0; i < stringCount; i++) {
-                Value entry = stringTable.getValueAtIndex(rt, i);
-                if (entry.isString()) {
-                  std::string utf8 = entry.asString(rt).utf8(rt);
-                  jstring jStr = env->NewStringUTF(utf8.c_str());
-                  env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
-                  env->DeleteLocalRef(jStr);
-                }
-              }
+          // Phase 0: Generate commit ID and start JSI entry timer
+          const uint64_t commitId = zynth::nextCommitId();
+          zynth::ZynthCommitTelemetry telemetry;
+          telemetry.commitId = commitId;
+          int64_t stringExtractUs = 0;
+          int64_t payloadExtractUs = 0;
+          int64_t jniStringArrayBuildUs = 0;
+          int64_t syncMountUs = 0;
+          int64_t asyncMountUs = 0;
+          int64_t postLayoutMountUs = 0;
 
-              env->CallVoidMethod(state->uiManager, state->applyBatchTypedBuffer, jBuffer,
-                                  static_cast<jint>(opCount), jStrings);
-              env->DeleteLocalRef(jBuffer);
-              env->DeleteLocalRef(jStrings);
+          // Always extract string table once in C++ (avoids duplicate work)
+          std::vector<std::string> nativeStrings;
+          nativeStrings.reserve(stringCount);
+          {
+            zynth::ZynthPhaseTimer timer(stringExtractUs);
+            for (size_t i = 0; i < stringCount; i++) {
+              Value entry = stringTable.getValueAtIndex(rt, i);
+              if (entry.isString()) {
+                nativeStrings.push_back(entry.asString(rt).utf8(rt));
+              } else {
+                nativeStrings.push_back("");
+              }
+            }
+          }
+
+          // Extract raw ops into a double vector for native decode
+          std::vector<double> opsBuffer;
+          size_t opCount = 0;
+          const uint8_t *bufferData = nullptr;
+          size_t bufferByteLength = 0;
+
+          {
+            zynth::ZynthPhaseTimer timer(payloadExtractUs);
+            if (opsObject.isArrayBuffer(rt)) {
+              ArrayBuffer buffer = opsObject.getArrayBuffer(rt);
+              bufferByteLength = buffer.size(rt);
+              bufferData = buffer.data(rt);
+              opCount = bufferByteLength / sizeof(double);
+            } else if (opsObject.isArray(rt)) {
+              Array opsPacked = opsObject.asArray(rt);
+              opCount = opsPacked.length(rt);
+              opsBuffer.resize(opCount);
+              for (size_t i = 0; i < opCount; i++) {
+                Value opVal = opsPacked.getValueAtIndex(rt, i);
+                opsBuffer[i] = opVal.isNumber() ? opVal.asNumber() : 0.0;
+              }
+            } else {
               return Value::undefined();
             }
+          }
 
-            if (!state->applyBatchTypedPacked) return Value::undefined();
-            jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
-            if (!jOps) return Value::undefined();
-            if (opCount > 0) {
-              const auto *data = reinterpret_cast<const uint8_t *>(buffer.data(rt));
-              std::vector<jdouble> opsBuffer(opCount);
-              std::memcpy(opsBuffer.data(), data, opCount * sizeof(double));
-              env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
+          // Phase 1: Native commit decode path
+          if (state->useNativeCommit) {
+            zynth::ZynthCommit &commit = state->nativeCommit;
+            {
+              zynth::ZynthPhaseTimer decodeTimer(telemetry.nativeDecodeUs);
+              if (bufferData) {
+                zynth::ZynthCommitDecoder::decodeFromBuffer(
+                    bufferData, bufferByteLength, nativeStrings, commitId, commit);
+              } else {
+                zynth::ZynthCommitDecoder::decode(
+                    opsBuffer.data(), opCount, nativeStrings, commitId, commit);
+              }
             }
-          } else if (opsObject.isArray(rt)) {
-            if (!state->applyBatchTypedPacked) return Value::undefined();
-            Array opsPacked = opsObject.asArray(rt);
-            const size_t opCount = opsPacked.length(rt);
-            jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
-            if (!jOps) return Value::undefined();
-            std::vector<jdouble> opsBuffer(opCount);
-            for (size_t i = 0; i < opCount; i++) {
-              Value opVal = opsPacked.getValueAtIndex(rt, i);
-              opsBuffer[i] = opVal.isNumber() ? opVal.asNumber() : 0.0;
+
+            // Phase 2: Apply topology changes to native state
+            state->rendererHost.applyCommitTopology(commit, telemetry);
+
+            // Phase 3: Apply layout props to Yoga tree and calculate layout
+            {
+              zynth::ZynthPhaseTimer timer(telemetry.yogaMutateUs);
+              state->yogaTree->applyLayoutMutations(commit.layoutProps);
             }
-            env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
-          } else {
+            
+            // Phase 3A: Kotlin Pre-Layout Transaction
+            // We must dispatch text and properties to Kotlin BEFORE calculating layout,
+            // because Kotlin's TextView needs the actual text and font styles to measure correctly!
+            jclass stringClass = state->stringClass;
+            if (!stringClass) {
+              jclass localStringClass = env->FindClass("java/lang/String");
+              if (localStringClass) {
+                state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
+                stringClass = state->stringClass;
+                env->DeleteLocalRef(localStringClass);
+              }
+            }
+
+            jobjectArray jStrings = nullptr;
+            if (stringClass) {
+              zynth::ZynthPhaseTimer timer(jniStringArrayBuildUs);
+              jStrings = env->NewObjectArray(
+                  static_cast<jsize>(nativeStrings.size()), stringClass, nullptr);
+              for (size_t i = 0; i < nativeStrings.size(); i++) {
+                jstring jStr = env->NewStringUTF(nativeStrings[i].c_str());
+                env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
+                env->DeleteLocalRef(jStr);
+              }
+            }
+
+            if (stringClass && state->applyMountTransaction) {
+              // Split pre-layout into TWO transactions:
+              // 1. SYNC: measurement-critical topology, text props, and measured
+              //    component props. Must complete before Yoga layout.
+              // 2. ASYNC: visual-only ops (dropNode, visual props).
+              //    Can be posted to main thread without blocking JS.
+              std::vector<double> syncOps;
+              std::vector<double> asyncOps;
+              syncOps.reserve(commit.surfaces.size() * 2 + commit.creates.size() * 4 +
+                              commit.removes.size() * 3 + commit.inserts.size() * 4 +
+                              commit.textMutations.size() * 3 +
+                              commit.textProps.size() * 5 + commit.descriptorProps.size() * 5 +
+                              commit.layoutProps.size() * 5);
+              asyncOps.reserve(commit.totalOpCount() * 5);
+              
+              // SYNC: setSurface - createNode must inherit the correct active surface
+              for (const auto& op : commit.surfaces) {
+                syncOps.push_back(8);
+                syncOps.push_back(op.surfaceId);
+              }
+              // SYNC: createNode - Kotlin must create the View before measurement
+              for (const auto& op : commit.creates) {
+                syncOps.push_back(7);
+                syncOps.push_back(op.nodeId);
+                syncOps.push_back(op.typeStringIndex);
+                syncOps.push_back(op.hasMeasure ? 1.0 : 0.0);
+              }
+              // SYNC: removeChild - text measurement reads Kotlin child topology.
+              // If removals lag behind inserts, conditional text can be composed from
+              // a mixed old/new subtree during the pre-layout Yoga measurement pass.
+              for (const auto& op : commit.removes) {
+                syncOps.push_back(4);
+                syncOps.push_back(op.parentId);
+                syncOps.push_back(op.childId);
+              }
+              // SYNC: insertChild - run after removals so Kotlin child topology matches
+              // the native renderer host before measurement and frame extraction.
+              for (const auto& op : commit.inserts) {
+                syncOps.push_back(3);
+                syncOps.push_back(op.parentId);
+                syncOps.push_back(op.childId);
+                syncOps.push_back(op.index);
+              }
+              // ASYNC: dropNode
+              for (const auto& op : commit.drops) {
+                asyncOps.push_back(5);
+                asyncOps.push_back(op.nodeId);
+              }
+              auto pushPropTo = [&](std::vector<double>& target, const zynth::ZynthPropMutation& op) {
+                target.push_back(1); // 1 = setProp
+                target.push_back(op.nodeId);
+                if (op.prop == zynth::ZynthPropId::Unknown) {
+                  target.push_back(static_cast<double>(op.keyToken));
+                } else {
+                  target.push_back(static_cast<double>(-static_cast<int32_t>(op.prop)));
+                }
+                target.push_back(static_cast<double>(op.value.kind));
+                if (op.value.kind == zynth::ZynthValueKind::Bool) {
+                  target.push_back(op.value.number);
+                } else if (op.value.kind == zynth::ZynthValueKind::String) {
+                  target.push_back(static_cast<double>(op.value.stringIndex));
+                } else {
+                  target.push_back(op.value.number);
+                }
+              };
+              
+              // ASYNC: viewProps (backgroundColor, opacity, transform, etc.)
+              for (const auto& op : commit.viewProps) {
+                pushPropTo(asyncOps, op);
+              }
+              // SYNC: textProps (fontSize, fontFamily, fontWeight - affect measurement)
+              for (const auto& op : commit.textProps) {
+                pushPropTo(syncOps, op);
+              }
+              // SYNC for measured components: TextInput value/defaultValue/multiline
+              // affect native measurement. ASYNC for visual-only descriptor props.
+              for (const auto& op : commit.descriptorProps) {
+                auto* record = state->rendererHost.getNode(op.nodeId);
+                pushPropTo(record && record->hasMeasureFunc ? syncOps : asyncOps, op);
+              }
+              
+              // ASYNC: Dual-routed layout props (display, overflow)
+              // SYNC: Dual-routed padding props (padding affects Kotlin text measurement)
+              for (const auto& op : commit.layoutProps) {
+                if (op.prop == zynth::ZynthPropId::Display || op.prop == zynth::ZynthPropId::Overflow) {
+                  pushPropTo(asyncOps, op);
+                } else if (op.prop == zynth::ZynthPropId::Padding ||
+                           op.prop == zynth::ZynthPropId::PaddingHorizontal ||
+                           op.prop == zynth::ZynthPropId::PaddingVertical ||
+                           op.prop == zynth::ZynthPropId::PaddingTop ||
+                           op.prop == zynth::ZynthPropId::PaddingRight ||
+                           op.prop == zynth::ZynthPropId::PaddingBottom ||
+                           op.prop == zynth::ZynthPropId::PaddingLeft) {
+                  pushPropTo(syncOps, op);
+                }
+              }
+              
+              // SYNC: setText - Kotlin TextView needs text content for measurement
+              for (const auto& op : commit.textMutations) {
+                syncOps.push_back(2);
+                syncOps.push_back(op.nodeId);
+                syncOps.push_back(op.textStringIndex);
+              }
+
+              // Dispatch SYNC measurement-critical ops (blocking)
+              if (!syncOps.empty()) {
+                jobject jSyncBuffer = env->NewDirectByteBuffer(
+                    syncOps.data(),
+                    static_cast<jlong>(syncOps.size() * sizeof(double)));
+                if (jSyncBuffer) {
+                  const auto syncMountStart = std::chrono::steady_clock::now();
+                  if (state->applyMountTransactionSync) {
+                    env->CallVoidMethod(state->uiManager, state->applyMountTransactionSync,
+                                        jSyncBuffer, static_cast<jint>(syncOps.size()), jStrings);
+                  } else {
+                    env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                        jSyncBuffer, static_cast<jint>(syncOps.size()), jStrings);
+                  }
+                  syncMountUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                      std::chrono::steady_clock::now() - syncMountStart).count();
+                  env->DeleteLocalRef(jSyncBuffer);
+                }
+              }
+
+              // Dispatch ASYNC visual ops after sync topology exists.
+              if (!asyncOps.empty()) {
+                jobject jAsyncBuffer = env->NewDirectByteBuffer(
+                    asyncOps.data(),
+                    static_cast<jlong>(asyncOps.size() * sizeof(double)));
+                if (jAsyncBuffer) {
+                  const auto asyncMountStart = std::chrono::steady_clock::now();
+                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                      jAsyncBuffer, static_cast<jint>(asyncOps.size()), jStrings);
+                  asyncMountUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                      std::chrono::steady_clock::now() - asyncMountStart).count();
+                  env->DeleteLocalRef(jAsyncBuffer);
+                }
+              }
+            }
+
+            // Phase 3B: Yoga Layout Calculation
+            g_currentLayoutState = state;
+            state->currentTelemetry = &telemetry;
+            state->yogaTree->calculateLayoutForDirtySurfaces(telemetry, commit);
+            state->currentTelemetry = nullptr;
+            g_currentLayoutState = nullptr;
+            recordNativeYogaTelemetry(state, telemetry);
+
+            // Phase 4: Kotlin Layout Transaction
+            if (stringClass && state->applyMountTransaction) {
+              std::vector<double> postLayoutOps;
+              postLayoutOps.reserve(commit.layoutFrames.size() * 6);
+              
+              // 6 = frame
+              for (const auto& op : commit.layoutFrames) {
+                postLayoutOps.push_back(6);
+                postLayoutOps.push_back(op.nodeId);
+                postLayoutOps.push_back(op.left);
+                postLayoutOps.push_back(op.top);
+                postLayoutOps.push_back(op.width);
+                postLayoutOps.push_back(op.height);
+              }
+
+              if (!postLayoutOps.empty()) {
+                jobject jBuffer = env->NewDirectByteBuffer(
+                    postLayoutOps.data(),
+                    static_cast<jlong>(postLayoutOps.size() * sizeof(double)));
+                if (jBuffer) {
+                  const auto postLayoutStart = std::chrono::steady_clock::now();
+                  env->CallVoidMethod(state->uiManager, state->applyMountTransaction,
+                                      jBuffer, static_cast<jint>(postLayoutOps.size()), jStrings);
+                  postLayoutMountUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                      std::chrono::steady_clock::now() - postLayoutStart).count();
+                  env->DeleteLocalRef(jBuffer);
+                }
+              }
+            }
+
+            if (state->startupTelemetryEnabled && !state->startupFirstCommitLogged) {
+              state->startupFirstCommitLogged = true;
+              __android_log_print(
+                  ANDROID_LOG_INFO,
+                  kStartupLogTag,
+                  "phase=native.firstCommit commitId=%llu opCount=%u strings=%zu payloadBytes=%zu stringExtractMs=%.3f payloadExtractMs=%.3f decodeMs=%.3f topologyMs=%.3f yogaMutateMs=%.3f stringsBuildMs=%.3f syncMountMs=%.3f yogaCalcMs=%.3f frameExtractMs=%.3f measureMs=%.3f asyncMountMs=%.3f postLayoutMountMs=%.3f layoutFrames=%zu dirtySurfaces=%u changedFrames=%u props=%zu/%zu/%zu/%zu ops=%zu/%zu/%zu/%zu/%zu",
+                  static_cast<unsigned long long>(commit.commitId),
+                  commit.totalOpCount(),
+                  nativeStrings.size(),
+                  bufferByteLength,
+                  stringExtractUs / 1000.0,
+                  payloadExtractUs / 1000.0,
+                  telemetry.nativeDecodeUs / 1000.0,
+                  telemetry.commitApplyUs / 1000.0,
+                  telemetry.yogaMutateUs / 1000.0,
+                  jniStringArrayBuildUs / 1000.0,
+                  syncMountUs / 1000.0,
+                  telemetry.yogaCalculateUs / 1000.0,
+                  telemetry.frameExtractUs / 1000.0,
+                  telemetry.measureCallbackUs / 1000.0,
+                  asyncMountUs / 1000.0,
+                  postLayoutMountUs / 1000.0,
+                  commit.layoutFrames.size(),
+                  telemetry.dirtySurfaceCount,
+                  telemetry.changedFrameCount,
+                  commit.layoutProps.size(),
+                  commit.viewProps.size(),
+                  commit.textProps.size(),
+                  commit.descriptorProps.size(),
+                  commit.creates.size(),
+                  commit.inserts.size(),
+                  commit.removes.size(),
+                  commit.drops.size(),
+                  commit.textMutations.size());
+            }
+            
+            if (jStrings) {
+              env->DeleteLocalRef(jStrings);
+            }
+
             return Value::undefined();
           }
 
-          jclass stringClass = state->stringClass;
-          if (!stringClass) {
-            jclass localStringClass = env->FindClass("java/lang/String");
-            if (!localStringClass) {
-              env->DeleteLocalRef(jOps);
-              return Value::undefined();
+          // Legacy Kotlin decode path (useNativeCommit == false)
+          {
+            jclass stringClass = state->stringClass;
+            if (!stringClass) {
+              jclass localStringClass = env->FindClass("java/lang/String");
+              if (!localStringClass) return Value::undefined();
+              stringClass = localStringClass;
+              state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
+              env->DeleteLocalRef(localStringClass);
             }
-            stringClass = localStringClass;
-            state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
-            env->DeleteLocalRef(localStringClass);
-          }
-          jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
-          for (size_t i = 0; i < stringCount; i++) {
-            Value entry = stringTable.getValueAtIndex(rt, i);
-            if (entry.isString()) {
-              std::string utf8 = entry.asString(rt).utf8(rt);
-              jstring jStr = env->NewStringUTF(utf8.c_str());
+            jobjectArray jStrings = env->NewObjectArray(
+                static_cast<jsize>(nativeStrings.size()), stringClass, nullptr);
+            for (size_t i = 0; i < nativeStrings.size(); i++) {
+              jstring jStr = env->NewStringUTF(nativeStrings[i].c_str());
               env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
               env->DeleteLocalRef(jStr);
             }
-          }
 
-          env->CallVoidMethod(state->uiManager, state->applyBatchTypedPacked, jOps, jStrings);
-          env->DeleteLocalRef(jOps);
-          env->DeleteLocalRef(jStrings);
-          return Value::undefined();
+            if (bufferData && state->applyBatchTypedBuffer) {
+              jobject jBuffer = env->NewDirectByteBuffer(
+                  const_cast<uint8_t *>(bufferData),
+                  static_cast<jlong>(bufferByteLength));
+              if (jBuffer) {
+                env->CallVoidMethod(state->uiManager, state->applyBatchTypedBuffer,
+                                    jBuffer, static_cast<jint>(opCount), jStrings);
+                env->DeleteLocalRef(jBuffer);
+              }
+            } else if (state->applyBatchTypedPacked) {
+              jdoubleArray jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
+              if (jOps) {
+                if (!opsBuffer.empty()) {
+                  env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
+                } else if (bufferData) {
+                  std::vector<jdouble> tempBuf(opCount);
+                  std::memcpy(tempBuf.data(), bufferData, opCount * sizeof(double));
+                  env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), tempBuf.data());
+                }
+                env->CallVoidMethod(state->uiManager, state->applyBatchTypedPacked,
+                                    jOps, jStrings);
+                env->DeleteLocalRef(jOps);
+              }
+            }
+            env->DeleteLocalRef(jStrings);
+            return Value::undefined();
+          }
         }
         Value opsVal = payload.getProperty(rt, "operations");
         if (!opsVal.isObject()) return Value::undefined();
@@ -1875,10 +2392,20 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           if (!typeVal.isString()) continue;
           std::string type = typeVal.asString(rt).utf8(rt);
           if (type == "createNode") {
-            Value tagVal = op.getProperty(rt, "tag");
-            if (tagVal.isString()) {
-              __android_log_print(ANDROID_LOG_WARN, "ZynthUI",
-                                  "applyBatchTyped createNode op is unsupported on Android");
+            Value idVal = op.getProperty(rt, "nodeId");
+            Value typeVal = op.getProperty(rt, "typeString");
+            Value hasMeasureVal = op.getProperty(rt, "hasMeasureFunc");
+            if (idVal.isNumber() && typeVal.isString()) {
+              jint nodeId = static_cast<jint>(idVal.asNumber());
+              std::string nodeType = typeVal.asString(rt).utf8(rt);
+              jstring jType = env->NewStringUTF(nodeType.c_str());
+              jboolean jHasMeasure = hasMeasureVal.isBool() && hasMeasureVal.getBool() ? JNI_TRUE : JNI_FALSE;
+              env->CallVoidMethod(state->uiManager, state->createNodeWithId, jType, nodeId);
+              env->DeleteLocalRef(jType);
+              if (state->useNativeCommit) {
+                state->rendererHost.createNode(
+                    nodeId, nodeType, state->rendererHost.activeSurfaceId(), jHasMeasure == JNI_TRUE);
+              }
             }
             continue;
           }
@@ -1939,7 +2466,29 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        env->CallVoidMethod(state->uiManager, state->setSurface, static_cast<jint>(args[0].asNumber()));
+        jint surfaceId = static_cast<jint>(args[0].asNumber());
+        // Phase 2: Update native renderer state
+        if (state->useNativeCommit) {
+          state->rendererHost.setActiveSurface(surfaceId);
+        }
+        env->CallVoidMethod(state->uiManager, state->setSurface, surfaceId);
+        return Value::undefined();
+      });
+
+  auto dropNode = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "dropNode"), 1,
+      [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        RuntimeState *state = stateFor(runtime);
+        if (!state) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+        jint nodeId = static_cast<jint>(args[0].asNumber());
+        if (state->useNativeCommit) {
+          state->rendererHost.dropNode(nodeId);
+        } else {
+          env->CallVoidMethod(state->uiManager, state->dropNode, nodeId);
+        }
         return Value::undefined();
       });
 
@@ -1969,6 +2518,23 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
   ui.setProperty(rt, "flush", flush);
   ui.setProperty(rt, "__supportsTypedProps", true);
   ui.setProperty(rt, "__supportsTypedBatch", true);
+  ui.setProperty(rt, "__supportsNativeCommit", true);
+
+  // Runtime toggle for native commit decode (Phase 1).
+  // Usage from JS: __ui.__setUseNativeCommit(false) to disable.
+  auto setUseNativeCommit = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__setUseNativeCommit"), 1,
+      [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        RuntimeState *state = stateFor(runtime);
+        if (!state || count < 1) return Value::undefined();
+        state->useNativeCommit = args[0].isBool() ? args[0].getBool() : true;
+        __android_log_print(ANDROID_LOG_DEBUG, "ZynthCommit",
+                            "useNativeCommit = %s",
+                            state->useNativeCommit ? "true" : "false");
+        return Value::undefined();
+      });
+  ui.setProperty(rt, "__setUseNativeCommit", setUseNativeCommit);
+
   rt.global().setProperty(rt, "__ui", ui);
 }
 
@@ -2046,6 +2612,26 @@ Java_com_zynth_kit_runtime_JSBridge_invokeAnimationFrame(JNIEnv *,
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_updateSurfaceSize(JNIEnv *, jobject, jlong ptr, jint surfaceId, jfloat width, jfloat height) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return;
+  auto state = stateFor(runtime);
+  if (!state) return;
+  state->rendererHost.registerSurface(surfaceId, width, height);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_markMeasuredNodeDirty(JNIEnv *, jobject, jlong ptr, jint nodeId) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return;
+  auto state = stateFor(runtime);
+  if (!state) return;
+  if (auto *node = state->rendererHost.getNode(nodeId)) {
+    state->rendererHost.markMeasuredNodeDirty(*node);
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_zynth_kit_runtime_JSBridge_setSharedSignal(JNIEnv *, jobject, jlong ptr, jint id, jdouble value) {
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime) return;
@@ -2084,8 +2670,20 @@ extern "C" jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_zynth_kit_runtime_JSBridge_createHermesRuntime(JNIEnv *, jobject) {
+Java_com_zynth_kit_runtime_JSBridge_createHermesRuntime(JNIEnv *env, jobject) {
+  const bool startupTelemetryEnabled = readSystemBooleanProperty(env, "ZYNTH_STARTUP_METRICS");
+  const auto start = std::chrono::steady_clock::now();
   auto runtime = facebook::hermes::makeHermesRuntime();
+  if (startupTelemetryEnabled) {
+    const double durationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kStartupLogTag,
+        "phase=native.createHermesRuntime durationMs=%.3f thread=%s",
+        durationMs,
+        "ZynthJS");
+  }
   return reinterpret_cast<jlong>(runtime.release());
 }
 
@@ -2125,17 +2723,23 @@ Java_com_zynth_kit_runtime_JSBridge_destroyHermesRuntime(JNIEnv *, jobject, jlon
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlong ptr, jobject uiManager) {
+Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlong ptr, jobject uiManager, jfloat density) {
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime || !uiManager) return;
+  const auto installStart = std::chrono::steady_clock::now();
 
   auto state = std::make_shared<RuntimeState>();
+  state->startupTelemetryEnabled = readSystemBooleanProperty(env, "ZYNTH_STARTUP_METRICS");
+  state->rendererHost.setDensity(static_cast<float>(density));
   state->runtime = runtime;
   state->uiManager = env->NewGlobalRef(uiManager);
   state->uiClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(uiManager)));
   state->createNode = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;)I");
+  state->createNodeWithId = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;I)V");
+  state->dropNode = env->GetMethodID(state->uiClass, "dropNode", "(I)V");
   state->setProp = env->GetMethodID(state->uiClass, "setProp", "(ILjava/lang/String;Ljava/lang/String;)V");
   state->setText = env->GetMethodID(state->uiClass, "setText", "(ILjava/lang/String;)V");
+  state->measureNode = env->GetMethodID(state->uiClass, "measureNode", "(IFIFI)J");
   state->syncTextInputState = env->GetMethodID(state->uiClass, "syncTextInputState", "(ILjava/lang/String;II)V");
   state->insertChild = env->GetMethodID(state->uiClass, "insertChild", "(III)V");
   state->removeChild = env->GetMethodID(state->uiClass, "removeChild", "(II)V");
@@ -2147,6 +2751,12 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       env->GetMethodID(state->uiClass, "applyBatchTypedPacked", "([D[Ljava/lang/String;)V");
   state->applyBatchTypedBuffer =
       env->GetMethodID(state->uiClass, "applyBatchTypedBuffer", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
+  state->applyMountTransaction =
+      env->GetMethodID(state->uiClass, "applyMountTransaction", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
+  state->applyMountTransactionSync =
+      env->GetMethodID(state->uiClass, "applyMountTransactionSync", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
+  state->setNativeCommitEnabled =
+      env->GetMethodID(state->uiClass, "setNativeCommitEnabled", "(Z)V");
   state->beginAtomicCommit = env->GetMethodID(state->uiClass, "beginAtomicCommit", "()V");
   state->endAtomicCommit = env->GetMethodID(state->uiClass, "endAtomicCommit", "()V");
   state->setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
@@ -2154,7 +2764,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->applyAnimatedStyle =
       env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFFFFFFF)V");
   state->applyAnimatedLayoutStyle =
-      env->GetMethodID(state->uiClass, "applyAnimatedLayoutStyle", "(IFFFFFFF)V");
+      env->GetMethodID(state->uiClass, "applyAnimatedLayoutStyle", "(IFFFFFFFFFFFFFFFFFFFFFFFFFFFF)V");
   state->scheduleTimer = env->GetMethodID(state->uiClass, "scheduleTimer", "(JIIZ)V");
   state->cancelTimer = env->GetMethodID(state->uiClass, "cancelTimer", "(I)V");
   state->scheduleAnimationFrame = env->GetMethodID(state->uiClass, "scheduleAnimationFrame", "(JI)V");
@@ -2188,15 +2798,46 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       gNativeOverlayHandleRawMethod = state->nativeOverlayHandleRaw;
     }
   }
+  jclass performanceOverlayClass = env->FindClass("com/zynth/kit/runtime/ZynthNativePerformanceOverlay");
+  if (performanceOverlayClass) {
+    state->performanceOverlayClass = static_cast<jclass>(env->NewGlobalRef(performanceOverlayClass));
+    env->DeleteLocalRef(performanceOverlayClass);
+    state->performanceOverlayRecordYoga =
+        env->GetStaticMethodID(state->performanceOverlayClass, "recordNativeYogaPass", "(DDD)V");
+  }
   jclass stringCls = env->FindClass("java/lang/String");
   if (stringCls) {
     state->stringClass = static_cast<jclass>(env->NewGlobalRef(stringCls));
     env->DeleteLocalRef(stringCls);
   }
 
+  state->rendererHost.measureFunc_ = zynthYogaMeasureFunc;
+  state->measureRegistry.setCallback([state](int32_t nodeId, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode) -> YGSize {
+    JNIEnv *env = getEnv();
+    if (!env || !state->uiManager || !state->measureNode) return {0, 0};
+    
+    jlong result = env->CallLongMethod(state->uiManager, state->measureNode,
+                                       static_cast<jint>(nodeId),
+                                       static_cast<jfloat>(width),
+                                       static_cast<jint>(widthMode),
+                                       static_cast<jfloat>(height),
+                                       static_cast<jint>(heightMode));
+                                       
+    uint32_t mwRaw = (result >> 32) & 0xFFFFFFFF;
+    uint32_t mhRaw = result & 0xFFFFFFFF;
+    float mw, mh;
+    std::memcpy(&mw, &mwRaw, sizeof(float));
+    std::memcpy(&mh, &mhRaw, sizeof(float));
+    return {mw, mh};
+  });
+
   {
     std::lock_guard<std::mutex> lock(gStateMutex);
     gStates[runtime] = state;
+  }
+  
+  if (state->setNativeCommitEnabled) {
+    env->CallVoidMethod(state->uiManager, state->setNativeCommitEnabled, state->useNativeCommit ? JNI_TRUE : JNI_FALSE);
   }
 
   installConsole(*runtime, state.get());
@@ -2216,6 +2857,16 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   runtime->global().setProperty(
       *runtime, "__ZYNTH_PLATFORM", String::createFromUtf8(*runtime, "android"));
   installJSIPlugins(*runtime, state.get());
+  if (state->startupTelemetryEnabled) {
+    const double durationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - installStart).count();
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kStartupLogTag,
+        "phase=native.installUIBindings durationMs=%.3f density=%.3f",
+        durationMs,
+        static_cast<double>(density));
+  }
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -2228,6 +2879,7 @@ Java_com_zynth_kit_runtime_JSBridge_evaluateScript(JNIEnv *env, jobject, jlong p
   const char *source = sourceUrl ? env->GetStringUTFChars(sourceUrl, nullptr) : nullptr;
   auto buffer = std::make_shared<StringBuffer>(script);
   auto state = sharedStateFor(runtime);
+  const auto evalStart = std::chrono::steady_clock::now();
   try {
     runtime->evaluateJavaScript(buffer, source ? source : "<android>");
   } catch (const facebook::jsi::JSError &error) {
@@ -2239,6 +2891,17 @@ Java_com_zynth_kit_runtime_JSBridge_evaluateScript(JNIEnv *env, jobject, jlong p
     emitDevtoolsEvent(state.get(), "error/js", "error", "js", error.what());
   } catch (...) {
     emitDevtoolsEvent(state.get(), "error/js", "error", "js", "Unknown evaluateScript failure");
+  }
+  if (state && state->startupTelemetryEnabled) {
+    const double durationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - evalStart).count();
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kStartupLogTag,
+        "phase=native.evaluateScript durationMs=%.3f source=%s bytes=%zu",
+        durationMs,
+        source ? source : "<android>",
+        script.size());
   }
   if (sourceUrl && source) env->ReleaseStringUTFChars(sourceUrl, source);
 }
@@ -2272,6 +2935,7 @@ Java_com_zynth_kit_runtime_JSBridge_loadBytecode(JNIEnv *env, jobject, jlong ptr
   
   auto buffer = std::make_shared<ZynthBytecodeBuffer>(std::move(data));
   auto state = sharedStateFor(runtime);
+  const auto loadStart = std::chrono::steady_clock::now();
   try {
     runtime->evaluateJavaScript(buffer, source ? source : "main.hbc");
   } catch (const facebook::jsi::JSError &e) {
@@ -2286,6 +2950,17 @@ Java_com_zynth_kit_runtime_JSBridge_loadBytecode(JNIEnv *env, jobject, jlong ptr
   } catch (...) {
     __android_log_print(ANDROID_LOG_ERROR, "ZynthRuntime", "Failed to load bytecode: Unknown error");
     emitDevtoolsEvent(state.get(), "error/js", "error", "js", "Unknown bytecode evaluation failure");
+  }
+  if (state && state->startupTelemetryEnabled) {
+    const double durationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - loadStart).count();
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kStartupLogTag,
+        "phase=native.loadBytecode durationMs=%.3f source=%s bytes=%d",
+        durationMs,
+        source ? source : "main.hbc",
+        static_cast<int>(len));
   }
   if (sourceUrl && source) env->ReleaseStringUTFChars(sourceUrl, source);
 }
@@ -2305,6 +2980,7 @@ Java_com_zynth_kit_runtime_JSBridge_callGlobalDouble(JNIEnv *env, jobject, jlong
   Function fn = fnVal.asObject(rt).asFunction(rt);
   Value arg(static_cast<double>(value));
   auto callFn = static_cast<Value (Function::*)(Runtime&, const Value*, size_t) const>(&Function::call);
+  const auto callStart = std::chrono::steady_clock::now();
   try {
     (fn.*callFn)(rt, &arg, 1);
   } catch (const JSError &error) {
@@ -2319,6 +2995,18 @@ Java_com_zynth_kit_runtime_JSBridge_callGlobalDouble(JNIEnv *env, jobject, jlong
   } catch (...) {
     auto state = sharedStateFor(runtime);
     emitDevtoolsEvent(state.get(), "error/js", "error", "js", "Unknown callGlobalDouble failure");
+  }
+  auto state = sharedStateFor(runtime);
+  if (state && state->startupTelemetryEnabled) {
+    const double durationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - callStart).count();
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kStartupLogTag,
+        "phase=native.callGlobalDouble durationMs=%.3f name=%s value=%.3f",
+        durationMs,
+        propName.c_str(),
+        static_cast<double>(value));
   }
 }
 
@@ -2715,9 +3403,19 @@ static void invokeLayoutEventsBatchInternal(
       dispatchEntries.push_back(std::move(entry));
     }
   }
+  
+  Runtime &rt = *runtime;
+  
+  // Suspend host batching flushes in JS to prevent 1-op fragmentation
+  try {
+    Object global = rt.global();
+    if (global.hasProperty(rt, "__setNativeBatching")) {
+      global.getPropertyAsFunction(rt, "__setNativeBatching").call(rt, true);
+    }
+  } catch (...) {}
+
   for (const auto &entry : dispatchEntries) {
     if (!entry.handler) continue;
-    Runtime &rt = *runtime;
     Object payloadObj(rt);
     Object nativeEvent(rt);
     Object layout(rt);
@@ -2739,6 +3437,15 @@ static void invokeLayoutEventsBatchInternal(
       continue;
     }
   }
+  
+  // Resume host batching
+  try {
+    Object global = rt.global();
+    if (global.hasProperty(rt, "__setNativeBatching")) {
+      global.getPropertyAsFunction(rt, "__setNativeBatching").call(rt, false);
+    }
+  } catch (...) {}
+
   env->ReleaseDoubleArrayElements(payload, data, JNI_ABORT);
 }
 
@@ -2821,6 +3528,7 @@ Java_com_zynth_kit_runtime_JSBridge_installModuleRegistry(JNIEnv *env, jobject, 
   if (!runtime || !registry) return;
   auto state = sharedStateFor(runtime);
   if (!state) return;
+  const auto installStart = std::chrono::steady_clock::now();
 
   state->moduleRegistry = env->NewGlobalRef(registry);
   jclass regClass = env->GetObjectClass(registry);
@@ -2955,4 +3663,13 @@ Java_com_zynth_kit_runtime_JSBridge_installModuleRegistry(JNIEnv *env, jobject, 
   modules.setProperty(rt, "call", callFn);
   modules.setProperty(rt, "callSync", callSyncFn);
   rt.global().setProperty(rt, "__modules", modules);
+  if (state->startupTelemetryEnabled) {
+    const double durationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - installStart).count();
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kStartupLogTag,
+        "phase=native.installModuleRegistry durationMs=%.3f",
+        durationMs);
+  }
 }

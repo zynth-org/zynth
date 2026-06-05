@@ -42,7 +42,10 @@ object FontRegistry : AssetProvider {
       return true
     }
 
-    val ctx = appContext ?: return false
+    val ctx = appContext
+    if (ctx == null) {
+      return false
+    }
 
     val normalized = resourceName.trim().removePrefix("./")
     val candidates = linkedSetOf(
@@ -67,7 +70,7 @@ object FontRegistry : AssetProvider {
         loadedFonts[fontFamily] = typeface
         loadedPaths[fontFamily] = "asset:$assetPath"
         return true
-      } catch (_: Exception) {
+      } catch (error: Exception) {
         // Try next candidate.
       }
     }

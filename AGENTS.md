@@ -30,6 +30,7 @@ BEFORE providing any code or architectural change, you MUST wrap your reasoning 
 - **No Destructuring**: NEVER destructure props in components (it breaks SolidJS reactivity).
 - **Performance First**: If an abstraction adds >1ms to frame time, it must be rejected or moved to C++.
 - **Zero External Dependencies**: Avoid adding npm packages to `zynth-core`. Use native primitives.
+- AVOID DEBUG FLAGS WHEN I REQUEST DEBUG LOGS
 </constraints>
 
 ## 🛠 Project Structure & Navigation
@@ -49,18 +50,24 @@ BEFORE providing any code or architectural change, you MUST wrap your reasoning 
 
 ```typescript
 const MyComponent = ({ label, value }) => {
-  return <Text>{label}: {value}</Text>;
-}
-
+  return (
+    <Text>
+      {label}: {value}
+    </Text>
+  );
+};
 ```
 
 ✅ **GOOD (Maintains proxy tracking):**
 
 ```typescript
 const MyComponent = (props) => {
-  return <Text>{props.label}: {props.value}</Text>;
-}
-
+  return (
+    <Text>
+      {props.label}: {props.value}
+    </Text>
+  );
+};
 ```
 
 ### 2. Communication Layer

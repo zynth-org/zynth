@@ -4,22 +4,22 @@ import android.graphics.Rect
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
-import com.zynth.kit.layout.ZynthYogaLayout
 
 private const val DEBUG_SURFACE = false
 
-internal fun ZynthUIManager.markSurfaceDirty(surfaceId: Int) {
+internal fun ZynthUIManager.markSurfaceDirty(surfaceId: Int, reason: String = "unknown") {
   runOnMain {
     ensureChoreographerInternal()
     if (!dirtySurfaces.add(surfaceId)) {
       return@runOnMain
     }
     needsLayout = true
+    noteLayoutDebug("markSurfaceDirty:$reason")
     if (DEBUG_SURFACE) {
       Log.d("ZynthUI", "markSurfaceDirty surface=$surfaceId")
     }
     if (isBatching()) {
-      markBatchNeedsLayout()
+      markBatchNeedsLayout(reason)
       return@runOnMain
     }
     if (!frameCallbackPosted) {
@@ -34,6 +34,10 @@ internal fun ZynthUIManager.markAllSurfacesDirty() {
     ensureChoreographerInternal()
     var added = 0
     for (surfaceId in surfaceRoots.keys) {
+      val root = surfaceRoots[surfaceId]
+      if (root != null) {
+        syncSurfaceRootSize(surfaceId, root, root.width, root.height)
+      }
       if (dirtySurfaces.add(surfaceId)) {
         added += 1
       }
@@ -42,6 +46,7 @@ internal fun ZynthUIManager.markAllSurfacesDirty() {
       return@runOnMain
     }
     needsLayout = true
+    noteLayoutDebug("markAllSurfacesDirty")
     if (DEBUG_SURFACE) {
       Log.d("ZynthUI", "markAllSurfacesDirty count=${surfaceRoots.size}")
     }
@@ -56,9 +61,9 @@ internal fun ZynthUIManager.markAllSurfacesDirty() {
   }
 }
 
-internal fun ZynthUIManager.markSurfaceDirtyForNode(nodeId: Int) {
+internal fun ZynthUIManager.markSurfaceDirtyForNode(nodeId: Int, reason: String = "unknown") {
   val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
-  markSurfaceDirty(surfaceId)
+  markSurfaceDirty(surfaceId, "node:$reason")
 }
 
 internal fun ZynthUIManager.syncSurfaceRootSize(
@@ -77,10 +82,20 @@ internal fun ZynthUIManager.syncSurfaceRootSize(
   val next = width to height
   if (prev == null || prev.first != width || prev.second != height) {
     surfaceSizes[surfaceId] = next
-    root.layout(0, 0, width, height)
-    val wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
-    val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
-    root.measure(wSpec, hSpec)
+    if (root !== rootView) {
+      root.layout(0, 0, width, height)
+      val wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+      val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+      root.measure(wSpec, hSpec)
+    }
+    if (runtimePtr != 0L) {
+      com.zynth.kit.runtime.JSBridge.updateSurfaceSize(
+        runtimePtr,
+        surfaceId,
+        pxToDp(width.toFloat()).toFloat(),
+        pxToDp(height.toFloat()).toFloat()
+      )
+    }
     dirtySurfaces.add(surfaceId)
   }
 }
@@ -92,7 +107,7 @@ internal fun ZynthUIManager.registerSurfaceInternal(
 ) {
   val beforeCount = surfaceRoots.size
   val existingRoot = surfaceRoots[surfaceId]
-  if (existingRoot === root && surfaceYoga.containsKey(surfaceId)) {
+  if (existingRoot === root && surfaceRoots.containsKey(surfaceId)) {
     if (owned) {
       ownedSurfaces.add(surfaceId)
     } else {
@@ -119,30 +134,15 @@ internal fun ZynthUIManager.registerSurfaceInternal(
     ZynthPointerEvents.set(root, ZynthPointerEvents.Mode.BOX_NONE)
   }
   surfaceLayoutListeners.remove(surfaceId)?.let { root.removeOnLayoutChangeListener(it) }
-  if (root !== rootView) {
-    val listener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-      if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
-        markSurfaceDirty(surfaceId)
-      }
-    }
-    root.addOnLayoutChangeListener(listener)
-    surfaceLayoutListeners[surfaceId] = listener
-  }
-  val layout = ZynthYogaLayout()
-  layout.layoutDidUpdate = { nodeId, left, top, right, bottom, changed ->
-    if (changed && styleStates.containsKey(nodeId)) {
-      styleLayoutDirtyNodes.add(nodeId)
-      styleLayoutFrames[nodeId] = Rect(left, top, right, bottom)
-    }
-    if (changed) {
-      if (layoutNodes.contains(nodeId)) {
-        layoutDirtyNodes.add(nodeId)
-      }
-      maybeStartLayoutTransition(nodeId, left, top, right, bottom)
+  val listener = View.OnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+    if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
+      syncSurfaceRootSize(surfaceId, v as ViewGroup, right - left, bottom - top)
     }
   }
-  surfaceYoga[surfaceId] = layout
-  surfaceSizes[surfaceId] = (root.width to root.height)
+  root.addOnLayoutChangeListener(listener)
+  surfaceLayoutListeners[surfaceId] = listener
+
+  syncSurfaceRootSize(surfaceId, root, root.width, root.height)
 }
 
 internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {
@@ -163,12 +163,10 @@ internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {
     destroyNode(nodeId)
     parents.remove(nodeId)
     nodes.remove(nodeId)
-    surfaceYoga[surfaceId]?.removeNode(nodeId)
   }
 
   dirtySurfaces.remove(surfaceId)
   surfaceSizes.remove(surfaceId)
-  surfaceYoga.remove(surfaceId)
   surfaceRoots.remove(surfaceId)
 
   if (ownedSurfaces.remove(surfaceId)) {
@@ -244,7 +242,7 @@ private fun ViewGroup.hasVisibleContent(): Boolean {
 }
 
 internal fun ZynthUIManager.ensureSurface(surfaceId: Int) {
-  if (surfaceRoots.containsKey(surfaceId) && surfaceYoga.containsKey(surfaceId)) return
+  if (surfaceRoots.containsKey(surfaceId)) return
   val root = if (surfaceId == 0) {
     rootView
   } else {
@@ -262,16 +260,4 @@ internal fun ZynthUIManager.ensureSurface(surfaceId: Int) {
 
 internal fun ZynthUIManager.rootViewForSurface(surfaceId: Int): ViewGroup {
   return surfaceRoots[surfaceId] ?: rootView
-}
-
-internal fun ZynthUIManager.yogaForSurface(surfaceId: Int): ZynthYogaLayout {
-  return surfaceYoga[surfaceId] ?: run {
-    ensureSurface(surfaceId)
-    surfaceYoga[surfaceId] ?: surfaceYoga.getValue(0)
-  }
-}
-
-internal fun ZynthUIManager.yogaForNode(nodeId: Int): ZynthYogaLayout {
-  val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
-  return yogaForSurface(surfaceId)
 }
