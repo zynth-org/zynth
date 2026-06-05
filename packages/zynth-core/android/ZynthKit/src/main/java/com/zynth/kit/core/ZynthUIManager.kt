@@ -29,6 +29,7 @@ import kotlin.math.roundToInt
 
 // TODO: Move this to a separate file or optimize
 private const val TRACE_TAG = "ZynthUIManager"
+private const val STARTUP_TRACE_TAG = "ZynthStartup"
 private const val DEFAULT_PERSPECTIVE = 500f
 private const val DEBUG_TEXT = false
 private const val DEBUG_TEXT_DIRTY = false
@@ -159,6 +160,10 @@ private fun resolveTypedPropName(keyToken: Int, strings: Array<String?>): String
   }
 }
 
+private fun typedPropName(propId: Int): String {
+  return resolveTypedPropName(-propId, emptyArray<String?>())
+}
+
 private const val TYPESAFE_UNKNOWN = "unknown"
 
 class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
@@ -260,9 +265,15 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   )
   private val timerEntries = HashMap<Int, TimerEntry>()
   private val animationFrameCallbacks = HashMap<Int, Choreographer.FrameCallback>()
+  private data class TypefaceCacheKey(
+    val family: String,
+    val style: Int,
+    val custom: Boolean,
+  )
   private var descriptorCacheNodeId: Int = Int.MIN_VALUE
   private var descriptorCacheType: String? = null
   private var descriptorCacheValue: ZynthComponentDescriptor? = null
+  private val typefaceCache = ConcurrentHashMap<TypefaceCacheKey, Typeface>()
   internal var jsHandler: Handler? = null
   private val mainQueue = ArrayDeque<() -> Unit>()
   private var mainQueueScheduled = false
@@ -299,6 +310,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var atomicCommitPending = false
   internal val budgetMetrics = com.zynth.kit.runtime.ZynthBudgetMetrics()
   var assetProvider: AssetProvider? = null
+  private val startupTelemetryEnabled: Boolean by lazy {
+    val raw = System.getProperty("ZYNTH_STARTUP_METRICS")?.trim() ?: return@lazy false
+    raw == "1" || raw.equals("true", ignoreCase = true) || raw.equals("yes", ignoreCase = true) || raw.equals("on", ignoreCase = true)
+  }
+  private var didLogFirstSyncMountBreakdown = false
 
   fun scheduleTimer(runtimePtr: Long, timerId: Int, delayMs: Int, repeat: Boolean) {
     val timerHandler = jsHandler ?: mainHandler
@@ -760,6 +776,85 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     maybeNotifyStyle(descriptor, node, name, value)
     traceOp("setProp", node?.type, startNs)
+  }
+
+  private fun applyTypedTextNumberProp(nodeId: Int, propId: Int, payload: Double): Boolean {
+    val view = nodes[nodeId] as? TextView ?: return false
+    val node = nodeStates[nodeId]
+    val descriptor = descriptorFor(node)
+    when (propId) {
+      58 -> {
+        val size = payload.toFloat()
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size))
+        markSurfaceDirtyForNode(nodeId, "textStyle:fontSize:typed")
+        if (descriptor != null && node != null) {
+          maybeNotifyStyle(descriptor, node, "fontSize", payload.toString())
+        }
+        return true
+      }
+      else -> return false
+    }
+  }
+
+  private fun applyCachedFontFamily(view: TextView, family: String): Boolean {
+    val style = view.typeface?.style ?: Typeface.NORMAL
+    val custom = assetProvider?.getTypeface(family)
+    if (custom != null) {
+      val key = TypefaceCacheKey(family, style, true)
+      val resolved = typefaceCache.getOrPut(key) {
+        if (family.contains("Icon")) custom else Typeface.create(custom, style)
+      }
+      view.typeface = resolved
+      view.includeFontPadding = !family.contains("Icon")
+      if (family.contains("Icon")) {
+        view.gravity = Gravity.CENTER
+      }
+      return true
+    }
+    val key = TypefaceCacheKey(family, style, false)
+    view.typeface = typefaceCache.getOrPut(key) { Typeface.create(family, style) }
+    view.includeFontPadding = true
+    return true
+  }
+
+  private fun applyTypedTextStringProp(nodeId: Int, propId: Int, value: String): Boolean {
+    val view = nodes[nodeId] as? TextView ?: return false
+    val node = nodeStates[nodeId]
+    val descriptor = descriptorFor(node)
+    when (propId) {
+      57 -> {
+        ZynthColorParser.parse(value)?.let(view::setTextColor)
+      }
+      59 -> {
+        val style = if (value == "bold" || value == "700" || value == "600") {
+          Typeface.BOLD
+        } else {
+          Typeface.NORMAL
+        }
+        view.setTypeface(view.typeface, style)
+      }
+      60 -> {
+        applyCachedFontFamily(view, value)
+        markSurfaceDirtyForNode(nodeId, "textStyle:fontFamily:typed")
+      }
+      61 -> {
+        val style = if (value == "italic") Typeface.ITALIC else Typeface.NORMAL
+        view.setTypeface(view.typeface, style)
+      }
+      62 -> {
+        view.gravity = when (value) {
+          "center" -> Gravity.CENTER_HORIZONTAL
+          "right" -> Gravity.END
+          "left" -> Gravity.START
+          else -> Gravity.START
+        }
+      }
+      else -> return false
+    }
+    if (descriptor != null && node != null) {
+      maybeNotifyStyle(descriptor, node, typedPropName(propId), value)
+    }
+    return true
   }
 
   private fun parseLayoutTransition(raw: String?): LayoutTransitionConfig? {
@@ -1485,14 +1580,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       val copiedStrings = strings.clone()
       val latch = java.util.concurrent.CountDownLatch(1)
       runOnMain { 
-        applyMountTransactionInternal(copied, opCount, copiedStrings)
+        applyMountTransactionInternal(copied, opCount, copiedStrings, source = "sync")
         releaseByteBuffer(copied)
         latch.countDown()
       }
       latch.await()
       return
     }
-    applyMountTransactionInternal(buffer, opCount, strings)
+    applyMountTransactionInternal(buffer, opCount, strings, source = "sync")
   }
 
   @androidx.annotation.Keep
@@ -1509,15 +1604,35 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       // Copy strings to prevent JNI reference corruption on background threads
       val copiedStrings = strings.clone()
       runOnMain { 
-        applyMountTransactionInternal(copied, opCount, copiedStrings)
+        applyMountTransactionInternal(copied, opCount, copiedStrings, source = "async")
         releaseByteBuffer(copied)
       }
       return
     }
-    applyMountTransactionInternal(buffer, opCount, strings)
+    applyMountTransactionInternal(buffer, opCount, strings, source = "async")
   }
 
-  private fun applyMountTransactionInternal(ops: ByteBuffer, opCount: Int, strings: Array<String?>) {
+  private fun applyMountTransactionInternal(ops: ByteBuffer, opCount: Int, strings: Array<String?>, source: String) {
+    val logStartupBreakdown = startupTelemetryEnabled && source == "sync" && !didLogFirstSyncMountBreakdown
+    val transactionStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
+    var setPropNs = 0L
+    var setTextNs = 0L
+    var insertChildNs = 0L
+    var removeChildNs = 0L
+    var dropNodeNs = 0L
+    var createNodeNs = 0L
+    var setSurfaceNs = 0L
+    var frameNs = 0L
+    var frameMeasureNs = 0L
+    var frameLayoutNs = 0L
+    var setPropCount = 0
+    var setTextCount = 0
+    var insertChildCount = 0
+    var removeChildCount = 0
+    var dropNodeCount = 0
+    var createNodeCount = 0
+    var setSurfaceCount = 0
+    var frameCount = 0
     if (!didDispatchFirstMountCommit && opCount > 0) {
       didDispatchFirstMountCommit = true
       runCatching { firstMountCommitListener?.invoke() }
@@ -1531,11 +1646,16 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         when (opcode) {
           1 -> { // setProp
             if (i + 3 >= opCount) break@opLoop
+            val opStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
             val nodeId = read(i++).toInt()
             val keyToken = read(i++).toInt()
             val valueType = read(i++).toInt()
             val payload = read(i++)
             if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
+              if (logStartupBreakdown) {
+                setPropNs += System.nanoTime() - opStartNs
+                setPropCount += 1
+              }
               continue@opLoop
             }
             val key = resolveTypedPropName(keyToken, strings)
@@ -1552,47 +1672,82 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
               }
               setProp(nodeId, key, value)
             }
+            if (logStartupBreakdown) {
+              setPropNs += System.nanoTime() - opStartNs
+              setPropCount += 1
+            }
           }
           2 -> { // setText
             if (i + 1 >= opCount) break@opLoop
+            val opStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
             val nodeId = read(i++).toInt()
             val textIndex = read(i++).toInt()
             val text = strings.getOrNull(textIndex) ?: ""
             setText(nodeId, text)
+            if (logStartupBreakdown) {
+              setTextNs += System.nanoTime() - opStartNs
+              setTextCount += 1
+            }
           }
           3 -> { // insertChild
             if (i + 2 >= opCount) break@opLoop
+            val opStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
             val parentId = read(i++).toInt()
             val childId = read(i++).toInt()
             val index = read(i++).toInt()
             insertChild(parentId, childId, index)
+            if (logStartupBreakdown) {
+              insertChildNs += System.nanoTime() - opStartNs
+              insertChildCount += 1
+            }
           }
           4 -> { // removeChild
             if (i + 1 >= opCount) break@opLoop
+            val opStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
             val parentId = read(i++).toInt()
             val childId = read(i++).toInt()
             removeChild(parentId, childId)
+            if (logStartupBreakdown) {
+              removeChildNs += System.nanoTime() - opStartNs
+              removeChildCount += 1
+            }
           }
           5 -> { // dropNode
             if (i >= opCount) break@opLoop
+            val opStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
             val nodeId = read(i++).toInt()
             dropNode(nodeId)
+            if (logStartupBreakdown) {
+              dropNodeNs += System.nanoTime() - opStartNs
+              dropNodeCount += 1
+            }
           }
           7 -> { // createNode (nodeId, typeStringIndex, hasMeasure)
             if (i + 2 >= opCount) break@opLoop
+            val opStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
             val nodeId = read(i++).toInt()
             val typeIndex = read(i++).toInt()
             val hasMeasure = read(i++) != 0.0
             val type = strings.getOrNull(typeIndex) ?: "view"
             createNode(type, nodeId)
+            if (logStartupBreakdown) {
+              createNodeNs += System.nanoTime() - opStartNs
+              createNodeCount += 1
+            }
           }
           8 -> { // setSurface (surfaceId)
             if (i >= opCount) break@opLoop
+            val opStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
             val surfaceId = read(i++).toInt()
             setSurface(surfaceId)
+            if (logStartupBreakdown) {
+              setSurfaceNs += System.nanoTime() - opStartNs
+              setSurfaceCount += 1
+            }
           }
           6 -> { // frame (nodeId, left, top, width, height)
             if (i + 4 >= opCount) break@opLoop
+            val opStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
             val nodeId = read(i++).toInt()
             val left = read(i++).toFloat()
             val top = read(i++).toFloat()
@@ -1639,15 +1794,23 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                     view.measuredHeight != frameHeight
 
                 if (needsMeasure) {
+                  val measureStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
                   if (frameWidth <= 0 || frameHeight <= 0) {
                     val parentId = parents[nodeId] ?: -1
                     val parentType = nodeStates[parentId]?.type ?: "none"
                   }
                   view.measure(widthMeasureSpec, heightMeasureSpec)
+                  if (logStartupBreakdown) {
+                    frameMeasureNs += System.nanoTime() - measureStartNs
+                  }
                 }
 
+                val layoutStartNs = if (logStartupBreakdown) System.nanoTime() else 0L
                 maybeStartLayoutTransition(nodeId, rLeft, rTop, rRight, rBottom)
                 view.layout(rLeft, rTop, rRight, rBottom)
+                if (logStartupBreakdown) {
+                  frameLayoutNs += System.nanoTime() - layoutStartNs
+                }
               }
               
               val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
@@ -1664,11 +1827,44 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                 needsLayout = true
               }
             }
+            if (logStartupBreakdown) {
+              frameNs += System.nanoTime() - opStartNs
+              frameCount += 1
+            }
           }
           else -> break@opLoop
         }
       }
     } finally {
+      if (logStartupBreakdown) {
+        didLogFirstSyncMountBreakdown = true
+        val totalMs = (System.nanoTime() - transactionStartNs) / 1_000_000.0
+        Log.i(
+          STARTUP_TRACE_TAG,
+          "phase=kotlin.firstSyncMount totalMs=%.3f opCount=%d createNodeMs=%.3f createNodeCount=%d insertChildMs=%.3f insertChildCount=%d removeChildMs=%.3f removeChildCount=%d setPropMs=%.3f setPropCount=%d setTextMs=%.3f setTextCount=%d frameMs=%.3f frameCount=%d frameMeasureMs=%.3f frameLayoutMs=%.3f setSurfaceMs=%.3f setSurfaceCount=%d dropNodeMs=%.3f dropNodeCount=%d".format(
+            totalMs,
+            opCount,
+            createNodeNs / 1_000_000.0,
+            createNodeCount,
+            insertChildNs / 1_000_000.0,
+            insertChildCount,
+            removeChildNs / 1_000_000.0,
+            removeChildCount,
+            setPropNs / 1_000_000.0,
+            setPropCount,
+            setTextNs / 1_000_000.0,
+            setTextCount,
+            frameNs / 1_000_000.0,
+            frameCount,
+            frameMeasureNs / 1_000_000.0,
+            frameLayoutNs / 1_000_000.0,
+            setSurfaceNs / 1_000_000.0,
+            setSurfaceCount,
+            dropNodeNs / 1_000_000.0,
+            dropNodeCount,
+          )
+        )
+      }
       endBatch("applyMountTransaction")
       dispatchLayoutEvents()
     }
@@ -2367,6 +2563,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     strings: Array<String?>
   ): Boolean {
     if (valueType == 1) {
+      if (applyTypedTextNumberProp(nodeId, propId, payload)) {
+        return true
+      }
       when (propId) {
         1 -> { setProp(nodeId, "width", payload); return true }
         2 -> { setProp(nodeId, "height", payload); return true }
@@ -2445,6 +2644,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     if (valueType == 2) {
       val value = strings.getOrNull(payload.toInt()) ?: return false
+      if (applyTypedTextStringProp(nodeId, propId, value)) {
+        return true
+      }
       when (propId) {
         33 -> { setProp(nodeId, "flexDirection", value); return true }
         34 -> { setProp(nodeId, "justifyContent", value); return true }

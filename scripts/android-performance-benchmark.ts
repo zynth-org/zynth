@@ -1,12 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type SuiteName = "startup" | "layout";
 
 type Options = {
   activity: string;
   branch: string;
+  buildVariant: "debug" | "release";
   iterations: number;
   layoutDumpFile: string;
   startupObserveMs: number;
@@ -14,11 +16,17 @@ type Options = {
   layoutWarmupMs: number;
   output: string;
   packageName: string;
+  prepareApp: boolean;
+  reinstallApp: boolean;
   startupDumpFile: string;
   suites: readonly SuiteName[];
 };
 
 type StartupSample = {
+  appFirstFrameToInteractiveMs: number | null;
+  appRuntimeToFirstFrameMs: number | null;
+  appStartToFirstFrameMs: number | null;
+  appStartToFirstInteractiveMs: number | null;
   branch: string;
   iteration: number;
   sampleId: string;
@@ -53,6 +61,10 @@ type NumericSummary = {
 };
 
 type StartupSummary = {
+  appFirstFrameToInteractiveMs: NumericSummary;
+  appRuntimeToFirstFrameMs: NumericSummary;
+  appStartToFirstFrameMs: NumericSummary;
+  appStartToFirstInteractiveMs: NumericSummary;
   deadlineMissCount: NumericSummary;
   frameCount: NumericSummary;
   launchThisTimeMs: NumericSummary;
@@ -104,6 +116,10 @@ type Artifact = {
 
 const STARTUP_METRICS_LOG_TAG = "ZynthStartupMetrics";
 const LAYOUT_METRICS_LOG_TAG = "ZynthLayoutMetrics";
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(SCRIPT_DIR, "..");
+const COMPONENTS_APP_DIR = resolve(REPO_ROOT, "apps/components");
+const COMPONENTS_ANDROID_DIR = resolve(COMPONENTS_APP_DIR, "android");
 const APP_STARTUP_LOG_TAGS = [
   "MainActivity",
   "ZynthStartupMetrics",
@@ -124,7 +140,10 @@ function printUsage(): void {
       "  --iterations <count>",
       "  --package <android.package>",
       "  --activity <android.package/.MainActivity>",
+      "  --build-variant <debug|release>",
       "  --suites <startup,layout>",
+      "  --prepare-app <true|false>",
+      "  --reinstall-app <true|false>",
       "  --startup-observe-ms <ms>",
       "  --layout-warmup-ms <ms>",
       "  --layout-measure-ms <ms>",
@@ -175,6 +194,7 @@ function parseArgs(argv: readonly string[]): Options {
   return {
     activity: values.get("activity") ?? "com.x64bits.zynth.components/.MainActivity",
     branch: values.get("branch") ?? "unknown-branch",
+    buildVariant: parseBuildVariant(values.get("build-variant") ?? "release"),
     iterations: parseInteger(values.get("iterations") ?? "100", "iterations"),
     layoutDumpFile: values.get("layout-dump-file") ?? "benchmarks/layout-metrics.json",
     startupObserveMs: parseInteger(values.get("startup-observe-ms") ?? "2500", "startup-observe-ms"),
@@ -182,6 +202,8 @@ function parseArgs(argv: readonly string[]): Options {
     layoutWarmupMs: parseInteger(values.get("layout-warmup-ms") ?? "3000", "layout-warmup-ms"),
     output: resolve(values.get("output") ?? defaultOutputPath(values.get("branch") ?? "unknown-branch")),
     packageName: values.get("package") ?? "com.x64bits.zynth.components",
+    prepareApp: parseBoolean(values.get("prepare-app") ?? "true", "prepare-app"),
+    reinstallApp: parseBoolean(values.get("reinstall-app") ?? "true", "reinstall-app"),
     startupDumpFile: values.get("startup-dump-file") ?? "benchmarks/startup-metrics.json",
     suites,
   };
@@ -198,6 +220,19 @@ function parseInteger(raw: string, label: string): number {
     throw new Error(`Invalid ${label}: ${raw}`);
   }
   return value;
+}
+
+function parseBoolean(raw: string, label: string): boolean {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  throw new Error(`Invalid ${label}: ${raw}. Expected true or false.`);
+}
+
+function parseBuildVariant(raw: string): "debug" | "release" {
+  if (raw === "debug" || raw === "release") {
+    return raw;
+  }
+  throw new Error(`Invalid build-variant: ${raw}. Expected debug or release.`);
 }
 
 function logStatus(message: string): void {
@@ -221,6 +256,24 @@ function runAdb(args: readonly string[], allowFailure = false): string {
     const message =
       error instanceof Error && error.message ? error.message : "adb command failed";
     throw new Error(`adb ${args.join(" ")} failed: ${message}`);
+  }
+}
+
+function runHostCommand(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+  label: string,
+): void {
+  try {
+    execFileSync(command, args, {
+      cwd,
+      stdio: "inherit",
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message ? error.message : `${command} failed`;
+    throw new Error(`${label} failed: ${message}`);
   }
 }
 
@@ -267,6 +320,42 @@ function ensureAppInstalled(options: Options): void {
       ].join("\n"),
     );
   }
+}
+
+function prepareBenchmarkApp(options: Options): void {
+  if (!options.prepareApp) {
+    return;
+  }
+
+  logStatus(
+    `[prepare] variant=${options.buildVariant} reinstall=${options.reinstallApp ? "true" : "false"}`,
+  );
+  logStatus("[prepare] building local Android bundle assets");
+  runHostCommand("yarn", ["zynth", "build", "android"], COMPONENTS_APP_DIR, "yarn zynth build android");
+
+  if (options.reinstallApp) {
+    logStatus(`[prepare] uninstalling ${options.packageName}`);
+    runAdb(["uninstall", options.packageName], true);
+  }
+
+  logStatus(`[prepare] installing ${options.buildVariant} app`);
+  const apkPath = resolve(
+    COMPONENTS_ANDROID_DIR,
+    options.buildVariant === "release"
+      ? "app/build/outputs/apk/release/app-release.apk"
+      : "app/build/outputs/apk/debug/app-debug.apk",
+  );
+
+  if (options.buildVariant === "debug") {
+    logStatus("[prepare] assembling debug APK");
+    runHostCommand("./gradlew", [":app:assembleDebug"], COMPONENTS_ANDROID_DIR, ":app:assembleDebug");
+  }
+
+  if (!existsSync(apkPath)) {
+    throw new Error(`Expected APK not found at ${apkPath}`);
+  }
+
+  runAdb(["install", "-r", apkPath]);
 }
 
 function forceStop(packageName: string): void {
@@ -562,32 +651,35 @@ function readRelevantAppLogs(packageName: string): string {
   return `No filtered logs found for ${packageName}.`;
 }
 
-function waitForStartupPayload(options: Options, timeoutMs: number): Record<string, unknown> {
+function waitForStartupPayload(
+  options: Options,
+  timeoutMs: number,
+  benchmarkScenario: string,
+  minCollectedAtEpochMs: number,
+): Record<string, unknown> | null {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const internalPayload = readStartupPayloadFromInternalDump(
       options.packageName,
       options.startupDumpFile,
     );
-    if (internalPayload) {
+    if (internalPayload && isFreshMetricsPayload(internalPayload, benchmarkScenario, minCollectedAtEpochMs)) {
       return internalPayload;
     }
     const externalPayload = readStartupPayloadFromExternalDump(
       options.packageName,
       options.startupDumpFile,
     );
-    if (externalPayload) {
+    if (externalPayload && isFreshMetricsPayload(externalPayload, benchmarkScenario, minCollectedAtEpochMs)) {
       return externalPayload;
     }
     const payload = readStartupMetricsLog();
-    if (payload) {
+    if (payload && isFreshMetricsPayload(payload, benchmarkScenario, minCollectedAtEpochMs)) {
       return payload;
     }
     sleep(100);
   }
-  throw new Error(
-    `Timed out waiting for startup metrics export at '${internalStartupDumpPath(options.startupDumpFile)}', '${externalStartupDumpPath(options.packageName, options.startupDumpFile)}', or log tag '${STARTUP_METRICS_LOG_TAG}'`,
-  );
+  return null;
 }
 
 function waitForLayoutPayload(
@@ -667,6 +759,13 @@ function readNumber(record: Record<string, unknown>, key: string): number | null
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function readNumberOrNull(record: Record<string, unknown> | null, key: string): number | null {
+  if (!record) {
+    return null;
+  }
+  return readNumber(record, key);
+}
+
 function parseLayoutPayload(payload: Record<string, unknown>): Omit<LayoutSample, "branch" | "iteration" | "sampleId"> {
   const nativeYoga =
     payload.nativeYoga && typeof payload.nativeYoga === "object"
@@ -699,14 +798,44 @@ function runStartupSuite(options: Options): { samples: StartupSample[]; summary:
   for (let iteration = 1; iteration <= options.iterations; iteration += 1) {
     logStatus(`[startup] ${iteration}/${options.iterations} launching AppHub`);
     const sampleId = `${options.branch}-startup-${iteration}`;
+    const benchmarkScenario = "startup-apphub";
     forceStop(options.packageName);
     resetGfxInfo(options.packageName);
-    const launchOutput = startActivityAndWait(options, "startup-apphub", []);
+    clearLogcat();
+    const launchStartedAtEpochMs = Date.now();
+    const launchOutput = startActivityAndWait(options, benchmarkScenario, [
+      "--ez",
+      "ZYNTH_STARTUP_METRICS",
+      "true",
+      "--es",
+      "ZYNTH_STARTUP_METRICS_DUMP_FILE",
+      options.startupDumpFile,
+    ]);
+    const startupPayload = waitForStartupPayload(
+      options,
+      options.startupObserveMs + 5000,
+      benchmarkScenario,
+      launchStartedAtEpochMs,
+    );
     sleep(options.startupObserveMs);
     const startupFrameStats = parseFrameStats(
       runAdb(["shell", "dumpsys", "gfxinfo", options.packageName, "framestats"]),
     );
     const launch = parseAmStartWaitOutput(launchOutput);
+    const startupSnapshot =
+      startupPayload?.startupTime && typeof startupPayload.startupTime === "object"
+        ? (startupPayload.startupTime as Record<string, unknown>)
+        : null;
+    const appStartToFirstFrameMs = readNumberOrNull(startupSnapshot, "startToFirstFrameMs");
+    const appRuntimeToFirstFrameMs = readNumberOrNull(startupSnapshot, "runtimeToFirstFrameMs");
+    const appFirstFrameToInteractiveMs = readNumberOrNull(
+      startupSnapshot,
+      "firstFrameToFirstInteractiveMs",
+    );
+    const appStartToFirstInteractiveMs = readNumberOrNull(
+      startupSnapshot,
+      "startToFirstInteractiveMs",
+    );
     const startupTime: Record<string, unknown> = {
       launchState: launch.launchState,
       launchThisTimeMs: launch.thisTimeMs,
@@ -722,6 +851,10 @@ function runStartupSuite(options: Options): { samples: StartupSample[]; summary:
       startupObserveMs: options.startupObserveMs,
     };
     const sample: StartupSample = {
+      appFirstFrameToInteractiveMs,
+      appRuntimeToFirstFrameMs,
+      appStartToFirstFrameMs,
+      appStartToFirstInteractiveMs,
       branch: options.branch,
       iteration,
       sampleId,
@@ -730,11 +863,20 @@ function runStartupSuite(options: Options): { samples: StartupSample[]; summary:
     samples.push(sample);
     appendJsonLine(rawPath, sample);
     logStatus(
-      `[startup] ${iteration}/${options.iterations} ThisTime=${formatMetric(launch.thisTimeMs)}ms TotalTime=${formatMetric(launch.totalTimeMs)}ms p95=${formatMetric(startupFrameStats.p95FrameMs)}ms misses=${startupFrameStats.deadlineMissCount}`,
+      `[startup] ${iteration}/${options.iterations} ThisTime=${formatMetric(launch.thisTimeMs)}ms TotalTime=${formatMetric(launch.totalTimeMs)}ms AppTTI=${formatMetric(appStartToFirstInteractiveMs)}ms p95=${formatMetric(startupFrameStats.p95FrameMs)}ms misses=${startupFrameStats.deadlineMissCount}`,
     );
+    if (!startupPayload) {
+      logStatus(
+        `[startup] ${iteration}/${options.iterations} app startup payload unavailable on this build/branch; shell launch metrics only`,
+      );
+    }
     forceStop(options.packageName);
   }
 
+  const appFirstFrameToInteractiveMs: number[] = [];
+  const appRuntimeToFirstFrameMs: number[] = [];
+  const appStartToFirstFrameMs: number[] = [];
+  const appStartToFirstInteractiveMs: number[] = [];
   const launchThisTimeMs: number[] = [];
   const launchTotalTimeMs: number[] = [];
   const launchWaitTimeMs: number[] = [];
@@ -751,6 +893,10 @@ function runStartupSuite(options: Options): { samples: StartupSample[]; summary:
     if (!startup) {
       continue;
     }
+    collectNumber(appFirstFrameToInteractiveMs, samples[index]?.appFirstFrameToInteractiveMs ?? null);
+    collectNumber(appRuntimeToFirstFrameMs, samples[index]?.appRuntimeToFirstFrameMs ?? null);
+    collectNumber(appStartToFirstFrameMs, samples[index]?.appStartToFirstFrameMs ?? null);
+    collectNumber(appStartToFirstInteractiveMs, samples[index]?.appStartToFirstInteractiveMs ?? null);
     collectNumber(launchThisTimeMs, readNumber(startup, "launchThisTimeMs"));
     collectNumber(launchTotalTimeMs, readNumber(startup, "launchTotalTimeMs"));
     collectNumber(launchWaitTimeMs, readNumber(startup, "launchWaitTimeMs"));
@@ -766,6 +912,10 @@ function runStartupSuite(options: Options): { samples: StartupSample[]; summary:
   return {
     samples,
     summary: {
+      appFirstFrameToInteractiveMs: summarizeNumbers(appFirstFrameToInteractiveMs),
+      appRuntimeToFirstFrameMs: summarizeNumbers(appRuntimeToFirstFrameMs),
+      appStartToFirstFrameMs: summarizeNumbers(appStartToFirstFrameMs),
+      appStartToFirstInteractiveMs: summarizeNumbers(appStartToFirstInteractiveMs),
       deadlineMissCount: summarizeNumbers(deadlineMissCount),
       frameCount: summarizeNumbers(frameCount),
       launchThisTimeMs: summarizeNumbers(launchThisTimeMs),
@@ -1036,9 +1186,10 @@ function printArtifactSummary(artifact: Artifact): void {
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
   ensureParentDirectory(options.output);
+  prepareBenchmarkApp(options);
   ensureAppInstalled(options);
   logStatus(
-    `[benchmark] package=${options.packageName} activity=${options.activity} output=${options.output}`,
+    `[benchmark] package=${options.packageName} activity=${options.activity} variant=${options.buildVariant} output=${options.output}`,
   );
 
   const artifact: Artifact = {

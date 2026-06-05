@@ -41,6 +41,27 @@ let disposeDevBanner: (() => void) | null = null;
 let devBannerSurfaceId: number | null = null;
 let hasStarted = false;
 
+function startupNowMs(): number {
+  return Date.now();
+}
+
+function startupTrace(kind: "phase" | "point", name: string, durationMs?: number, detail?: unknown): void {
+  const trace = (globalThis as any).__zynthStartupTrace;
+  if (typeof trace !== "function") return;
+  try {
+    trace(kind, name, typeof durationMs === "number" ? durationMs : -1, detail ?? null);
+  } catch {}
+}
+
+function startupPhase<T>(name: string, detail: Record<string, unknown> | null, block: () => T): T {
+  const startMs = startupNowMs();
+  try {
+    return block();
+  } finally {
+    startupTrace("phase", name, startupNowMs() - startMs, detail);
+  }
+}
+
 function flushDisposedNativeRoot() {
   if (Platform.OS !== OS.ANDROID) {
     return;
@@ -168,9 +189,12 @@ export function start(App: () => any): () => void {
       }
     }
     const rootId = args[0];
+    startupTrace("point", "startApp.enter", -1, { rootId });
 
     const platform = Platform.OS;
-    setHost(platform === OS.ANDROID ? createAndroidHost() : createIOSHost());
+    startupPhase("setHost", { platform }, () => {
+      setHost(platform === OS.ANDROID ? createAndroidHost() : createIOSHost());
+    });
 
     if (typeof rootId !== "number" || isNaN(rootId)) {
       console.error(`Invalid rootId received: ${rootId}`);
@@ -182,21 +206,30 @@ export function start(App: () => any): () => void {
       return;
     }
     hasStarted = true;
-    setActiveSurface(rootId);
+    startupPhase("setActiveSurface", { rootId }, () => {
+      setActiveSurface(rootId);
+    });
     if (typeof currentApp !== "function") {
       console.error("[__startApp] no app registered for rendering");
       return;
     }
 
     try {
-      withHostBatch({ kind: "start", scope: "app" }, () => {
-        disposeCurrentApp?.();
-        disposeCurrentApp = render(() => currentApp!(), {
-          id: rootId,
-          type: "root",
-        } as any);
+      startupPhase("withHostBatch", { rootId }, () => {
+        withHostBatch({ kind: "start", scope: "app" }, () => {
+          startupPhase("disposePreviousRoot", { rootId }, () => {
+            disposeCurrentApp?.();
+          });
+          startupPhase("renderRoot", { rootId }, () => {
+            disposeCurrentApp = render(() => currentApp!(), {
+              id: rootId,
+              type: "root",
+            } as any);
+          });
+        });
       });
       lastRootId = rootId;
+      startupTrace("point", "startApp.exit", -1, { rootId });
     } catch (error) {
       const msg = String((error as any)?.message || error);
       const stack = String((error as any)?.stack || "");

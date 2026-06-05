@@ -1,6 +1,7 @@
 package {{BUNDLE_ID}}
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.enableEdgeToEdge
@@ -45,6 +46,24 @@ class MainActivity : AppCompatActivity() {
       "ZYNTH_STARTUP_METRICS",
       BuildConfig.ZYNTH_STARTUP_METRICS_ENABLED,
     )
+    fun startupNowMs(): Double = SystemClock.elapsedRealtimeNanos() / 1_000_000.0
+    fun logStartupPhase(name: String, startMs: Double, endMs: Double, extra: String? = null) {
+      if (!startupMetricsEnabled) return
+      val suffix = if (extra.isNullOrBlank()) "" else " $extra"
+      Log.i(
+        "ZynthStartup",
+        "phase=$name durationMs=${"%.3f".format(kotlin.math.max(0.0, endMs - startMs))} startMs=${"%.3f".format(startMs)} endMs=${"%.3f".format(endMs)} thread=${Thread.currentThread().name}$suffix"
+      )
+    }
+    fun logStartupPoint(name: String, extra: String? = null) {
+      if (!startupMetricsEnabled) return
+      val atMs = startupNowMs()
+      val suffix = if (extra.isNullOrBlank()) "" else " $extra"
+      Log.i(
+        "ZynthStartup",
+        "point=$name atMs=${"%.3f".format(atMs)} thread=${Thread.currentThread().name}$suffix"
+      )
+    }
     var devServerUrl = launchIntent.getStringExtra("ZYNTH_DEV_SERVER_URL")
     var devServerToken = launchIntent.getStringExtra("ZYNTH_DEV_SERVER_TOKEN")
     var devtoolsUrl = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_URL")
@@ -116,6 +135,8 @@ class MainActivity : AppCompatActivity() {
     // Start loading bundle in background
     val preloadUrl = devServerUrl
     val loadThread = Thread {
+      val preloadStartMs = startupNowMs()
+      logStartupPoint("activity.bundlePreload.threadStart", "source=${if (preloadUrl.isNullOrBlank()) "assets" else "devserver"}")
       try {
         if (!preloadUrl.isNullOrBlank()) {
           val bundleUrl = URL("${preloadUrl.trimEnd('/')}/main.js")
@@ -143,10 +164,22 @@ class MainActivity : AppCompatActivity() {
         }
       } catch (e: Exception) {
         Log.e("MainActivity", "Failed to load bundle", e)
+      } finally {
+        logStartupPhase(
+          "activity.bundlePreload",
+          preloadStartMs,
+          startupNowMs(),
+          "hasBytecode=${bundleBytecode != null} hasCode=${bundleCode != null}"
+        )
       }
-    }.apply { start() }
+    }.apply {
+      name = "ZynthBundlePreload"
+      start()
+    }
 
+    logStartupPoint("activity.runtime.create.start")
     val runtime = ZynthRuntime(root)
+    logStartupPoint("activity.runtime.create.end")
     this.runtime = runtime
 {{RUNTIME_MODULE_INSTALLS}}
 
@@ -155,9 +188,18 @@ class MainActivity : AppCompatActivity() {
     if (!devServerUrl.isNullOrBlank()) {
       runtime.connectDevServer(devServerUrl, devServerToken)
     }
+    val joinStartMs = startupNowMs()
     loadThread.join()
+    logStartupPhase(
+      "activity.bundleJoin",
+      joinStartMs,
+      startupNowMs(),
+      "hasBytecode=${bundleBytecode != null} hasCode=${bundleCode != null}"
+    )
 
+    val loadInitialBundleStartMs = startupNowMs()
     runtime.loadInitialBundle(assets, preloadedCode = bundleCode, preloadedBytecode = bundleBytecode)
+    logStartupPhase("activity.loadInitialBundle", loadInitialBundleStartMs, startupNowMs())
 
     // Force a layout pass to ensure window insets are available
     root.post {
@@ -166,6 +208,7 @@ class MainActivity : AppCompatActivity() {
       }
 
       Log.i("MainActivity", "Starting runtime")
+      logStartupPoint("activity.runtime.start.posted")
       runtime.start(root.rootId)
     }
   }

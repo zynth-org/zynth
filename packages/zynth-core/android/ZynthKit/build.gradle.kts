@@ -50,7 +50,11 @@ android {
         "**/libc++_shared.so",
         "**/libhermes.so",
         "**/libhermesvm.so",
-        "**/libjsi.so",
+        "**/libjsi.so"
+      )
+      excludes += setOf(
+        // fbjni is already provided as a transitive runtime dependency.
+        // Excluding it here avoids shipping the same .so from both ZynthKit and fbjni.
         "**/libfbjni.so"
       )
     }

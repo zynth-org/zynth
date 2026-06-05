@@ -141,10 +141,15 @@ public:
       if (!YGNodeIsDirty(rootYoga) && !YGNodeGetHasNewLayout(rootYoga)) {
         continue;
       }
+
+      float rootWidthPx = YGUndefined;
+      float rootHeightPx = YGUndefined;
+      host_->getSurfaceLayoutConstraintsPx(surfaceId, rootWidthPx, rootHeightPx);
       
-      // Calculate layout — Yoga skips clean subtrees internally
+      // Surface layout is driven by Android constraints, so passing exact root
+      // bounds avoids the more expensive unconstrained root solve.
       const auto layoutStart = std::chrono::steady_clock::now();
-      YGNodeCalculateLayout(rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
+      YGNodeCalculateLayout(rootYoga, rootWidthPx, rootHeightPx, YGDirectionLTR);
       telemetry.yogaCalculateUs += std::chrono::duration_cast<std::chrono::microseconds>(
           std::chrono::steady_clock::now() - layoutStart).count();
 

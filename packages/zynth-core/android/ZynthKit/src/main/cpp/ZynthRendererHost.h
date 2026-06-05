@@ -459,6 +459,17 @@ public:
     return (it != surfaces_.end()) ? it->second.rootYoga : nullptr;
   }
 
+  bool getSurfaceLayoutConstraintsPx(int32_t surfaceId, float &widthPx, float &heightPx) const {
+    std::lock_guard<std::recursive_mutex> lock(hostMutex_);
+    auto it = surfaces_.find(surfaceId);
+    if (it == surfaces_.end()) {
+      return false;
+    }
+    widthPx = dpToPx(it->second.width);
+    heightPx = dpToPx(it->second.height);
+    return true;
+  }
+
   // ---- Layout event tracking ----
 
   /**
