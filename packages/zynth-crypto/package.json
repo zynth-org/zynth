@@ -3,13 +3,13 @@
   "version": "0.0.1-alpha.0",
   "description": "Native WebCrypto-compatible primitives for Zynth",
   "type": "module",
-  "main": "dist/esm/index.js",
-  "module": "dist/esm/index.js",
-  "types": "dist/types/index.d.ts",
+  "main": "src/index.ts",
+  "module": "src/index.ts",
+  "types": "src/index.ts",
   "exports": {
     ".": {
-      "import": "./dist/esm/index.js",
-      "types": "./dist/types/index.d.ts"
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
     },
     "./package.json": "./package.json"
   },

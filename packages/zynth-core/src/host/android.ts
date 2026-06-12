@@ -543,10 +543,6 @@ export function createAndroidHost(): Host {
           });
         }
 
-        if (meta.scope === "virtual-list-window") {
-          logVirtualListFlush(meta, batchAccumulator);
-        }
-
         (ui as any).applyBatchTyped(
           encodeTypedBatch(batchAccumulator, meta)
         );

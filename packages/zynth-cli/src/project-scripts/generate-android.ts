@@ -911,8 +911,8 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     ? "\"true\""
     : "\"false\"";
   const androidDebugOverlayBuildConfig = config.androidDebugOverlayEnabled
-    ? "true"
-    : "false";
+    ? "\"true\""
+    : "\"false\"";
   const androidMinifyEnabledBuildConfig = config.androidMinifyEnabled
     ? "true"
     : "false";

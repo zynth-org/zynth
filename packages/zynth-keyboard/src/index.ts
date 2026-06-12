@@ -40,6 +40,3 @@ export type { KeyboardStickyViewProps } from "./KeyboardStickyView";
 
 export { KeyboardAwareScrollView } from "./KeyboardAwareScrollView";
 export type { KeyboardAwareScrollViewProps } from "./KeyboardAwareScrollView";
-
-// JSX types
-import "./jsx.d.ts";

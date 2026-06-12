@@ -1,6 +1,10 @@
+require "json"
+
+package = JSON.parse(File.read(File.join(__dir__, "package.json")))
+
 Pod::Spec.new do |s|
   s.name         = "ZynthKit"
-  s.version      = "0.0.1"
+  s.version      = package["version"]
   s.summary      = "Zynth Core iOS runtime (new)"
   s.license      = { :type => "MIT" }
   s.author       = { "Zynth" => "dev@zynthstack.dev" }

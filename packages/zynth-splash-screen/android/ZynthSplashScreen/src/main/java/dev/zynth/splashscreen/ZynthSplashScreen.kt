@@ -2,6 +2,8 @@ package dev.zynth.splashscreen
 
 import android.app.Activity
 import android.graphics.drawable.Drawable
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.util.TypedValue
 import androidx.core.splashscreen.SplashScreen
@@ -16,6 +18,7 @@ object ZynthSplashScreen {
     @Volatile private var preventAutoHide: Boolean = false
     @Volatile private var contentReady: Boolean = false
     private val initializedRuntimes = WeakHashMap<ZynthRuntime, Boolean>()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var activityRef: WeakReference<Activity>? = null
     private var rootViewRef: WeakReference<android.view.View>? = null
     private var previousRootBackground: Drawable? = null
@@ -80,20 +83,32 @@ object ZynthSplashScreen {
     }
 
     private fun applySplashBackground() {
-        val color = splashBackgroundColor ?: return
-        val root = rootViewRef?.get() ?: return
-        if (previousRootBackground == null) {
-            previousRootBackground = root.background
+        runOnMain {
+            val color = splashBackgroundColor ?: return@runOnMain
+            val root = rootViewRef?.get() ?: return@runOnMain
+            if (previousRootBackground == null) {
+                previousRootBackground = root.background
+            }
+            backgroundRestored = false
+            root.setBackgroundColor(color)
         }
-        backgroundRestored = false
-        root.setBackgroundColor(color)
     }
 
     private fun restoreRootBackground() {
-        if (backgroundRestored) return
-        val root = rootViewRef?.get() ?: return
-        root.background = previousRootBackground
-        backgroundRestored = true
+        runOnMain {
+            if (backgroundRestored) return@runOnMain
+            val root = rootViewRef?.get() ?: return@runOnMain
+            root.background = previousRootBackground
+            backgroundRestored = true
+        }
+    }
+
+    private inline fun runOnMain(crossinline action: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            action()
+        } else {
+            mainHandler.post { action() }
+        }
     }
 
     private fun resolveSplashBackgroundColor(activity: Activity): Int? {

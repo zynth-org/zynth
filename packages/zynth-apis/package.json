@@ -1,6 +1,6 @@
 {
   "name": "@zynthjs/apis",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.4",
   "description": "Core native APIs for Zynth, including platform detection, dimensions, and robust custom font management with Skia support.",
   "type": "module",
   "main": "src/index.ts",
@@ -50,7 +50,7 @@
     "typescript": "^5.6.2"
   },
   "peerDependencies": {
-    "@zynthjs/core": ">=0.0.1-alpha.0",
+    "@zynthjs/core": ">=0.0.1-alpha.4",
     "solid-js": ">=1.8.0"
   },
   "scripts": {

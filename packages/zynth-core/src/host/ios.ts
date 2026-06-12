@@ -274,6 +274,7 @@ export function createIOSHost(): Host {
   };
 
   let flushScheduled = false;
+  const isNativeBatching = false;
 
   type BatchContext = {
     meta: HostBatchMeta;

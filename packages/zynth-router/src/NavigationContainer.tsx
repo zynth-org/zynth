@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, type JSX } from "solid-js";
+import { children, createSignal, createEffect, onMount, type JSX } from "solid-js";
 import { SafeAreaProvider, getInitialWindowMetrics } from "@zynthjs/apis";
 import type {
   NavigationContainerProps,
@@ -17,6 +17,7 @@ import type {
 export function NavigationContainer<
   ParamList extends RouteParamList = RouteParamList
 >(props: NavigationContainerProps<ParamList>): JSX.Element {
+  const resolvedChildren = children(() => props.children);
   // Internal state - managed by child navigators
   const [rootState, setRootState] =
     createSignal<NavigationState<ParamList> | null>(props.initialState ?? null);
@@ -48,7 +49,7 @@ export function NavigationContainer<
       }}
     >
       <SafeAreaProvider initialMetrics={getInitialWindowMetrics()}>
-        {props.children}
+        {resolvedChildren()}
       </SafeAreaProvider>
     </NavigationContainerContext.Provider>
   );

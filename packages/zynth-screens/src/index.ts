@@ -20,6 +20,3 @@ export type {
   ScreenTabBarIcon,
   ScreenTabBarOptions,
 } from "./types";
-
-// JSX types (side effect import for type augmentation)
-import "./jsx.d.ts";
