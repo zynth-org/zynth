@@ -2,3 +2,7 @@
 android/**/build/
 android/**/.cxx/
 android/**/.gradle/
+
+# Exclude precompiled Hermes binaries from the npm tarball to avoid bloating package size.
+# These will be downloaded on-demand during pod install.
+ios/hermes-engine/destroot/

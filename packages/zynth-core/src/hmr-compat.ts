@@ -73,7 +73,9 @@ function installWindowShape(): void {
     g.window && typeof g.window === "object"
       ? (g.window as Record<string, unknown>)
       : g;
-  g.window = windowObject;
+  if (g.window !== windowObject) {
+    g.window = windowObject;
+  }
 
   const base = getDevServerBase() ?? "http://localhost";
   const parsed = new URLPolyfill(base);

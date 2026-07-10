@@ -22,6 +22,7 @@
   ],
   "exports": {
     ".": {
+      "browser": "./src/index.web.ts",
       "import": "./src/index.ts",
       "types": "./src/index.ts"
     },
