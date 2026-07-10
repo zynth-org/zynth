@@ -42,6 +42,6 @@
     "solid-refresh": "^0.7.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "zynth": "0.0.1-alpha.0"
+    "zynth": "0.0.1-alpha.2"
   }
 }

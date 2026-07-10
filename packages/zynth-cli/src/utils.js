@@ -110,6 +110,18 @@ function registerTypeScriptRuntime() {
   tsRuntimeRegistered = true;
 }
 
+function isCommandAvailable(command) {
+  try {
+    const result = spawnSync(command, IS_WINDOWS ? ["/?"] : ["--version"], {
+      stdio: "ignore",
+      shell: IS_WINDOWS,
+    });
+    return !result.error || result.error.code !== "ENOENT";
+  } catch (e) {
+    return false;
+  }
+}
+
 function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     stdio: "inherit",
@@ -1909,6 +1921,33 @@ async function devIOS(root, appDir, options = {}) {
   ];
 
   if (isPhysicalDevice) {
+    if (!isCommandAvailable("ios-deploy")) {
+      console.log("\n◆ ios-deploy is required to deploy and run apps on physical iOS devices.");
+      const inquirer = (await import("inquirer")).default;
+      const answers = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "install",
+          message: "Would you like to install ios-deploy globally now?",
+          default: true,
+        },
+      ]);
+      if (answers.install) {
+        console.log("◆ Installing ios-deploy globally (npm install -g ios-deploy)...");
+        const installResult = spawnSync("npm", ["install", "-g", "ios-deploy"], {
+          stdio: "inherit",
+          shell: IS_WINDOWS,
+        });
+        if (installResult.status !== 0 || installResult.error) {
+          console.error("\n✖ Failed to install ios-deploy globally. Please try running: npm install -g ios-deploy\n");
+          process.exit(1);
+        }
+        console.log("\x1b[32m✔\x1b[0m ios-deploy installed successfully.");
+      } else {
+        console.error("✖ ios-deploy is required to deploy to a physical iOS device. Aborting.");
+        process.exit(1);
+      }
+    }
     // For physical devices, we don't need a destination if we use `ios-deploy`
     // which will find the device by its UDID. We do need to provide
     // code signing information.

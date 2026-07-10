@@ -46,9 +46,6 @@
     "ws": "^8.18.0",
     "yargs": "^17.7.2"
   },
-  "optionalDependencies": {
-    "ios-deploy": "^1.12.2"
-  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/prompts": "^2.4.9",
