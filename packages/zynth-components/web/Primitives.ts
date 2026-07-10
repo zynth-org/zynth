@@ -35,6 +35,13 @@ registerWebComponent("text", {
     element.classList.add("zynth-text");
     return element;
   },
+  updateProp: (element, key, value) => {
+    if (key === "text") {
+      element.textContent = value != null ? String(value) : "";
+      return true;
+    }
+    return false;
+  },
 });
 
 const svgComponents = [
