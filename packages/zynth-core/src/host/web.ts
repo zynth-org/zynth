@@ -102,6 +102,39 @@ function camelToKebab(str: string): string {
   return str.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
 }
 
+function normalizeTransform(transform: any): string {
+  if (typeof transform === "string") {
+    return transform;
+  }
+  if (Array.isArray(transform)) {
+    const parts = transform.map((opObj) => {
+      if (!opObj || typeof opObj !== "object") return "";
+      return Object.entries(opObj)
+        .map(([op, val]) => {
+          if (val === undefined || val === null) return "";
+          let formattedVal = String(val);
+          if (
+            typeof val === "number" &&
+            (op === "translateX" || op === "translateY" || op === "translateZ" || op === "translate")
+          ) {
+            formattedVal = `${val}px`;
+          }
+          if (
+            typeof val === "number" &&
+            (op === "rotate" || op === "rotateX" || op === "rotateY" || op === "rotateZ" || op === "skewX" || op === "skewY")
+          ) {
+            formattedVal = `${val}deg`;
+          }
+          return `${op}(${formattedVal})`;
+        })
+        .filter(Boolean)
+        .join(" ");
+    });
+    return parts.filter(Boolean).join(" ");
+  }
+  return "";
+}
+
 export function normalizeStyle(style: any): any {
   if (!style || typeof style !== "object") return style;
   if (Array.isArray(style)) {
@@ -111,6 +144,11 @@ export function normalizeStyle(style: any): any {
   for (const [key, value] of Object.entries(style)) {
     if (value === undefined || value === null) {
       next[camelToKebab(key)] = "";
+      continue;
+    }
+
+    if (key === "transform") {
+      next["transform"] = normalizeTransform(value);
       continue;
     }
 
@@ -288,6 +326,7 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
 }
 
 function emitLayout(element: HTMLElement, callback: (payload: any) => void) {
+  if (!element.isConnected) return;
   const rect = element.getBoundingClientRect();
   callback({
     nativeEvent: {
@@ -299,6 +338,42 @@ function emitLayout(element: HTMLElement, callback: (payload: any) => void) {
       },
     },
   });
+}
+
+const EASING_TO_CSS: Record<string, string> = {
+  linear: "linear",
+  ease: "ease",
+  easeIn: "ease-in",
+  easeOut: "ease-out",
+  easeInOut: "ease-in-out",
+  easeOutCubic: "cubic-bezier(0.215, 0.610, 0.355, 1)",
+};
+
+function setLayoutTransition(element: HTMLElement, value: any) {
+  if (value && typeof value === "object") {
+    const duration = value.duration ?? 300;
+    const delay = value.delay ?? 0;
+    const easingName = value.easing ?? "easeOutCubic";
+    const easing = EASING_TO_CSS[easingName] ?? "cubic-bezier(0.215, 0.610, 0.355, 1)";
+    
+    const transitionProps = [
+      "width", "height", 
+      "padding-left", "padding-right", "padding-top", "padding-bottom",
+      "margin-left", "margin-right", "margin-top", "margin-bottom",
+      "left", "top", "right", "bottom",
+      "flex", "flex-basis", 
+      "background-color", "border-radius"
+    ];
+    const transitionValue = transitionProps
+      .map((prop) => `${prop} ${duration}ms ${easing} ${delay}ms`)
+      .join(", ");
+    
+    element.style.transition = transitionValue;
+    element.setAttribute("layout", JSON.stringify(value));
+  } else {
+    element.style.transition = "";
+    element.removeAttribute("layout");
+  }
 }
 
 function setLayoutHandler(element: HTMLElement, handler?: (payload: any) => void) {
@@ -403,6 +478,8 @@ export function createWebHost(): Host {
 
           if (key === "onLayout" && typeof value === "function") {
             setLayoutHandler(element as HTMLElement, value as any);
+          } else if (key === "layout") {
+            setLayoutTransition(element as HTMLElement, value);
           } else if (key.startsWith("on") && typeof value === "function") {
             const eventName = key.toLowerCase().replace(/^on/, "");
             if (eventName === "press") {
@@ -462,6 +539,8 @@ export function createWebHost(): Host {
         applyStyle(element as HTMLElement, value);
       } else if (name === "onLayout") {
         setLayoutHandler(element as HTMLElement, value as any);
+      } else if (name === "layout") {
+        setLayoutTransition(element as HTMLElement, value);
       } else if (name.startsWith("on") && typeof value === "function") {
         const eventName = name.toLowerCase().replace(/^on/, "");
         if (eventName === "press") {
