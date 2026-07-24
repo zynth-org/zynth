@@ -9,7 +9,7 @@ import {
 import { platform } from "@zynthjs/apis";
 import type { ParentComponent } from "solid-js";
 import type { HostNode, Style, StyleProp } from "@zynthjs/core";
-import { scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynthjs/core";
+import { effect,  scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynthjs/core";
 import { View } from "./View";
 import type { LayoutChangeEvent } from "./View";
 
@@ -545,89 +545,74 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     }
   );
 
+  const applyScrollViewProps = (node: HostNode) => {
+    setProperty(node, "horizontal", axis() === "horizontal");
+    setProperty(node, "scrollEnabled", resolvedScrollEnabled());
+    setProperty(node, "directionalLockEnabled", resolvedDirectionalLock());
+    setProperty(node, "eventThrottleMs", resolvedThrottle());
+    setProperty(node, "eventMinDisplacementPx", resolvedMinDisplacement());
+    setProperty(node, "bridgeCoalescing", resolvedBridgeCoalescing());
+    setProperty(node, "overScrollBehavior", resolvedOverScrollBehavior());
+    setProperty(node, "scrollGuardConfig", local.config ?? null);
+
+    if (local.scrollSnapType !== undefined) {
+      setProperty(node, "scrollSnapType", local.scrollSnapType ?? "none");
+    }
+    if (local.scrollSnapAlign !== undefined) {
+      setProperty(node, "scrollSnapAlign", local.scrollSnapAlign ?? null);
+    }
+    if (local.scrollSnapStop !== undefined) {
+      setProperty(node, "scrollSnapStop", local.scrollSnapStop ?? null);
+    }
+    if (local.scrollPadding !== undefined) {
+      setProperty(node, "scrollPadding", local.scrollPadding ?? null);
+    }
+
+    setProperty(node, "style", scrollViewStyle() as any);
+    if (local.showsVerticalScrollIndicator !== undefined) {
+      setProperty(node, "showsVerticalScrollIndicator", local.showsVerticalScrollIndicator);
+    }
+    if (local.showsHorizontalScrollIndicator !== undefined) {
+      setProperty(node, "showsHorizontalScrollIndicator", local.showsHorizontalScrollIndicator);
+    }
+    if (local.indicatorStyle) {
+      setProperty(node, "indicatorStyle", local.indicatorStyle);
+    }
+    if (local.contentSize) {
+      setProperty(node, "contentSize", local.contentSize);
+    }
+    if (local.testID) {
+      setProperty(node, "testID", local.testID);
+    }
+    if (local.inverted !== undefined) {
+      setProperty(node, "inverted", local.inverted);
+    }
+    if (local.decelerationRate !== undefined) {
+      setProperty(node, "decelerationRate", local.decelerationRate);
+    }
+    if (local.contentOffsetSharedValue !== undefined) {
+      setProperty(node, "contentOffsetSharedValue", local.contentOffsetSharedValue);
+    }
+
+    setProperty(node, "onScroll", handleScroll);
+    setProperty(node, "onScrollBeginDrag", handleScrollBeginDrag);
+    setProperty(node, "onScrollEndDrag", handleScrollEndDrag);
+    setProperty(node, "onMomentumScrollBegin", handleMomentumScrollBegin);
+    setProperty(node, "onMomentumScrollEnd", handleMomentumScrollEnd);
+    setProperty(node, "onLayout", handleLayout);
+  };
+
   createEffect(
     () => ({
-      node: hostNode(),
       ax: axis(),
       scrollEn: resolvedScrollEnabled(),
-      lock: resolvedDirectionalLock(),
-      throt: resolvedThrottle(),
-      disp: resolvedMinDisplacement(),
-      coalesce: resolvedBridgeCoalescing(),
-      over: resolvedOverScrollBehavior(),
-      cfg: local.config ?? null,
-      snapType: local.scrollSnapType,
-      snapAlign: local.scrollSnapAlign,
-      snapStop: local.scrollSnapStop,
-      padding: local.scrollPadding,
       st: scrollViewStyle() as any,
-      vInd: local.showsVerticalScrollIndicator,
-      hInd: local.showsHorizontalScrollIndicator,
-      indSt: local.indicatorStyle,
-      cSize: local.contentSize,
-      testId: local.testID,
-      inv: local.inverted,
-      decel: local.decelerationRate,
-      offsetSv: local.contentOffsetSharedValue,
     }),
-    (cfg) => {
-      const { node } = cfg;
-      if (!node) return;
-
-      setProperty(node, "horizontal", cfg.ax === "horizontal");
-      setProperty(node, "scrollEnabled", cfg.scrollEn);
-      setProperty(node, "directionalLockEnabled", cfg.lock);
-      setProperty(node, "eventThrottleMs", cfg.throt);
-      setProperty(node, "eventMinDisplacementPx", cfg.disp);
-      setProperty(node, "bridgeCoalescing", cfg.coalesce);
-      setProperty(node, "overScrollBehavior", cfg.over);
-      setProperty(node, "scrollGuardConfig", cfg.cfg);
-
-      if (cfg.snapType !== undefined) {
-        setProperty(node, "scrollSnapType", cfg.snapType ?? "none");
+    () => {
+      const node = hostNode();
+      if (node) {
+        applyScrollViewProps(node);
       }
-      if (cfg.snapAlign !== undefined) {
-        setProperty(node, "scrollSnapAlign", cfg.snapAlign ?? null);
-      }
-      if (cfg.snapStop !== undefined) {
-        setProperty(node, "scrollSnapStop", cfg.snapStop ?? null);
-      }
-      if (cfg.padding !== undefined) {
-        setProperty(node, "scrollPadding", cfg.padding ?? null);
-      }
-
-      setProperty(node, "style", cfg.st);
-      if (cfg.vInd !== undefined) {
-        setProperty(node, "showsVerticalScrollIndicator", cfg.vInd);
-      }
-      if (cfg.hInd !== undefined) {
-        setProperty(node, "showsHorizontalScrollIndicator", cfg.hInd);
-      }
-      if (cfg.indSt) {
-        setProperty(node, "indicatorStyle", cfg.indSt);
-      }
-      if (cfg.cSize) {
-        setProperty(node, "contentSize", cfg.cSize);
-      }
-      if (cfg.testId) {
-        setProperty(node, "testID", cfg.testId);
-      }
-      if (cfg.inv !== undefined) {
-        setProperty(node, "inverted", cfg.inv);
-      }
-      if (cfg.decel !== undefined) {
-        setProperty(node, "decelerationRate", cfg.decel);
-      }
-      if (cfg.offsetSv !== undefined) {
-        setProperty(node, "contentOffsetSharedValue", cfg.offsetSv);
-      }
-
-      setProperty(node, "onScroll", handleScroll);
-      setProperty(node, "onScrollBeginDrag", handleScrollBeginDrag);
-      setProperty(node, "onScrollEndDrag", handleScrollEndDrag);
-      setProperty(node, "onMomentumScrollBegin", handleMomentumScrollBegin);
-      setProperty(node, "onMomentumScrollEnd", handleMomentumScrollEnd);
-      setProperty(node, "onLayout", handleLayout);
     }
   );
 
@@ -713,8 +698,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
       <recycler-scroll-view
         ref={(node: any) => {
           const host = (node as unknown as HostNode) ?? null;
-          setHostNode(host);
           if (host) {
+            applyScrollViewProps(host);
+            setHostNode(host);
             const imperativeNode = host as HostNode & ScrollViewRef;
             imperativeNode.metrics = imperativeRef.metrics;
             imperativeNode.isDragging = imperativeRef.isDragging;
@@ -727,12 +713,13 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
               imperativeRef.flashScrollIndicators;
             imperativeNode.getMetricsNow = imperativeRef.getMetricsNow;
             imperativeNode.lockAxis = imperativeRef.lockAxis;
+            if (local.testID != null) setProperty(host, "testID", local.testID);
             assignRef(imperativeNode);
             return;
           }
+          setHostNode(null);
           assignRef(null);
         }}
-        testID={local.testID}
       >
         <View style={containerStyle()}>{resolvedChildren()}</View>
       </recycler-scroll-view>
@@ -743,8 +730,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     <scroll-view
       ref={(node: any) => {
         const host = (node as unknown as HostNode) ?? null;
-        setHostNode(host);
         if (host) {
+          applyScrollViewProps(host);
+          setHostNode(host);
           const imperativeNode = host as HostNode & ScrollViewRef;
           imperativeNode.metrics = imperativeRef.metrics;
           imperativeNode.isDragging = imperativeRef.isDragging;
@@ -757,12 +745,13 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
             imperativeRef.flashScrollIndicators;
           imperativeNode.getMetricsNow = imperativeRef.getMetricsNow;
           imperativeNode.lockAxis = imperativeRef.lockAxis;
+          if (local.testID != null) setProperty(host, "testID", local.testID);
           assignRef(imperativeNode);
           return;
         }
+        setHostNode(null);
         assignRef(null);
       }}
-      testID={local.testID}
     >
       <View style={containerStyle()}>{resolvedChildren()}</View>
     </scroll-view>

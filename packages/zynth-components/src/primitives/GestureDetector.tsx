@@ -1,7 +1,7 @@
 import type { HostNode, StyleProp } from "@zynthjs/core";
-import { setProperty } from "@zynthjs/core";
+import { effect,  setProperty } from "@zynthjs/core";
 import {
-  createEffect,
+  
   createMemo,
   createSignal,
   getOwner,
@@ -277,6 +277,23 @@ export const GestureDetector: ParentComponent<GestureDetectorProps> = (props) =>
   });
 
   const refProp = (node: HostNode | null) => {
+    if (node) {
+      if (!hasStyleAccessor()) {
+        setProperty(node, "style", resolvedStyle() as unknown as StyleProp);
+      }
+      if (local.pointerEvents != null) setProperty(node, "pointerEvents", local.pointerEvents);
+      if (local.panSharedSignalX != null) setProperty(node, "panSharedSignalX", local.panSharedSignalX);
+      if (local.panSharedSignalY != null) setProperty(node, "panSharedSignalY", local.panSharedSignalY);
+      if (local.testID != null) setProperty(node, "testID", local.testID);
+      setProperty(node, "longPressMinDurationMs", longPressMinDurationMs());
+      setProperty(node, "flingMinVelocity", flingMinVelocity());
+      setProperty(node, "onTapGesture", handleTapGesture);
+      setProperty(node, "onLongPressGesture", handleLongPressGesture);
+      setProperty(node, "onRotationGesture", handleRotationGesture);
+      setProperty(node, "onPinchGesture", handlePinchGesture);
+      setProperty(node, "onFlingGesture", handleFlingGesture);
+      setProperty(node, "onPanGesture", handlePanGesture);
+    }
     setHostNode(node);
     (local.ref ?? noopRef)(node);
   };
@@ -285,13 +302,13 @@ export const GestureDetector: ParentComponent<GestureDetectorProps> = (props) =>
     (local.ref ?? noopRef)(null);
   });
 
-  createEffect(
+  effect(
     () => ({ node: hostNode(), hasAcc: hasStyleAccessor(), st: resolvedStyle() }),
     ({ node, hasAcc, st }) => {
       if (!node || !hasAcc) return;
       setProperty(node, "style", st);
     }
-  );
+  , { scope: true });
 
   const handleTapGesture = (event: unknown) => {
     const normalized = normalizeTapEvent(event);
@@ -321,23 +338,6 @@ export const GestureDetector: ParentComponent<GestureDetectorProps> = (props) =>
   return (
     <zynth-gesture-detector
       ref={refProp}
-      style={
-        (hasStyleAccessor()
-          ? undefined
-          : (resolvedStyle() as unknown as StyleProp)) as unknown as StyleProp
-      }
-      pointerEvents={local.pointerEvents}
-      panSharedSignalX={local.panSharedSignalX}
-      panSharedSignalY={local.panSharedSignalY}
-      testID={local.testID}
-      longPressMinDurationMs={longPressMinDurationMs()}
-      flingMinVelocity={flingMinVelocity()}
-      onTapGesture={handleTapGesture}
-      onLongPressGesture={handleLongPressGesture}
-      onRotationGesture={handleRotationGesture}
-      onPinchGesture={handlePinchGesture}
-      onFlingGesture={handleFlingGesture}
-      onPanGesture={handlePanGesture}
     >
       {local.children}
     </zynth-gesture-detector>

@@ -8,9 +8,10 @@ import {
   runWithOwner,
   untrack,
 } from "solid-js";
+import { flush } from "@solidjs/signals";
 import type { ParentComponent, Element as SolidElement } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
-import { setProperty } from "@zynthjs/core";
+import { effect,  setProperty } from "@zynthjs/core";
 import { Text } from "./Text";
 import { View } from "./View";
 import { ProgressIndicator } from "./ProgressIndicator";
@@ -283,10 +284,14 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     ...args: Parameters<T>
   ): ReturnType<T> | undefined => {
     if (!callback) return undefined;
+    let res: ReturnType<T> | undefined;
     if (owner) {
-      return runWithOwner(owner, () => callback(...args));
+      res = runWithOwner(owner, () => callback(...args));
+    } else {
+      res = callback(...args);
     }
-    return callback(...args);
+    flush();
+    return res;
   };
 
   const local = props;
@@ -534,6 +539,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   });
 
   const runPressHandler = () => {
+    console.log("[Button:DEBUG] runPressHandler called! onPress=", !!local.onPress);
     if (!local.onPress) return;
     if (resolvedDisabled()) return;
 
@@ -549,6 +555,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   };
 
   const handlePress = () => {
+    console.log("[Button:DEBUG] handlePress triggered from native!");
     if (resolvedDisabled()) return;
 
     const behavior = pressBehavior();
@@ -611,140 +618,121 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     callWithOwner(local.onKeyUp, { key });
   };
 
+  const applyButtonProps = (node: HostNode) => {
+    let effectiveVariant = resolvedVariant();
+    if (effectiveVariant === "solid") effectiveVariant = "filled" as any;
+    else if (effectiveVariant === "outline") effectiveVariant = "outlined" as any;
+    else if (effectiveVariant === "ghost") effectiveVariant = "text" as any;
+    else if (effectiveVariant === "link") effectiveVariant = "text" as any;
+
+    let effectiveRole = "normal";
+    if (resolvedTone() === "danger") {
+      effectiveRole = "destructive";
+    }
+
+    const glass = !!local.enableGlassIOS;
+    const shouldUseBackgroundBase = glass || resolvedVariant() === "solid";
+    const st = resolvedButtonStyle() as Style | undefined;
+    const styleBaseColor = shouldUseBackgroundBase
+      ? resolveStyleBackgroundColor(st)
+      : undefined;
+    const color =
+      local.baseColor ??
+      styleBaseColor ??
+      (resolvedTone() === "danger" ? toneColorMap[resolvedTone() as Tone] : undefined);
+
+    const styleToPass = st ? { ...st } : undefined;
+    if (shouldUseBackgroundBase && styleBaseColor && styleToPass) {
+      delete styleToPass.backgroundColor;
+    }
+
+    setProperty(node, "style", styleToPass);
+    setProperty(node, "type", resolvedType());
+    setProperty(node, "disabled", resolvedDisabled());
+    setProperty(node, "loading", computedLoading());
+    setProperty(node, "variant", effectiveVariant);
+    setProperty(node, "role", effectiveRole);
+    if (color) setProperty(node, "baseColor", color);
+    if (useNativeTitle()) {
+      setProperty(node, "title", titleContent());
+    }
+
+    setProperty(node, "tone", resolvedTone());
+    setProperty(node, "iconOnly", local.iconOnly ?? false);
+
+    let nativeSize: any = resolvedSize();
+    switch (resolvedSize()) {
+      case "xs":
+        nativeSize = "mini" as any;
+        break;
+      case "sm":
+        nativeSize = "small" as any;
+        break;
+      case "lg":
+      case "xl":
+        nativeSize = "large" as any;
+        break;
+      default:
+        nativeSize = "medium" as any;
+        break;
+    }
+    setProperty(node, "size", nativeSize);
+    setProperty(node, "fullWidth", local.fullWidth ?? false);
+    setProperty(node, "rounded", resolvedRounded() ?? null);
+    setProperty(node, "elevation", resolvedElevation());
+    setProperty(node, "pressEffect", resolvedPressEffect());
+    setProperty(node, "pressRetentionOffset", local.pressRetentionOffset);
+    setProperty(node, "hitSlop", resolvedHitSlop());
+    setProperty(node, "minimumTouchSize", resolvedMinimumTouch());
+    setProperty(node, "enableGlassIOS", glass);
+    setProperty(node, "tintColor", local.tintColor);
+    setProperty(node, "preventFocusOnPress", local.preventFocusOnPress ?? false);
+    setProperty(node, "loadingPlacement", resolvedLoadingPlacement());
+    setProperty(node, "loadingIndicator", false);
+    setProperty(node, "loadingAriaLabel", local.loadingAriaLabel);
+    setProperty(node, "haptics", local.haptics ?? "none");
+    setProperty(node, "labelStyle", local.labelStyle);
+    setProperty(node, "iconStyle", local.iconStyle);
+    setProperty(node, "pressedStyle", local.pressedStyle);
+    setProperty(node, "disabledStyle", local.disabledStyle);
+    setProperty(node, "loadingStyle", local.loadingStyle);
+    setProperty(node, "accessibilityLabel", resolvedAccessibilityLabel());
+    setProperty(node, "accessibilityHint", local.accessibilityHint);
+    setProperty(node, "testID", local.testID);
+    setProperty(node, "onPressIn", handlePressIn);
+    setProperty(node, "onPressOut", handlePressOut);
+    setProperty(node, "onPress", handlePress);
+    setProperty(node, "onLongPress", (payload: { durationMs: number }) => {
+      handleLongPress(payload?.durationMs ?? 0);
+    });
+    setProperty(node, "onFocus", handleFocus);
+    setProperty(node, "onBlur", handleBlur);
+    setProperty(node, "onKeyDown", (payload: { key: string }) => {
+      handleKeyDown(payload?.key ?? "");
+    });
+    setProperty(node, "onKeyUp", (payload: { key: string }) => {
+      handleKeyUp(payload?.key ?? "");
+    });
+    setProperty(node, "ready", local.ready ?? true);
+  };
+
   createEffect(
     () => ({
-      node: hostNode(),
       variant: resolvedVariant(),
       tone: resolvedTone(),
-      style: resolvedButtonStyle() as Style | undefined,
-      glass: !!local.enableGlassIOS,
-      baseColorProp: local.baseColor,
-      type: resolvedType(),
+      style: resolvedButtonStyle(),
       disabled: resolvedDisabled(),
       loading: computedLoading(),
-      useTitle: useNativeTitle(),
-      title: titleContent(),
-      iconOnly: local.iconOnly ?? false,
+      type: resolvedType(),
       size: resolvedSize(),
-      fullWidth: local.fullWidth ?? false,
-      rounded: resolvedRounded() ?? null,
-      elevation: resolvedElevation(),
-      pressEffect: resolvedPressEffect(),
-      retention: local.pressRetentionOffset,
-      slop: resolvedHitSlop(),
-      minTouch: resolvedMinimumTouch(),
-      tint: local.tintColor,
-      preventFocus: local.preventFocusOnPress ?? false,
-      loadingPlacement: resolvedLoadingPlacement(),
-      loadingAriaLabel: local.loadingAriaLabel,
-      haptics: local.haptics ?? "none",
-      labelStyle: local.labelStyle,
-      iconStyle: local.iconStyle,
-      pressedStyle: local.pressedStyle,
-      disabledStyle: local.disabledStyle,
-      loadingStyle: local.loadingStyle,
       accLabel: resolvedAccessibilityLabel(),
-      accHint: local.accessibilityHint,
-      testID: local.testID,
-      isReady: local.ready ?? true,
+      ready: local.ready,
     }),
-    (cfg) => {
-      const { node } = cfg;
-      if (!node) return;
-
-      let effectiveVariant = cfg.variant;
-      if (effectiveVariant === "solid") effectiveVariant = "filled" as any;
-      else if (effectiveVariant === "outline") effectiveVariant = "outlined" as any;
-      else if (effectiveVariant === "ghost") effectiveVariant = "text" as any;
-      else if (effectiveVariant === "link") effectiveVariant = "text" as any;
-
-      let effectiveRole = "normal";
-      if (cfg.tone === "danger") {
-        effectiveRole = "destructive";
+    () => {
+      const node = hostNode();
+      if (node) {
+        applyButtonProps(node);
       }
-
-      const shouldUseBackgroundBase = cfg.glass || cfg.variant === "solid";
-      const styleBaseColor = shouldUseBackgroundBase
-        ? resolveStyleBackgroundColor(cfg.style)
-        : undefined;
-      const color =
-        cfg.baseColorProp ??
-        styleBaseColor ??
-        (cfg.tone === "danger" ? toneColorMap[cfg.tone as Tone] : undefined);
-
-      const styleToPass = cfg.style ? { ...cfg.style } : undefined;
-      if (shouldUseBackgroundBase && styleBaseColor && styleToPass) {
-        delete styleToPass.backgroundColor;
-      }
-
-      setProperty(node, "style", styleToPass);
-      setProperty(node, "type", cfg.type);
-      setProperty(node, "disabled", cfg.disabled);
-      setProperty(node, "loading", cfg.loading);
-      setProperty(node, "variant", effectiveVariant);
-      setProperty(node, "role", effectiveRole);
-      if (color) setProperty(node, "baseColor", color);
-      if (cfg.useTitle) {
-        setProperty(node, "title", cfg.title);
-      }
-
-      setProperty(node, "tone", cfg.tone);
-      setProperty(node, "iconOnly", cfg.iconOnly);
-
-      let nativeSize: any = cfg.size;
-      switch (cfg.size) {
-        case "xs":
-          nativeSize = "mini" as any;
-          break;
-        case "sm":
-          nativeSize = "small" as any;
-          break;
-        case "lg":
-        case "xl":
-          nativeSize = "large" as any;
-          break;
-        default:
-          nativeSize = "medium" as any;
-          break;
-      }
-      setProperty(node, "size", nativeSize);
-      setProperty(node, "fullWidth", cfg.fullWidth);
-      setProperty(node, "rounded", cfg.rounded);
-      setProperty(node, "elevation", cfg.elevation);
-      setProperty(node, "pressEffect", cfg.pressEffect);
-      setProperty(node, "pressRetentionOffset", cfg.retention);
-      setProperty(node, "hitSlop", cfg.slop);
-      setProperty(node, "minimumTouchSize", cfg.minTouch);
-      setProperty(node, "enableGlassIOS", cfg.glass);
-      setProperty(node, "tintColor", cfg.tint);
-      setProperty(node, "preventFocusOnPress", cfg.preventFocus);
-      setProperty(node, "loadingPlacement", cfg.loadingPlacement);
-      setProperty(node, "loadingIndicator", false);
-      setProperty(node, "loadingAriaLabel", cfg.loadingAriaLabel);
-      setProperty(node, "haptics", cfg.haptics);
-      setProperty(node, "labelStyle", cfg.labelStyle);
-      setProperty(node, "iconStyle", cfg.iconStyle);
-      setProperty(node, "pressedStyle", cfg.pressedStyle);
-      setProperty(node, "disabledStyle", cfg.disabledStyle);
-      setProperty(node, "loadingStyle", cfg.loadingStyle);
-      setProperty(node, "accessibilityLabel", cfg.accLabel);
-      setProperty(node, "accessibilityHint", cfg.accHint);
-      setProperty(node, "testID", cfg.testID);
-      setProperty(node, "onPressIn", handlePressIn);
-      setProperty(node, "onPressOut", handlePressOut);
-      setProperty(node, "onPress", handlePress);
-      setProperty(node, "onLongPress", (payload: { durationMs: number }) => {
-        handleLongPress(payload?.durationMs ?? 0);
-      });
-      setProperty(node, "onFocus", handleFocus);
-      setProperty(node, "onBlur", handleBlur);
-      setProperty(node, "onKeyDown", (payload: { key: string }) => {
-        handleKeyDown(payload?.key ?? "");
-      });
-      setProperty(node, "onKeyUp", (payload: { key: string }) => {
-        handleKeyUp(payload?.key ?? "");
-      });
-      setProperty(node, "ready", cfg.isReady);
     }
   );
 
@@ -818,8 +806,9 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     <button
       ref={(node: any) => {
         const host = (node as unknown as HostNode) ?? null;
-        setHostNode(host);
         if (host) {
+          applyButtonProps(host);
+          setHostNode(host);
           const imperativeNode = host as HostNode & ButtonRef;
           imperativeNode.pressed = controller.pressed;
           imperativeNode.focused = controller.focused;
@@ -831,12 +820,12 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
           imperativeNode.click = controller.click;
           imperativeNode.setLoading = controller.setLoading;
           imperativeNode.setDisabled = controller.setDisabled;
+          if (local.testID != null) setProperty(host, "testID", local.testID);
           local.ref?.(imperativeNode);
           return;
         }
         local.ref?.(null);
       }}
-      testID={local.testID}
     >
       {shouldUseContentWrapper() ? (
         <View style={contentStyle()}>

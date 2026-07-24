@@ -1,11 +1,13 @@
 import { createEffect, createSignal, onCleanup, untrack, type Component } from "solid-js";
 import { platform } from "@zynthjs/apis";
 import type {
+  HostNode,
   Style,
   ImageAssetSource as CoreImageAssetSource,
   ImageUriSource as CoreImageUriSource,
   ImageAssetDescriptor,
 } from "@zynthjs/core";
+import { effect,  setProperty } from "@zynthjs/core";
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 
@@ -52,11 +54,12 @@ export interface ImageProps {
   onError?: (event: ImageErrorEvent) => void;
 }
 
-export type ImageElementProps = ImageProps & { children?: never };
+export type ImageElementProps = Partial<ImageProps> & { children?: never; ref?: (node: HostNode | null) => void };
 
 export const Image: Component<ImageProps> = (props) => {
   const [currentSourceIndex, setCurrentSourceIndex] = createSignal(0);
   const [devServerReadyTick, setDevServerReadyTick] = createSignal(0);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
 
   const sources = () => {
     const src = props.source;
@@ -168,15 +171,41 @@ export const Image: Component<ImageProps> = (props) => {
     }
   );
 
+  const refProp = (node: HostNode | null) => {
+    if (node) {
+      if (props.style != null) setProperty(node, "style", props.style);
+      setProperty(node, "source", normalizedSource());
+      if (props.resizeMode != null) setProperty(node, "resizeMode", props.resizeMode);
+      if (props.tintColor != null) setProperty(node, "tintColor", props.tintColor);
+      setProperty(node, "onLoad", handleLoad);
+      setProperty(node, "onError", handleError);
+    }
+    setHostNode(node);
+  };
+
+  effect(
+    () => ({
+      node: hostNode(),
+      src: normalizedSource(),
+      style: props.style,
+      resizeMode: props.resizeMode,
+      tintColor: props.tintColor,
+    }),
+    ({ node, src, style, resizeMode, tintColor }) => {
+      if (!node) return;
+      if (style != null) setProperty(node, "style", style);
+      setProperty(node, "source", src);
+      if (resizeMode != null) setProperty(node, "resizeMode", resizeMode);
+      if (tintColor != null) setProperty(node, "tintColor", tintColor);
+    }
+  , { scope: true });
+
+  onCleanup(() => {
+    setHostNode(null);
+  });
+
   return (
-    <image
-      style={props.style as any}
-      source={normalizedSource()}
-      resizeMode={props.resizeMode}
-      tintColor={props.tintColor}
-      onLoad={handleLoad}
-      onError={handleError}
-    />
+    <image ref={refProp} />
   );
 };
 

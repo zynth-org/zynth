@@ -190,24 +190,22 @@ const PopoverRoot: ParentComponent<PopoverProps> = (props) => {
     imperativeNode.dismiss = () => {
       issueCommand(node, { type: "dismiss", __ts: Date.now() });
     };
+    if (props.style != null) setProperty(node, "style", props.style);
+    if (props.onOpen != null) setProperty(node, "onOpen", props.onOpen);
+    if (props.onClose != null) setProperty(node, "onClose", props.onClose);
+    setProperty(node, "surfaceColor", resolvedSurfaceColor());
+    setProperty(node, "cornerRadius", resolvedCornerRadius());
+    setProperty(node, "elevation", resolvedElevation());
+    if (props.dismissOnOutsidePress != null) setProperty(node, "dismissOnOutsidePress", props.dismissOnOutsidePress);
+    if (props.offsetX != null) setProperty(node, "offsetX", props.offsetX);
+    if (props.offsetY != null) setProperty(node, "offsetY", props.offsetY);
+    if (props.showArrow != null) setProperty(node, "showArrow", props.showArrow);
+    if (props.testID != null) setProperty(node, "testID", props.testID);
     props.ref?.(imperativeNode);
   };
 
   return (
-    <popover-view
-      ref={attachRef}
-      style={props.style}
-      onOpen={props.onOpen}
-      onClose={props.onClose}
-      surfaceColor={resolvedSurfaceColor()}
-      cornerRadius={resolvedCornerRadius()}
-      elevation={resolvedElevation()}
-      dismissOnOutsidePress={props.dismissOnOutsidePress}
-      offsetX={props.offsetX}
-      offsetY={props.offsetY}
-      showArrow={props.showArrow}
-      testID={props.testID}
-    >
+    <popover-view ref={attachRef}>
       {props.children}
     </popover-view>
   );

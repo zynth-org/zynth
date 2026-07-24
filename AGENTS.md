@@ -92,6 +92,62 @@ global.__ZynthStorage.set("key", "value");
 - **Prefer** `createMemo` for expensive calculations that depend on signals.
 - **Avoid** `JSON.stringify` in the bridge; use typed arrays or JSI buffers.
 
+### 4. SolidJS 2.0 Universal Primitives (Host Element Binding)
+
+❌ **BAD (Breaks in Solid 2.0 Universal/SSR):**
+
+Passing dynamic signal accessors as inline attributes on intrinsic JSX tags (`<view>`, `<text>`):
+
+```tsx
+// ❌ Inline attribute expressions generate @solidjs/universal attribute effects
+// which clash with server/universal observer contexts throwing "Cannot read property 'e' of undefined"
+<view style={resolvedStyle()} layout={resolvedLayout()} testID={local.testID}>
+  {props.children}
+</view>
+```
+
+```tsx
+// ❌ 1-argument createEffect is deprecated and returns 'never' in SolidJS 2.0
+createEffect(() => {
+  doWork(signal());
+});
+```
+
+✅ **GOOD (Solid 2.0 Universal Compliant & Zero Latency):**
+
+1. Apply initial properties **synchronously** in `refProp` when the `HostNode` is created.
+2. Use **2-argument `createEffect`** (`createEffect(compute, effect)`) for imperative reactive updates.
+3. Keep intrinsic elements clean: `<view ref={refProp}>{props.children}</view>`.
+
+```tsx
+const refProp = (node: HostNode | null) => {
+  if (node) {
+    const st = resolvedStyle();
+    if (st != null) setProperty(node, "style", st);
+    const lay = resolvedLayout();
+    if (lay != null) setProperty(node, "layout", lay);
+  }
+  setHostNode(node);
+  (props.ref ?? noopRef)(node);
+};
+
+// 2-argument createEffect signature required in SolidJS 2.0
+createEffect(
+  () => ({ node: hostNode(), st: resolvedStyle(), lay: resolvedLayout() }),
+  ({ node, st, lay }) => {
+    if (!node) return;
+    if (st != null) setProperty(node, "style", st);
+    if (lay != null) setProperty(node, "layout", lay);
+  }
+);
+
+return (
+  <view ref={refProp}>
+    {props.children}
+  </view>
+);
+```
+
 ---
 
 ## 🚫 Non-Negotiable "NEVER" Rules
@@ -100,6 +156,7 @@ global.__ZynthStorage.set("key", "value");
 2. **NEVER** write platform-specific code (if/else iOS/Android) inside `zynth-ui`. Abstract it in `zynth-core`.
 3. **NEVER** reference `apps/**` from `packages/**`.
 4. **NEVER** use `console.log` in production-path code. Use `ZynthLogger.debug()` or `ZynthLogger.trace()`.
+5. **NEVER** pass inline dynamic signal expressions as attributes on intrinsic JSX tags (`<view>`, `<text>`). Apply initial props synchronously in `refProp` and update imperatively via 2-argument `createEffect`.
 
 ---
 

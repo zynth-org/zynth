@@ -195,6 +195,15 @@ export function createZynthRsbuildPlugin(
           );
         }
 
+        if (solidPaths?.core) {
+          config.plugins?.push(
+            new rspack.NormalModuleReplacementPlugin(
+              /solid-js[\\/]dist[\\/]server\.(js|cjs)$/,
+              solidPaths.core,
+            ),
+          );
+        }
+
         for (const replacement of exactModuleReplacements) {
           config.plugins?.push(
             new rspack.NormalModuleReplacementPlugin(
@@ -318,7 +327,7 @@ function ensureResolveCondition(
   const base =
     existing && existing.length > 0
       ? existing
-      : ["import", "module", "browser", "default"];
+      : ["browser", "import", "module", "default"];
   if (!base.includes(condition)) {
     config.resolve.conditionNames = [...base, condition];
   }
@@ -364,6 +373,10 @@ function configureModuleResolution(config: rspack.Configuration) {
     resolve: {
       fullySpecified: false,
     },
+  });
+  config.module.rules.push({
+    test: /[\\/]node_modules[\\/](solid-js|@solidjs[\\/].*)[\\/]/,
+    sideEffects: true,
   });
 }
 
@@ -713,9 +726,9 @@ function resolveSolidPaths(roots: string[], isDev?: boolean): SolidPaths {
 
 function createSolidAliases(paths: SolidPaths): Record<string, string> {
   const aliases: Record<string, string> = {};
-  if (paths.packageRoot) {
-    aliases["solid-js$"] = paths.core ?? paths.packageRoot;
-    // Do NOT alias the root prefix "solid-js" as it breaks condition resolution for sub-packages
+  if (paths.packageRoot && paths.core) {
+    aliases["solid-js$"] = paths.core;
+    aliases["solid-js"] = paths.core;
   }
   if (paths.web) {
     aliases["solid-js/web$"] = paths.web;

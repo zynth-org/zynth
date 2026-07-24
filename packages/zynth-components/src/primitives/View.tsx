@@ -10,7 +10,7 @@ import {
 } from "solid-js";
 import type { ParentComponent } from "solid-js";
 import type { HostNode, Style, StyleProp } from "@zynthjs/core";
-import { setProperty, sharedNativeEventEmitter } from "@zynthjs/core";
+import { effect,  setProperty, sharedNativeEventEmitter } from "@zynthjs/core";
 import {
   isNativePlatform,
   resolveEntryExitAnimation,
@@ -175,7 +175,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
   );
 
   let prevStyleRef: Style | (Style | undefined | null)[] | undefined = undefined;
-  createEffect(
+  effect(
     () => ({
       node: hostNode(),
       currentStyle: resolvedStyle(),
@@ -227,7 +227,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
       if (cfg.tint !== undefined) setProperty(node, "tintColor", cfg.tint);
       if (cfg.testID !== undefined) setProperty(node, "testID", cfg.testID);
     }
-  );
+  , { scope: true });
 
   // ─── JS-thread animation helpers ───────────────────────────────────────────
   const stopJsAnimation = (): void => {
@@ -351,7 +351,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
   });
 
   // ─── Layout transition setup ───────────────────────────────────────────────
-  createEffect(
+  effect(
     () => ({ isNat: isNative, node: hostNode(), layout: local.layout }),
     ({ isNat, node, layout }) => {
       if (!isNat || !node || !layout) return;
@@ -359,7 +359,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
       if (!config) return;
       setProperty(node, "__layoutTransition", JSON.stringify(config));
     }
-  );
+  , { scope: true });
 
   // ─── Native onLayout listener ──────────────────────────────────────────────
   createEffect(
@@ -457,6 +457,11 @@ export const View: ParentComponent<ViewProps> = (props) => {
       if (st != null) setProperty(node, "style", st);
       const lay = resolvedLayout();
       if (lay != null) setProperty(node, "layout", lay);
+      const press = appliedOnPress();
+      if (press != null) setProperty(node, "onPress", press);
+      if (local.testID != null) setProperty(node, "testID", local.testID);
+      if (local.pointerEvents != null) setProperty(node, "pointerEvents", local.pointerEvents);
+      if (local.accessibilityLabel != null) setProperty(node, "accessibilityLabel", local.accessibilityLabel);
     }
     setHostNode(node);
     (local.ref ?? noopRef)(node);

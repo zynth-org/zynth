@@ -1,5 +1,6 @@
-import { type Component } from "solid-js";
-import type { Style } from "@zynthjs/core";
+import {  createSignal, onCleanup, type Component } from "solid-js";
+import type { HostNode, Style } from "@zynthjs/core";
+import { effect,  setProperty } from "@zynthjs/core";
 
 export interface SwitchProps {
   /** Whether the switch is on. Controlled. */
@@ -33,17 +34,47 @@ export const Switch: Component<SwitchProps> = (props) => {
     local.onValueChange?.(next);
   };
 
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
+
+  const refProp = (node: HostNode | null) => {
+    if (node) {
+      setProperty(node, "value", local.value ?? false);
+      if (local.onValueChange) setProperty(node, "onValueChange", (value: boolean) => handleValueChange(value));
+      setProperty(node, "disabled", local.disabled ?? false);
+      if (local.trackColor != null) setProperty(node, "trackColor", local.trackColor);
+      if (local.thumbColor != null) setProperty(node, "thumbColor", local.thumbColor);
+      if (local.style != null) setProperty(node, "style", local.style);
+      if (local.testID != null) setProperty(node, "testID", local.testID);
+    }
+    setHostNode(node);
+  };
+
+  effect(
+    () => ({
+      node: hostNode(),
+      value: local.value ?? false,
+      disabled: local.disabled ?? false,
+      trackColor: local.trackColor,
+      thumbColor: local.thumbColor,
+      style: local.style,
+      testID: local.testID,
+    }),
+    ({ node, value, disabled, trackColor, thumbColor, style, testID }) => {
+      if (!node) return;
+      setProperty(node, "value", value);
+      setProperty(node, "disabled", disabled);
+      if (trackColor != null) setProperty(node, "trackColor", trackColor);
+      if (thumbColor != null) setProperty(node, "thumbColor", thumbColor);
+      if (style != null) setProperty(node, "style", style);
+      if (testID != null) setProperty(node, "testID", testID);
+    }
+  , { scope: true });
+
+  onCleanup(() => {
+    setHostNode(null);
+  });
+
   return (
-    <switch-view
-      value={local.value ?? false}
-      onValueChange={
-        local.onValueChange ? ((value: boolean) => handleValueChange(value)) : undefined
-      }
-      disabled={local.disabled ?? false}
-      trackColor={local.trackColor}
-      thumbColor={local.thumbColor}
-      style={local.style}
-      testID={local.testID}
-    />
+    <switch-view ref={refProp} />
   );
 };

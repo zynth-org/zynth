@@ -113,7 +113,11 @@ export const render: (
     }
   };
 };
-export const effect = r.effect;
+export const effect = r.effect as <T>(
+  fn: (prev?: T) => T,
+  effect: (value: T, prev?: T) => void,
+  options?: { scope?: boolean; [key: string]: any }
+) => void;
 
 export function withHostBatch<T>(meta: HostBatchMeta, fn: () => T): T {
   const h = host;
@@ -128,37 +132,35 @@ export function withHostBatch<T>(meta: HostBatchMeta, fn: () => T): T {
   }
 }
 
-import { ZynthLogger } from "./logger";
-
 export const createElement = (type: any, props?: any) => {
-  const node = r.createElement(type, props);
-  ZynthLogger.debug("Renderer", `createElement type=${type} node=${node?.id}`);
+  const node = H().createNode(type);
   return node;
 };
 
 export const createTextNode = (text: any) => {
-  const node = r.createTextNode(text);
-  ZynthLogger.debug("Renderer", `createTextNode text="${text}" node=${node?.id}`);
+  const node = H().createNode("text");
+  if (text != null) {
+    H().setProperty(node, "text", String(text));
+  }
   return node;
 };
 
 export function replaceText(n: any, v: any) {
-  ZynthLogger.debug("Renderer", `replaceText node=${n?.id} value="${v}"`);
-  return H().setText(n, v);
+  return H().setProperty(n, "text", String(v));
 }
 
 export function setProperty(n: any, k: any, v: any) {
-  ZynthLogger.debug("Renderer", `setProperty node=${n?.id} prop=${k}`, v);
+  if (!n) {
+    return;
+  }
   return H().setProperty(n, k, v);
 }
 
 export function insertNode(p: any, n: any, a?: any) {
-  ZynthLogger.debug("Renderer", `insertNode parent=${p?.id} child=${n?.id}`);
   return H().insertNode(p, n, a ?? null);
 }
 
 export function removeNode(p: any, n: any) {
-  ZynthLogger.debug("Renderer", `removeNode parent=${p?.id} child=${n?.id}`);
   return H().removeNode(p, n);
 }
 export function flush() {

@@ -1,12 +1,12 @@
 import {
   createSignal,
-  createEffect,
+  
   createMemo,
   onCleanup,
   type Component,
 } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
-import { setProperty } from "@zynthjs/core";
+import { effect,  setProperty } from "@zynthjs/core";
 
 export type KeyboardType = "default" | "numeric" | "email" | "phone" | "url";
 export type ReturnKeyType = "done" | "go" | "next" | "search" | "send";
@@ -156,16 +156,16 @@ export const TextField: Component<TextFieldProps> = (props) => {
     local.onBlur?.();
   };
 
-  createEffect(
+  effect(
     () => ({ node: hostNode(), val: local.value }),
     ({ node, val }) => {
       if (!node || val === undefined) return;
       setText(val);
       setProperty(node, "value", val);
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => hostNode(),
     (node) => {
       if (!node) return;
@@ -173,16 +173,16 @@ export const TextField: Component<TextFieldProps> = (props) => {
       setProperty(node, "onFocus", handleFocus);
       setProperty(node, "onBlur", handleBlur);
     }
-  );
+  , { scope: true });
 
   const syncProp = (name: string, value: () => unknown) => {
-    createEffect(
+    effect(
       () => ({ node: hostNode(), val: value() }),
       ({ node, val }) => {
         if (!node) return;
         setProperty(node, name, val);
       }
-    );
+    , { scope: true });
   };
 
   syncProp("placeholder", () => local.placeholder ?? "");
@@ -246,11 +246,11 @@ export const TextField: Component<TextFieldProps> = (props) => {
           imperativeNode.setText("");
         };
         imperativeNode.isFocused = focused;
+        if (local.defaultValue != null) setProperty(node, "defaultValue", local.defaultValue);
+        if (filteredStyle() != null) setProperty(node, "style", filteredStyle());
+        if (local.testID != null) setProperty(node, "testID", local.testID);
         assignRef(imperativeNode);
       }}
-      defaultValue={local.defaultValue}
-      style={filteredStyle()}
-      testID={local.testID}
     />
   );
 };

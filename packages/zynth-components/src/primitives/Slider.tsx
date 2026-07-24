@@ -1,5 +1,6 @@
-import { type Component } from "solid-js";
-import type { Style } from "@zynthjs/core";
+import {  createSignal, onCleanup, type Component } from "solid-js";
+import type { HostNode, Style } from "@zynthjs/core";
+import { effect,  setProperty } from "@zynthjs/core";
 
 export interface SliderProps {
   /** Controlled value of the slider. */
@@ -76,26 +77,60 @@ export const Slider: Component<SliderProps> = (props) => {
       handler?.(nextRounded);
     };
 
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
+
+  const refProp = (node: HostNode | null) => {
+    if (node) {
+      setProperty(node, "value", local.value ?? local.defaultValue ?? 0);
+      setProperty(node, "minimumValue", local.minimumValue ?? 0);
+      setProperty(node, "maximumValue", local.maximumValue ?? 1);
+      setProperty(node, "step", local.step ?? 0);
+      setProperty(node, "disabled", local.disabled ?? false);
+      if (local.minimumTrackTintColor != null) setProperty(node, "minimumTrackTintColor", local.minimumTrackTintColor);
+      if (local.maximumTrackTintColor != null) setProperty(node, "maximumTrackTintColor", local.maximumTrackTintColor);
+      if (local.thumbTintColor != null) setProperty(node, "thumbTintColor", local.thumbTintColor);
+      if (local.onValueChange) setProperty(node, "onValueChange", wrapHandler(local.onValueChange));
+      if (local.onSlidingComplete) setProperty(node, "onSlidingComplete", wrapHandler(local.onSlidingComplete));
+      if (local.style != null) setProperty(node, "style", local.style);
+      if (local.testID != null) setProperty(node, "testID", local.testID);
+    }
+    setHostNode(node);
+  };
+
+  effect(
+    () => ({
+      node: hostNode(),
+      value: local.value ?? local.defaultValue ?? 0,
+      minimumValue: local.minimumValue ?? 0,
+      maximumValue: local.maximumValue ?? 1,
+      step: local.step ?? 0,
+      disabled: local.disabled ?? false,
+      minimumTrackTintColor: local.minimumTrackTintColor,
+      maximumTrackTintColor: local.maximumTrackTintColor,
+      thumbTintColor: local.thumbTintColor,
+      style: local.style,
+      testID: local.testID,
+    }),
+    ({ node, value, minimumValue, maximumValue, step, disabled, minimumTrackTintColor, maximumTrackTintColor, thumbTintColor, style, testID }) => {
+      if (!node) return;
+      setProperty(node, "value", value);
+      setProperty(node, "minimumValue", minimumValue);
+      setProperty(node, "maximumValue", maximumValue);
+      setProperty(node, "step", step);
+      setProperty(node, "disabled", disabled);
+      if (minimumTrackTintColor != null) setProperty(node, "minimumTrackTintColor", minimumTrackTintColor);
+      if (maximumTrackTintColor != null) setProperty(node, "maximumTrackTintColor", maximumTrackTintColor);
+      if (thumbTintColor != null) setProperty(node, "thumbTintColor", thumbTintColor);
+      if (style != null) setProperty(node, "style", style);
+      if (testID != null) setProperty(node, "testID", testID);
+    }
+  , { scope: true });
+
+  onCleanup(() => {
+    setHostNode(null);
+  });
+
   return (
-    <slider-view
-      value={local.value ?? local.defaultValue ?? 0}
-      minimumValue={local.minimumValue ?? 0}
-      maximumValue={local.maximumValue ?? 1}
-      step={local.step ?? 0}
-      disabled={local.disabled ?? false}
-      minimumTrackTintColor={local.minimumTrackTintColor}
-      maximumTrackTintColor={local.maximumTrackTintColor}
-      thumbTintColor={local.thumbTintColor}
-      onValueChange={
-        local.onValueChange ? wrapHandler(local.onValueChange) : undefined
-      }
-      onSlidingComplete={
-        local.onSlidingComplete
-          ? wrapHandler(local.onSlidingComplete)
-          : undefined
-      }
-      style={local.style}
-      testID={local.testID}
-    />
+    <slider-view ref={refProp} />
   );
 };

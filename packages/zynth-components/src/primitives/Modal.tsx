@@ -7,7 +7,7 @@ import {
   type Element as SolidElement,
 } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
-import { setProperty } from "@zynthjs/core";
+import { effect,  setProperty } from "@zynthjs/core";
 import { viewport } from "@zynthjs/apis";
 import { View } from "./View";
 
@@ -135,6 +135,7 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
       const imperativeNode = node as HostNode & ModalRef;
       imperativeNode.open = () => sendCommand(node, { type: "show" });
       imperativeNode.dismiss = () => sendCommand(node, { type: "dismiss" });
+      setProperty(node, "style", modalStyle());
       local.ref?.(imperativeNode);
     } else {
       local.ref?.(null);
@@ -144,7 +145,7 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
     }
   };
 
-  createEffect(
+  effect(
     () => ({
       st: modalStyle(),
       anim: resolvedAnimation(),
@@ -168,9 +169,9 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
       }
       setProperty(host, "open", cfg.openState);
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => host,
     (h) => {
       if (!h) return;
@@ -194,10 +195,10 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
         local.onOpenChange?.(next);
       });
     }
-  );
+  , { scope: true });
 
   return (
-    <zynth-modal ref={attachHost} style={modalStyle()}>
+    <zynth-modal ref={attachHost}>
       <View style={contentWrapperStyle()} pointerEvents="box-none">
         {local.children}
       </View>

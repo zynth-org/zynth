@@ -12,6 +12,7 @@ import {
   stopNativeTransition,
   type NativeTransitionConfig,
 } from "../animation/native";
+import { flush } from "@solidjs/signals";
 import { ZynthLogger } from "../logger";
 
 export function createAndroidHost(): Host {
@@ -99,11 +100,22 @@ export function createAndroidHost(): Host {
     queue.push({ type: "batch", op });
   };
 
-  const maybeCallNativeHandler = (nodeId: number, name: string, handler: Function) => {
+  const maybeCallNativeHandler = (
+    nodeId: number,
+    name: string,
+    handler: Function
+  ) => {
+    const wrappedHandler = (...args: any[]) => {
+      try {
+        return handler(...args);
+      } finally {
+        flush();
+      }
+    };
     if (isSuppressed()) {
-      enqueueOperation(() => ui.setHandler(nodeId, name, handler));
+      enqueueOperation(() => ui.setHandler(nodeId, name, wrappedHandler));
     } else {
-      ui.setHandler(nodeId, name, handler);
+      ui.setHandler(nodeId, name, wrappedHandler);
     }
   };
 
@@ -503,11 +515,14 @@ export function createAndroidHost(): Host {
   const runFlush = () => {
     if (batchStack.length > 0 || isNativeBatching || isSuppressed()) {
       if (isNativeBatching || isSuppressed()) flushScheduled = true;
-      return; 
+      return;
     }
     flushScheduled = false;
 
-    if ((globalThis as any).__ZYNTH_HMR_DEBUG && (queue.length > 0 || pendingRemovals.size > 0)) {
+    if (
+      (globalThis as any).__ZYNTH_HMR_DEBUG &&
+      (queue.length > 0 || pendingRemovals.size > 0)
+    ) {
       console.log("[HOST-ANDROID] runFlush", {
         queue: queue.length,
         removals: pendingRemovals.size,
@@ -540,13 +555,11 @@ export function createAndroidHost(): Host {
         if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
           console.log("[HOST-ANDROID] applyBatch", {
             ops: batchAccumulator.length,
-            meta: { kind: meta.kind, scope: meta.scope, extras: meta.extras }
+            meta: { kind: meta.kind, scope: meta.scope, extras: meta.extras },
           });
         }
 
-        (ui as any).applyBatchTyped(
-          encodeTypedBatch(batchAccumulator, meta)
-        );
+        (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator, meta));
         batchAccumulator = [];
         currentMeta = null;
       };
@@ -936,7 +949,6 @@ export function createAndroidHost(): Host {
         id = ui.createNode(type, hasMeasureFunc);
       }
       const node = { id, type } as HostNode;
-      ZynthLogger.debug("Host:Android", `createElement type=${type} id=${id}`);
       if (registry && !recycled) registry.register(node, id);
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
@@ -1229,13 +1241,18 @@ export function createAndroidHost(): Host {
 
       if (batchStack.length === 0) {
         if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
-          console.log("[HOST-ANDROID] beginBatch: flushing pending before start");
+          console.log(
+            "[HOST-ANDROID] beginBatch: flushing pending before start"
+          );
         }
         runFlush();
       }
 
       if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
-        console.log("[HOST-ANDROID] beginBatch", { kind, scope: normalizedMeta.scope });
+        console.log("[HOST-ANDROID] beginBatch", {
+          kind,
+          scope: normalizedMeta.scope,
+        });
       }
       batchStack.push({ meta: normalizedMeta, operations: [] });
     },
@@ -1251,9 +1268,9 @@ export function createAndroidHost(): Host {
         };
       }
       if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
-        console.log("[HOST-ANDROID] endBatch", { 
-          kind: context.meta.kind, 
-          ops: context.operations.length, 
+        console.log("[HOST-ANDROID] endBatch", {
+          kind: context.meta.kind,
+          ops: context.operations.length,
         });
       }
       if (batchStack.length) {
@@ -1272,7 +1289,9 @@ export function createAndroidHost(): Host {
       // If syncFrame is requested, flush immediately to avoid flickering
       if (context.meta.extras?.syncFrame) {
         if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
-          console.log("[HOST-ANDROID] endBatch: syncFrame requested, flushing now");
+          console.log(
+            "[HOST-ANDROID] endBatch: syncFrame requested, flushing now"
+          );
         }
         runFlush();
       } else {

@@ -7,7 +7,7 @@ import {
   type ParentComponent,
 } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
-import {
+import { effect, 
   getActiveSurface,
   render,
   setActiveSurface,
@@ -367,6 +367,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
         sendCommand(node, { type: "collapse" });
       };
       imperativeNode.getCurrentIndex = () => currentIndex;
+      setProperty(node, "style", sheetStyle());
       local.ref?.(imperativeNode);
       return;
     }
@@ -377,7 +378,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     local.ref?.(null);
   });
 
-  createEffect(
+  effect(
     () => ({
       host: hostNode(),
       st: sheetStyle(),
@@ -422,9 +423,9 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
         setLastSentOpen(cfg.nextOpen);
       }
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => hostNode(),
     (host) => {
       if (!host) return;
@@ -470,10 +471,10 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
         local.onOpenChange?.(next);
       });
     }
-  );
+  , { scope: true });
 
   const sheetNode = () => (
-    <zynth-bottom-sheet ref={attachHost} style={sheetStyle()}>
+    <zynth-bottom-sheet ref={attachHost}>
       {useWindowWrapper() ? (
         <View style={contentWrapperStyle()} pointerEvents="box-none">
           <View style={contentStyle()} onLayout={handleContentLayout}>

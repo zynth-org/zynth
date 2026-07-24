@@ -165,25 +165,23 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
       setProperty(host, "__command", { type: "show", __ts: Date.now() });
     imperativeNode.dismiss = () =>
       setProperty(host, "__command", { type: "dismiss", __ts: Date.now() });
+    setProperty(host, "mode", local.mode ?? "date");
+    if (local.title != null) setProperty(host, "title", local.title);
+    setProperty(host, "value", selection());
+    if (local.confirmText != null) setProperty(host, "confirmText", local.confirmText);
+    if (local.cancelText != null) setProperty(host, "cancelText", local.cancelText);
+    if (local.onChange) setProperty(host, "onChange", wrapChange(local.onChange));
+    if (local.onRangeChange) setProperty(host, "onRangeChange", wrapRange(local.onRangeChange));
+    if (local.onCancel) setProperty(host, "onCancel", local.onCancel);
+    if (local.onDismiss) setProperty(host, "onDismiss", local.onDismiss);
+    if (local.style != null) setProperty(host, "style", local.style);
+    if (local.testID != null) setProperty(host, "testID", local.testID);
     local.ref?.(imperativeNode);
   };
 
   return (
     <date-picker-view
       ref={attachRef}
-      mode={local.mode ?? "date"}
-      title={local.title}
-      value={selection()}
-      confirmText={local.confirmText}
-      cancelText={local.cancelText}
-      onChange={local.onChange ? wrapChange(local.onChange) : undefined}
-      onRangeChange={
-        local.onRangeChange ? wrapRange(local.onRangeChange) : undefined
-      }
-      onCancel={local.onCancel}
-      onDismiss={local.onDismiss}
-      style={local.style}
-      testID={local.testID}
     >
       {local.children}
     </date-picker-view>

@@ -7,7 +7,7 @@ import {
 } from "solid-js";
 import type { ParentComponent, Element as SolidElement } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
-import { setProperty } from "@zynthjs/core";
+import { effect,  setProperty } from "@zynthjs/core";
 import {
   createPressableRef,
   type InternalPressableController,
@@ -402,16 +402,16 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     local.onKeyUp?.(normalizeKeyEvent(payload));
   };
 
-  createEffect(
+  effect(
     () => ({ node: hostNode(), st: resolvedStyle(), layerSt: resolvedStateLayerStyle() }),
     ({ node, st, layerSt }) => {
       if (!node) return;
       setProperty(node, "style", st);
       setProperty(node, "stateLayerStyle", layerSt);
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => ({
       node: hostNode(),
       dis: resolvedDisabled(),
@@ -467,9 +467,9 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
       setProperty(node, "accessibilityHint", cfg.hint);
       setProperty(node, "testID", cfg.testId);
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => hostNode(),
     (node) => {
       if (!node) return;
@@ -486,15 +486,15 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
       setProperty(node, "onKeyDown", handleKeyDown);
       setProperty(node, "onKeyUp", handleKeyUp);
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => ({ node: hostNode(), isReady: local.ready ?? true }),
     ({ node, isReady }) => {
       if (!node) return;
       setProperty(node, "ready", isReady);
     }
-  );
+  , { scope: true });
 
   if (local.asChild) {
     console.warn(
@@ -506,7 +506,6 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     <pressable
       ref={(node: any) => {
         const host = (node as unknown as HostNode) ?? null;
-        setHostNode(host);
         if (host) {
           const imperativeNode = host as HostNode & PressableRef;
           imperativeNode.pressed = controller.pressed;
@@ -519,15 +518,17 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
           imperativeNode.click = controller.click;
           imperativeNode.cancel = controller.cancel;
           imperativeNode.setDisabled = controller.setDisabled;
+          setProperty(host, "pointerEvents", pointerBehavior());
+          if (local.accessibilityLabel != null) setProperty(host, "accessibilityLabel", local.accessibilityLabel);
+          if (local.accessibilityHint != null) setProperty(host, "accessibilityHint", local.accessibilityHint);
+          if (local.testID != null) setProperty(host, "testID", local.testID);
+          setHostNode(host);
           local.ref?.(imperativeNode);
           return;
         }
+        setHostNode(null);
         local.ref?.(null);
       }}
-      pointerEvents={pointerBehavior()}
-      accessibilityLabel={local.accessibilityLabel}
-      accessibilityHint={local.accessibilityHint}
-      testID={local.testID}
     >
       {resolvedChildren()}
     </pressable>

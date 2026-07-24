@@ -7,7 +7,7 @@ import {
   Show,
 } from "solid-js";
 import type { HostNode, StyleProp, SyncSignalAccessor } from "@zynthjs/core";
-import { createWorklet, setProperty, flush } from "@zynthjs/core";
+import { effect,  createWorklet, setProperty, flush } from "@zynthjs/core";
 import type { KeyEvent } from "./events";
 export type { KeyEvent } from "./events";
 import { createStyle } from "../hooks/createStyle";
@@ -500,7 +500,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
     controller.__setComposing?.(false);
   };
 
-  createEffect(
+  effect(
     () => hostNode(),
     (node) => {
       if (!node || !controller.__attachInternal) return;
@@ -516,7 +516,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
       };
       controller.__attachInternal(bridge);
     }
-  );
+  , { scope: true });
 
   createEffect(
     () => ({ node: hostNode(), signalId: syncSignalId() }),
@@ -529,7 +529,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
     }
   );
 
-  createEffect(
+  effect(
     () => ({
       node: hostNode(),
       controlledValue: typeof local.value === "function" ? local.value() : local.value,
@@ -555,9 +555,9 @@ export const TextInput: Component<TextInputProps> = (props) => {
         defaultAppliedNodeId = normalizedNodeId ?? null;
       }
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => ({ node: hostNode(), nextMultiline: isPotentiallySecure() ? false : (local.multiline ?? false) }),
     ({ node, nextMultiline }) => {
       if (!node) return;
@@ -565,9 +565,9 @@ export const TextInput: Component<TextInputProps> = (props) => {
       logSync("multiline", { nodeId, value: nextMultiline });
       setProperty(node, "multiline", nextMultiline);
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => hostNode(),
     (node) => {
       if (!node) return;
@@ -583,9 +583,9 @@ export const TextInput: Component<TextInputProps> = (props) => {
       setProperty(node, "onCompositionStart", handleCompositionStart);
       setProperty(node, "onCompositionEnd", handleCompositionEnd);
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => ({ node: hostNode(), nextHandler: local.handler ?? noopInputHandlerWorklet }),
     ({ node, nextHandler }) => {
       if (!node) return;
@@ -593,19 +593,19 @@ export const TextInput: Component<TextInputProps> = (props) => {
       logSync("handler-worklet", { nodeId, hasCustomHandler: local.handler !== undefined });
       setProperty(node, "handler", nextHandler);
     }
-  );
+  , { scope: true });
 
-  createEffect(
+  effect(
     () => ({ node: hostNode(), nextStyle: resolvedStyle() }),
     ({ node, nextStyle }) => {
       if (!node || !hasStyleAccessor) return;
       logSync("style", { nodeId: (node as any)?.id, value: nextStyle });
       setProperty(node, "style", nextStyle as any);
     }
-  );
+  , { scope: true });
 
   const syncOptionalProp = (name: string, value: Accessor<unknown>) => {
-    createEffect(
+    effect(
       () => ({ node: hostNode(), nextValue: value() }),
       ({ node, nextValue }) => {
         if (!node || nextValue === undefined) return;
@@ -613,7 +613,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
         logSync(`prop:${name}`, { nodeId: (node as any)?.id, value: nextValue });
         setProperty(node, name, nextValue);
       }
-    );
+    , { scope: true });
   };
 
   syncOptionalProp("style", () =>
@@ -685,10 +685,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
               imperativeNode.commit = controller.commit;
               imperativeNode.cancelPending = controller.cancelPending;
               imperativeNode.driveFromValue = controller.driveFromValue;
+              if (!hasStyleAccessor) setProperty(host, "style", resolvedStyle() as any);
               local.ref?.(imperativeNode);
             })()
           }
-          style={hasStyleAccessor ? undefined : (resolvedStyle() as any)}
         />
       }
     >
@@ -723,10 +723,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
             imperativeNode.commit = controller.commit;
             imperativeNode.cancelPending = controller.cancelPending;
             imperativeNode.driveFromValue = controller.driveFromValue;
+            if (!hasStyleAccessor) setProperty(host, "style", resolvedStyle() as any);
             local.ref?.(imperativeNode);
           })()
         }
-        style={hasStyleAccessor ? undefined : (resolvedStyle() as any)}
       />
     </ShowAny>
   );

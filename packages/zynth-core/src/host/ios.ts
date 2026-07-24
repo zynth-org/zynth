@@ -6,6 +6,8 @@ import type {
   RecyclingConfig,
   RecyclingContext,
 } from "./HostTypes";
+import { flush } from "@solidjs/signals";
+import { ZynthLogger } from "../logger";
 import type { ZynthUIBridge } from "../bridge";
 import { ensureNativeEmitter } from "../nativeEmitter";
 import {
@@ -98,10 +100,17 @@ export function createIOSHost(): Host {
   };
 
   const maybeCallNativeHandler = (nodeId: number, name: string, handler: Function) => {
+    const wrappedHandler = (...args: any[]) => {
+      try {
+        return handler(...args);
+      } finally {
+        flush();
+      }
+    };
     if (isSuppressed()) {
-      enqueueOperation(() => ui.setHandler(nodeId, name, handler));
+      enqueueOperation(() => ui.setHandler(nodeId, name, wrappedHandler));
     } else {
-      ui.setHandler(nodeId, name, handler);
+      ui.setHandler(nodeId, name, wrappedHandler);
     }
   };
 
