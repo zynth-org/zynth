@@ -1,25 +1,51 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "rootDir": "src",
     "outDir": "dist/esm",
     "noEmit": false,
     "declaration": false,
     "emitDeclarationOnly": false,
-    "jsx": "react-jsx",
-    "jsxImportSource": "solid-js",
-    "strict": true,
-    "skipLibCheck": true,
     "baseUrl": "../../",
-    "types": ["zynth-jsx"],
-    "typeRoots": ["../../types", "../../node_modules/@types"],
+    "types": [
+      "zynth-jsx"
+    ],
+    "typeRoots": [
+      "../../types",
+      "../../node_modules/@types"
+    ],
     "paths": {
-      "@zynthjs/components": ["packages/zynth-components/dist/types/zynth-components/src/index.d.ts"],
-      "@zynthjs/core": ["packages/zynth-core/dist/types/index.d.ts"],
-      "@zynthjs/core/*": ["packages/zynth-core/dist/types/*"],
-      "@zynthjs/apis": ["packages/zynth-apis/dist/types/zynth-apis/src/index.d.ts"]
+      "solid-js/jsx-runtime": [
+        "types/zynth-jsx/jsx-runtime.d.ts"
+      ],
+      "solid-js/jsx-dev-runtime": [
+        "types/zynth-jsx/jsx-runtime.d.ts"
+      ],
+      "@zynthjs/apis": [
+        "packages/zynth-apis/dist/types/zynth-apis/src/index.d.ts"
+      ],
+      "@zynthjs/apis/*": [
+        "packages/zynth-apis/src/*"
+      ],
+      "@zynthjs/components": [
+        "packages/zynth-components/dist/types/zynth-components/src/index.d.ts"
+      ],
+      "@zynthjs/components/*": [
+        "packages/zynth-components/src/*"
+      ],
+      "@zynthjs/core": [
+        "packages/zynth-core/dist/types/index.d.ts"
+      ],
+      "@zynthjs/core/*": [
+        "packages/zynth-core/dist/types/*"
+      ],
+      "@zynthjs/core/universal": [
+        "packages/zynth-core/src/universal.ts"
+      ],
+      "@zynthjs/ui": [
+        "packages/zynth-ui/src/index.ts"
+      ],
+      "@zynthjs/ui/*": [
+        "packages/zynth-ui/src/*"
+      ]
     }
   },
   "include": [
@@ -27,5 +53,6 @@
   ],
   "exclude": [
     "src/index.web.ts"
-  ]
+  ],
+  "extends": "../../tsconfig.base.json"
 }

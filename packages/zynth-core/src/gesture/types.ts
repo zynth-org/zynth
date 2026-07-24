@@ -1,5 +1,5 @@
 import type { HostNode, StyleProp } from "../host/HostTypes";
-import type { JSX } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 
 export type GesturePhase = "start" | "update" | "end" | "deactivate";
 
@@ -165,5 +165,5 @@ export interface GestureDetectorProps {
   testID?: string;
   key?: string | number;
   ref?: (node: HostNode | null) => void;
-  children?: JSX.Element;
+  children?: SolidElement;
 }

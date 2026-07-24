@@ -1,4 +1,4 @@
-import { createSignal, mergeProps, JSX } from "solid-js";
+import { createSignal, merge, Element as SolidElement } from "solid-js";
 import type { HostNode } from "@zynthjs/core";
 
 export interface HypervisorRef extends HostNode {
@@ -10,7 +10,7 @@ export interface HypervisorRef extends HostNode {
 export interface HypervisorProps {
   source: { uri: string } | { code: string };
   style?: any;
-  fallback?: JSX.Element;
+  fallback?: SolidElement;
   onLoad?: () => void;
   onError?: (error: { message: string }) => void;
   onMessage?: (message: unknown) => void;
@@ -18,7 +18,7 @@ export interface HypervisorProps {
 }
 
 export function Hypervisor(props: HypervisorProps) {
-  const merged = mergeProps({
+  const merged: any = merge({
     onLoad: () => {},
     onError: (e: { message: string }) =>
       console.error("Hypervisor Error:", e.message),

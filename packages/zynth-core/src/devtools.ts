@@ -185,6 +185,26 @@ function formatConsoleArgs(args: unknown[]): string {
     .join(" ");
 }
 
+function formatRuntimeError(error: unknown): {
+  message: string;
+  stack?: string;
+  cause?: string;
+} {
+  const value = error as {
+    message?: unknown;
+    stack?: unknown;
+    cause?: unknown;
+    source?: { _name?: unknown; _fn?: unknown };
+  } | null;
+  const message = String(value?.message || error || "Unknown error");
+  const stack = value?.stack ? String(value.stack) : undefined;
+  const causeValue = value?.cause;
+  const cause = causeValue && causeValue !== error
+    ? String((causeValue as { message?: unknown })?.message || causeValue)
+    : undefined;
+  return { message, stack, cause };
+}
+
 export function installDevtoolsConsole(): void {
   const bridge = ensureDevtoolsBridge();
   if (!bridge) return;
@@ -199,24 +219,22 @@ export function installDevtoolsConsole(): void {
   for (const level of levels) {
     const original = consoleObj[level];
     consoleObj[level] = (...args: unknown[]) => {
-      if (!nativeConsoleOwnsDevtools) {
-        try {
-          bridge.emit({
-            topic: "log/console",
-            level,
-            tag: "console",
-            data: formatConsoleArgs(args),
-          });
-        } catch {
-          // Ignore console bridge failures.
-        }
-      }
       if (typeof original === "function") {
         try {
           original(...args);
         } catch {
           // Ignore console passthrough failures.
         }
+      }
+      try {
+        bridge.emit({
+          topic: "log/console",
+          level,
+          tag: "console",
+          data: formatConsoleArgs(args),
+        });
+      } catch {
+        // Ignore console bridge failures.
       }
     };
   }
@@ -239,14 +257,17 @@ export function installDevtoolsErrorHandlers(): void {
   g.__ZYNTH_DEVTOOLS_ERRORS_INSTALLED__ = true;
 
   const report = (error: unknown, source?: string) => {
-    const err = error as any;
-    const message = String(err?.message || err || "Unknown error");
-    const stack = err?.stack ? String(err.stack) : undefined;
+    const formatted = formatRuntimeError(error);
     bridge.emit({
       topic: "error/js",
       level: "error",
       tag: "js",
-      data: stack ? { message, stack, source } : { message, source },
+      data: {
+        message: formatted.message,
+        ...(formatted.stack ? { stack: formatted.stack } : {}),
+        ...(formatted.cause ? { cause: formatted.cause } : {}),
+        source,
+      },
     });
   };
 

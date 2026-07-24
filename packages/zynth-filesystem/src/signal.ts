@@ -7,7 +7,7 @@ export function createFileSignal<T>(
   file: File,
   options: FileSignalOptions<T>
 ): FileSignal<T> {
-  const [value, setValue] = createSignal<T>(options.initialValue);
+  const [value, setValue] = createSignal<T>(options.initialValue as any);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<Error | null>(null);
   const read = options.read ?? (async () => (await file.text()) as unknown as T);

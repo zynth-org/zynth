@@ -1,4 +1,4 @@
-import { splitProps, type Component } from "solid-js";
+import { type Component } from "solid-js";
 import type { Style } from "@zynthjs/core";
 
 export interface SwitchProps {
@@ -24,15 +24,7 @@ type SwitchEvent = {
 };
 
 export const Switch: Component<SwitchProps> = (props) => {
-  const [local] = splitProps(props, [
-    "value",
-    "onValueChange",
-    "disabled",
-    "trackColor",
-    "thumbColor",
-    "style",
-    "testID",
-  ]);
+  const local = props;
 
   // Wrap the callback to extract the value from the native event
   const handleValueChange = (value: boolean | SwitchEvent) => {

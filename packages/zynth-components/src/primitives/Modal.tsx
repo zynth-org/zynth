@@ -3,9 +3,8 @@ import {
   createMemo,
   createSignal,
   onCleanup,
-  splitProps,
   type ParentComponent,
-  type JSX,
+  type Element as SolidElement,
 } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
 import { setProperty } from "@zynthjs/core";
@@ -40,7 +39,7 @@ export interface ModalProps {
   onRequestClose?: () => void;
   onDismiss?: () => void;
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   testID?: string;
 }
 
@@ -80,22 +79,7 @@ export const createModalRef = (): ModalRef => {
 export const useModalRef = () => createModalRef();
 
 export const Modal: ParentComponent<ModalProps> = (props) => {
-  const [local] = splitProps(props, [
-    "open",
-    "defaultOpen",
-    "ref",
-    "animation",
-    "transparent",
-    "overlayColor",
-    "overlayOpacity",
-    "dismissOnOverlayPress",
-    "onOpenChange",
-    "onRequestClose",
-    "onDismiss",
-    "style",
-    "children",
-    "testID",
-  ]);
+  const local = props;
 
   let host: HostNode | null = null;
   const [uncontrolledOpen, setUncontrolledOpen] = createSignal(
@@ -116,12 +100,15 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
 
   const [screenSize, setScreenSize] = createSignal(viewport.screen);
 
-  createEffect(() => {
-    const unsubscribe = viewport.observe("screen", (metrics) => {
-      setScreenSize(metrics);
-    });
-    onCleanup(unsubscribe);
-  });
+  createEffect(
+    () => null,
+    () => {
+      const unsubscribe = viewport.observe("screen", (metrics) => {
+        setScreenSize(metrics);
+      });
+      onCleanup(unsubscribe);
+    }
+  );
 
   const modalStyle = createMemo<Style>(() => {
     const style: Style = {
@@ -157,42 +144,57 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
     }
   };
 
-  createEffect(() => {
-    if (!host) return;
-    setProperty(host, "style", modalStyle());
-    setProperty(host, "animation", resolvedAnimation());
-    setProperty(host, "transparent", resolvedTransparent());
-    setProperty(host, "dismissOnOverlayPress", resolvedDismissOnOverlayPress());
-    setProperty(host, "overlayColor", resolvedOverlayColor());
-    setProperty(host, "overlayOpacity", resolvedOverlayOpacity());
-    if (local.testID) {
-      setProperty(host, "testID", local.testID);
+  createEffect(
+    () => ({
+      st: modalStyle(),
+      anim: resolvedAnimation(),
+      trans: resolvedTransparent(),
+      dismissOverlay: resolvedDismissOnOverlayPress(),
+      ovColor: resolvedOverlayColor(),
+      ovOpacity: resolvedOverlayOpacity(),
+      testId: local.testID,
+      openState: resolvedOpen(),
+    }),
+    (cfg) => {
+      if (!host) return;
+      setProperty(host, "style", cfg.st);
+      setProperty(host, "animation", cfg.anim);
+      setProperty(host, "transparent", cfg.trans);
+      setProperty(host, "dismissOnOverlayPress", cfg.dismissOverlay);
+      setProperty(host, "overlayColor", cfg.ovColor);
+      setProperty(host, "overlayOpacity", cfg.ovOpacity);
+      if (cfg.testId) {
+        setProperty(host, "testID", cfg.testId);
+      }
+      setProperty(host, "open", cfg.openState);
     }
-    setProperty(host, "open", resolvedOpen());
-  });
+  );
 
-  createEffect(() => {
-    if (!host) return;
+  createEffect(
+    () => host,
+    (h) => {
+      if (!h) return;
 
-    setProperty(host, "onRequestClose", () => {
-      local.onRequestClose?.();
-    });
+      setProperty(h, "onRequestClose", () => {
+        local.onRequestClose?.();
+      });
 
-    setProperty(host, "onDismiss", () => {
-      if (!isControlled()) {
-        setUncontrolledOpen(false);
-      }
-      local.onDismiss?.();
-    });
+      setProperty(h, "onDismiss", () => {
+        if (!isControlled()) {
+          setUncontrolledOpen(false);
+        }
+        local.onDismiss?.();
+      });
 
-    setProperty(host, "onOpenChange", (payload: { open: boolean }) => {
-      const next = !!payload?.open;
-      if (!isControlled()) {
-        setUncontrolledOpen(next);
-      }
-      local.onOpenChange?.(next);
-    });
-  });
+      setProperty(h, "onOpenChange", (payload: { open: boolean }) => {
+        const next = !!payload?.open;
+        if (!isControlled()) {
+          setUncontrolledOpen(next);
+        }
+        local.onOpenChange?.(next);
+      });
+    }
+  );
 
   return (
     <zynth-modal ref={attachHost} style={modalStyle()}>

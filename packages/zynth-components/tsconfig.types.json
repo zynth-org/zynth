@@ -5,8 +5,14 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist/types",
-    "types": ["zynth-jsx"]
+    "types": [
+      "zynth-jsx"
+    ]
   },
-  "include": ["src"],
-  "exclude": ["src/index.web.ts"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/index.web.ts"
+  ]
 }

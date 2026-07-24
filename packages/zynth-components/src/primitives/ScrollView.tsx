@@ -4,7 +4,6 @@ import {
   createMemo,
   createSignal,
   onCleanup,
-  splitProps,
   untrack,
 } from "solid-js";
 import { platform } from "@zynthjs/apis";
@@ -380,41 +379,7 @@ export const makeMetricsFromEvent = (event: ScrollEvent): ScrollMetrics => ({
 });
 
 const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
-  const [local] = splitProps(props, [
-    "horizontal",
-    "scrollEnabled",
-    "style",
-    "contentContainerStyle",
-    "maintainVisibleContentPosition",
-    "showsVerticalScrollIndicator",
-    "showsHorizontalScrollIndicator",
-    "indicatorStyle",
-    "bounces",
-    "overScrollBehavior",
-    "directionalLockEnabled",
-    "eventThrottleMs",
-    "eventMinDisplacementPx",
-    "bridgeCoalescing",
-    "decelerationRate",
-    "config",
-    "scrollSnapType",
-    "scrollSnapAlign",
-    "scrollSnapStop",
-    "scrollPadding",
-    "ref",
-    "onScroll",
-    "onScrollBeginDrag",
-    "onScrollEndDrag",
-    "onMomentumScrollBegin",
-    "onMomentumScrollEnd",
-    "onContentSizeChange",
-    "onLayout",
-    "contentSize",
-    "testID",
-    "inverted",
-    "contentOffsetSharedValue",
-    "children",
-  ]);
+  const local = props;
 
   const axis = createMemo<Axis>(() =>
     local.horizontal ? "horizontal" : "vertical"
@@ -446,7 +411,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     ] as StyleProp;
   });
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
   const imperativeRef = createScrollViewRef() as InternalScrollViewRef;
   let disposed = false;
 
@@ -459,13 +424,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   const [metrics, setMetrics] = createSignal<ScrollMetrics>(INITIAL_METRICS);
   const [isDragging, setIsDragging] = createSignal(false);
   const [isDecelerating, setIsDecelerating] = createSignal(false);
-
-  let lastContentWidth = INITIAL_METRICS.contentSize.width;
-  let lastContentHeight = INITIAL_METRICS.contentSize.height;
   let initialBottomStartApplied = false;
 
   const resolvedScrollEnabled = createMemo(() => local.scrollEnabled ?? true);
-
   const resolvedDirectionalLock = createMemo(
     () => local.directionalLockEnabled ?? true
   );
@@ -483,78 +444,83 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     return "auto";
   });
 
-  const updateFromEvent = (
-    rawEvent: any,
-    state?: { dragging?: boolean; decelerating?: boolean }
-  ) => {
-    const event = normalizeEvent(rawEvent);
-    const nextMetrics = makeMetricsFromEvent(event);
-    setMetrics(nextMetrics);
-    if (state?.dragging !== undefined) {
-      setIsDragging(state.dragging);
-    }
-    if (state?.decelerating !== undefined) {
-      setIsDecelerating(state.decelerating);
-    }
-    imperativeRef.__applyMetrics?.(nextMetrics, {
-      dragging: state?.dragging ?? isDragging(),
-      decelerating: state?.decelerating ?? isDecelerating(),
-    });
-    if (local.onContentSizeChange) {
-      const { width, height } = nextMetrics.contentSize;
-      if (width !== lastContentWidth || height !== lastContentHeight) {
-        lastContentWidth = width;
-        lastContentHeight = height;
-        local.onContentSizeChange(width, height);
-      }
-    }
-    return event;
-  };
-
   const handleScroll = (event: any) => {
     if (disposed) return;
-    const normal = updateFromEvent(event);
-    local.onScroll?.(normal);
+    const scrollEvt = normalizeEvent(event);
+    const nextMetrics = makeMetricsFromEvent(scrollEvt);
+    setMetrics(nextMetrics);
+    imperativeRef.__applyMetrics?.(nextMetrics, {
+      dragging: isDragging(),
+      decelerating: isDecelerating(),
+    });
+    local.onScroll?.(scrollEvt);
   };
 
   const handleScrollBeginDrag = (event: any) => {
     if (disposed) return;
-    const normal = updateFromEvent(event, { dragging: true });
-    local.onScrollBeginDrag?.(normal);
+    setIsDragging(true);
+    const scrollEvt = normalizeEvent(event);
+    const nextMetrics = makeMetricsFromEvent(scrollEvt);
+    setMetrics(nextMetrics);
+    imperativeRef.__applyMetrics?.(nextMetrics, {
+      dragging: true,
+      decelerating: isDecelerating(),
+    });
+    local.onScrollBeginDrag?.(scrollEvt);
   };
 
   const handleScrollEndDrag = (event: any) => {
     if (disposed) return;
-    const normal = updateFromEvent(event, { dragging: false });
-    local.onScrollEndDrag?.(normal);
+    setIsDragging(false);
+    const scrollEvt = normalizeEvent(event);
+    const nextMetrics = makeMetricsFromEvent(scrollEvt);
+    setMetrics(nextMetrics);
+    imperativeRef.__applyMetrics?.(nextMetrics, {
+      dragging: false,
+      decelerating: isDecelerating(),
+    });
+    local.onScrollEndDrag?.(scrollEvt);
   };
 
   const handleMomentumScrollBegin = (event: any) => {
     if (disposed) return;
-    const normal = updateFromEvent(event, { decelerating: true });
-    local.onMomentumScrollBegin?.(normal);
+    setIsDecelerating(true);
+    const scrollEvt = normalizeEvent(event);
+    const nextMetrics = makeMetricsFromEvent(scrollEvt);
+    setMetrics(nextMetrics);
+    imperativeRef.__applyMetrics?.(nextMetrics, {
+      dragging: isDragging(),
+      decelerating: true,
+    });
+    local.onMomentumScrollBegin?.(scrollEvt);
   };
 
   const handleMomentumScrollEnd = (event: any) => {
     if (disposed) return;
-    const normal = updateFromEvent(event, { decelerating: false });
-    local.onMomentumScrollEnd?.(normal);
+    setIsDecelerating(false);
+    const scrollEvt = normalizeEvent(event);
+    const nextMetrics = makeMetricsFromEvent(scrollEvt);
+    setMetrics(nextMetrics);
+    imperativeRef.__applyMetrics?.(nextMetrics, {
+      dragging: isDragging(),
+      decelerating: false,
+    });
+    local.onMomentumScrollEnd?.(scrollEvt);
   };
 
   const handleLayout = (event: LayoutChangeEvent) => {
     if (disposed) return;
-    const layout = event?.nativeEvent?.layout;
-    if (layout) {
-      const previousMetrics = metrics();
+    const { width, height } = event.nativeEvent.layout;
+    const currentMetrics = metrics();
+    if (
+      currentMetrics.viewportSize.width !== width ||
+      currentMetrics.viewportSize.height !== height
+    ) {
       const nextMetrics: ScrollMetrics = {
-        ...previousMetrics,
-        contentSize: local.contentSize ?? previousMetrics.contentSize,
-        viewportSize: {
-          width: layout.width ?? 0,
-          height: layout.height ?? 0,
-        },
+        ...currentMetrics,
+        viewportSize: { width, height },
       };
-      setMetrics(nextMetrics);
+      untrack(() => setMetrics(nextMetrics));
       imperativeRef.__applyMetrics?.(nextMetrics, {
         dragging: isDragging(),
         decelerating: isDecelerating(),
@@ -563,137 +529,169 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     local.onLayout?.(event);
   };
 
-  createEffect(() => {
-    imperativeRef.__setHost?.(hostNode());
-    imperativeRef.__applyMetrics?.(metrics(), {
-      dragging: isDragging(),
-      decelerating: isDecelerating(),
-    });
-  });
+  createEffect(
+    () => ({
+      node: hostNode(),
+      m: metrics(),
+      drag: isDragging(),
+      decel: isDecelerating(),
+    }),
+    ({ node, m, drag, decel }) => {
+      imperativeRef.__setHost?.(node);
+      imperativeRef.__applyMetrics?.(m, {
+        dragging: drag,
+        decelerating: decel,
+      });
+    }
+  );
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
+  createEffect(
+    () => ({
+      node: hostNode(),
+      ax: axis(),
+      scrollEn: resolvedScrollEnabled(),
+      lock: resolvedDirectionalLock(),
+      throt: resolvedThrottle(),
+      disp: resolvedMinDisplacement(),
+      coalesce: resolvedBridgeCoalescing(),
+      over: resolvedOverScrollBehavior(),
+      cfg: local.config ?? null,
+      snapType: local.scrollSnapType,
+      snapAlign: local.scrollSnapAlign,
+      snapStop: local.scrollSnapStop,
+      padding: local.scrollPadding,
+      st: scrollViewStyle() as any,
+      vInd: local.showsVerticalScrollIndicator,
+      hInd: local.showsHorizontalScrollIndicator,
+      indSt: local.indicatorStyle,
+      cSize: local.contentSize,
+      testId: local.testID,
+      inv: local.inverted,
+      decel: local.decelerationRate,
+      offsetSv: local.contentOffsetSharedValue,
+    }),
+    (cfg) => {
+      const { node } = cfg;
+      if (!node) return;
 
-    setProperty(node, "horizontal", axis() === "horizontal");
-    setProperty(node, "scrollEnabled", resolvedScrollEnabled());
-    setProperty(node, "directionalLockEnabled", resolvedDirectionalLock());
-    setProperty(node, "eventThrottleMs", resolvedThrottle());
-    setProperty(node, "eventMinDisplacementPx", resolvedMinDisplacement());
-    setProperty(node, "bridgeCoalescing", resolvedBridgeCoalescing());
-    setProperty(node, "overScrollBehavior", resolvedOverScrollBehavior());
-    setProperty(node, "scrollGuardConfig", local.config ?? null);
+      setProperty(node, "horizontal", cfg.ax === "horizontal");
+      setProperty(node, "scrollEnabled", cfg.scrollEn);
+      setProperty(node, "directionalLockEnabled", cfg.lock);
+      setProperty(node, "eventThrottleMs", cfg.throt);
+      setProperty(node, "eventMinDisplacementPx", cfg.disp);
+      setProperty(node, "bridgeCoalescing", cfg.coalesce);
+      setProperty(node, "overScrollBehavior", cfg.over);
+      setProperty(node, "scrollGuardConfig", cfg.cfg);
 
-    if (local.scrollSnapType !== undefined) {
-      setProperty(node, "scrollSnapType", local.scrollSnapType ?? "none");
-    }
-    if (local.scrollSnapAlign !== undefined) {
-      setProperty(node, "scrollSnapAlign", local.scrollSnapAlign ?? null);
-    }
-    if (local.scrollSnapStop !== undefined) {
-      setProperty(node, "scrollSnapStop", local.scrollSnapStop ?? null);
-    }
-    if (local.scrollPadding !== undefined) {
-      setProperty(node, "scrollPadding", local.scrollPadding ?? null);
-    }
+      if (cfg.snapType !== undefined) {
+        setProperty(node, "scrollSnapType", cfg.snapType ?? "none");
+      }
+      if (cfg.snapAlign !== undefined) {
+        setProperty(node, "scrollSnapAlign", cfg.snapAlign ?? null);
+      }
+      if (cfg.snapStop !== undefined) {
+        setProperty(node, "scrollSnapStop", cfg.snapStop ?? null);
+      }
+      if (cfg.padding !== undefined) {
+        setProperty(node, "scrollPadding", cfg.padding ?? null);
+      }
 
-    setProperty(node, "style", scrollViewStyle() as any);
-    if (local.showsVerticalScrollIndicator !== undefined) {
-      setProperty(
-        node,
-        "showsVerticalScrollIndicator",
-        local.showsVerticalScrollIndicator
-      );
-    }
-    if (local.showsHorizontalScrollIndicator !== undefined) {
-      setProperty(
-        node,
-        "showsHorizontalScrollIndicator",
-        local.showsHorizontalScrollIndicator
-      );
-    }
-    if (local.indicatorStyle) {
-      setProperty(node, "indicatorStyle", local.indicatorStyle);
-    }
-    if (local.contentSize) {
-      setProperty(node, "contentSize", local.contentSize);
-    }
-    if (local.testID) {
-      setProperty(node, "testID", local.testID);
-    }
-    if (local.inverted !== undefined) {
-      setProperty(node, "inverted", local.inverted);
-    }
-    if (local.decelerationRate !== undefined) {
-      setProperty(node, "decelerationRate", local.decelerationRate);
-    }
-    if (local.contentOffsetSharedValue !== undefined) {
-      setProperty(
-        node,
-        "contentOffsetSharedValue",
-        local.contentOffsetSharedValue
-      );
-    }
+      setProperty(node, "style", cfg.st);
+      if (cfg.vInd !== undefined) {
+        setProperty(node, "showsVerticalScrollIndicator", cfg.vInd);
+      }
+      if (cfg.hInd !== undefined) {
+        setProperty(node, "showsHorizontalScrollIndicator", cfg.hInd);
+      }
+      if (cfg.indSt) {
+        setProperty(node, "indicatorStyle", cfg.indSt);
+      }
+      if (cfg.cSize) {
+        setProperty(node, "contentSize", cfg.cSize);
+      }
+      if (cfg.testId) {
+        setProperty(node, "testID", cfg.testId);
+      }
+      if (cfg.inv !== undefined) {
+        setProperty(node, "inverted", cfg.inv);
+      }
+      if (cfg.decel !== undefined) {
+        setProperty(node, "decelerationRate", cfg.decel);
+      }
+      if (cfg.offsetSv !== undefined) {
+        setProperty(node, "contentOffsetSharedValue", cfg.offsetSv);
+      }
 
-    setProperty(node, "onScroll", handleScroll);
-    setProperty(node, "onScrollBeginDrag", handleScrollBeginDrag);
-    setProperty(node, "onScrollEndDrag", handleScrollEndDrag);
-    setProperty(node, "onMomentumScrollBegin", handleMomentumScrollBegin);
-    setProperty(node, "onMomentumScrollEnd", handleMomentumScrollEnd);
-    setProperty(node, "onLayout", handleLayout);
-  });
-
-  createEffect(() => {
-    if (!local.contentSize) return;
-    const previousMetrics = untrack(metrics);
-    if (
-      previousMetrics.contentSize.width === local.contentSize.width &&
-      previousMetrics.contentSize.height === local.contentSize.height
-    ) {
-      return;
+      setProperty(node, "onScroll", handleScroll);
+      setProperty(node, "onScrollBeginDrag", handleScrollBeginDrag);
+      setProperty(node, "onScrollEndDrag", handleScrollEndDrag);
+      setProperty(node, "onMomentumScrollBegin", handleMomentumScrollBegin);
+      setProperty(node, "onMomentumScrollEnd", handleMomentumScrollEnd);
+      setProperty(node, "onLayout", handleLayout);
     }
-    const nextMetrics: ScrollMetrics = {
-      ...previousMetrics,
-      contentSize: local.contentSize,
-    };
-    setMetrics(nextMetrics);
-    imperativeRef.__applyMetrics?.(nextMetrics, {
-      dragging: isDragging(),
-      decelerating: isDecelerating(),
-    });
-  });
+  );
 
-  createEffect(() => {
-    const config = local.maintainVisibleContentPosition;
-    if (!config || config.disabled || !config.startRenderingFromBottom) {
-      initialBottomStartApplied = false;
-      return;
+  createEffect(
+    () => ({ cSize: local.contentSize }),
+    ({ cSize }) => {
+      if (!cSize) return;
+      const previousMetrics = untrack(metrics);
+      if (
+        previousMetrics.contentSize.width === cSize.width &&
+        previousMetrics.contentSize.height === cSize.height
+      ) {
+        return;
+      }
+      const nextMetrics: ScrollMetrics = {
+        ...previousMetrics,
+        contentSize: cSize,
+      };
+      setMetrics(nextMetrics);
+      imperativeRef.__applyMetrics?.(nextMetrics, {
+        dragging: isDragging(),
+        decelerating: isDecelerating(),
+      });
     }
+  );
 
-    const nextMetrics = metrics();
-    const viewport =
-      axis() === "horizontal"
-        ? nextMetrics.viewportSize.width
-        : nextMetrics.viewportSize.height;
-    const content =
-      axis() === "horizontal"
-        ? nextMetrics.contentSize.width
-        : nextMetrics.contentSize.height;
+  createEffect(
+    () => ({
+      config: local.maintainVisibleContentPosition,
+      nextMetrics: metrics(),
+      ax: axis(),
+      drag: isDragging(),
+      decel: isDecelerating(),
+    }),
+    ({ config, nextMetrics, ax, drag, decel }) => {
+      if (!config || config.disabled || !config.startRenderingFromBottom) {
+        initialBottomStartApplied = false;
+        return;
+      }
 
-    if (viewport <= 0 || content <= 0) return;
-    if (isDragging() || isDecelerating()) return;
+      const viewport =
+        ax === "horizontal"
+          ? nextMetrics.viewportSize.width
+          : nextMetrics.viewportSize.height;
+      const content =
+        ax === "horizontal"
+          ? nextMetrics.contentSize.width
+          : nextMetrics.contentSize.height;
 
-    const maxOffset = Math.max(0, content - viewport);
-    if (initialBottomStartApplied) return;
-    if (maxOffset <= 0) return;
+      if (viewport <= 0 || content <= 0) return;
+      if (drag || decel) return;
 
-    if (axis() === "horizontal") {
-      imperativeRef.ui.scrollTo({ x: maxOffset, animated: false });
-    } else {
-      imperativeRef.ui.scrollTo({ y: maxOffset, animated: false });
+      const maxOffset = Math.max(0, content - viewport);
+      if (initialBottomStartApplied) return;
+      if (maxOffset <= 0) return;
+
+      if (ax === "horizontal") {
+        imperativeRef.ui.scrollTo({ x: maxOffset, animated: false });
+      } else {
+        imperativeRef.ui.scrollTo({ y: maxOffset, animated: false });
+      }
+      initialBottomStartApplied = true;
     }
-    initialBottomStartApplied = true;
-  });
+  );
 
   onCleanup(() => {
     disposed = true;

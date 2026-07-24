@@ -167,7 +167,7 @@
   "scripts": {
     "build": "rm -rf dist && yarn build:js && yarn build:types && yarn generate",
     "build:js": "esbuild src/createIcon.tsx src/createSvgIcon.tsx --outdir=dist/esm --format=esm --jsx=automatic --jsx-import-source=solid-js --loader:.tsx=tsx",
-    "build:types": "tsc --project tsconfig.types.json && mv dist/types/packages/zynth-icons/src/* dist/types/ && rm -rf dist/types/packages",
+    "build:types": "tsc --project tsconfig.types.json",
     "generate": "node --experimental-strip-types scripts/generate.ts"
   },
   "zynthNative": {

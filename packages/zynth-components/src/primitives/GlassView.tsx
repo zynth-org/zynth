@@ -1,5 +1,5 @@
-import { children as resolveChildren, splitProps } from "solid-js";
-import type { JSX, ParentComponent } from "solid-js";
+import { children as resolveChildren } from "solid-js";
+import type { Element as SolidElement, ParentComponent } from "solid-js";
 import type { Style } from "@zynthjs/core";
 import { platform } from "@zynthjs/apis";
 
@@ -7,7 +7,7 @@ export type GlassEffectStyle = "regular" | "clear" | "none";
 
 export interface GlassViewProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   effect?: GlassEffectStyle;
   interactive?: boolean;
   tintColor?: string;
@@ -16,15 +16,7 @@ export interface GlassViewProps {
 }
 
 export const GlassView: ParentComponent<GlassViewProps> = (props) => {
-  const [local] = splitProps(props, [
-    "style",
-    "children",
-    "effect",
-    "interactive",
-    "tintColor",
-    "pointerEvents",
-    "testID",
-  ]);
+  const local = props;
   const resolvedChildren = resolveChildren(() => local.children);
 
   if (platform.current === "android") {

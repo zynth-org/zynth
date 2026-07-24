@@ -1,11 +1,5 @@
-import {
-  children as resolveChildren,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-} from "solid-js";
-import type { JSX, ParentComponent } from "solid-js";
+import { createEffect, createSignal, onCleanup } from "solid-js";
+import type { ParentComponent } from "solid-js";
 import type { HostNode, StyleProp } from "@zynthjs/core";
 import { setProperty } from "@zynthjs/core";
 import { createStyle } from "../hooks/createStyle";
@@ -18,21 +12,45 @@ export interface TextProps {
   ref?: (node: HostNode | null) => void;
 }
 
-export const Text: ParentComponent<TextProps> = (props) => {
-  const resolvedChildren = resolveChildren(() => props.children);
+function extractTextContent(val: unknown): string | undefined {
+  if (val == null) return undefined;
+  if (typeof val === "string" || typeof val === "number") {
+    return String(val);
+  }
+  if (typeof val === "function") {
+    return extractTextContent(val());
+  }
+  if (Array.isArray(val)) {
+    if (val.length === 0) return "";
+    let str = "";
+    for (const item of val) {
+      const itemStr = extractTextContent(item);
+      if (itemStr === undefined) return undefined;
+      str += itemStr;
+    }
+    return str;
+  }
+  return undefined;
+}
 
+export const Text: ParentComponent<TextProps> = (props) => {
   // NOTE: `props` is a SolidJS reactive proxy — do NOT destructure.
   const resolvedStyle = createStyle(() => {
     const nextStyle = props.style;
     return typeof nextStyle === "function" ? nextStyle() : nextStyle;
   });
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-
-  // Reactive memo — avoids the stale closure bug of a plain `typeof props.style === "function"`.
-  const hasStyleAccessor = createMemo(() => typeof props.style === "function");
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, {
+    ownedWrite: true,
+  });
 
   const refProp = (node: HostNode | null) => {
+    if (node) {
+      const st = resolvedStyle();
+      if (st != null) setProperty(node, "style", st);
+      const txt = directTextContent();
+      if (txt !== undefined) setProperty(node, "text", txt);
+    }
     setHostNode(node);
     props.ref?.(node);
   };
@@ -42,76 +60,29 @@ export const Text: ParentComponent<TextProps> = (props) => {
   // style accessor from `createAnimatedStyle`. Zero cost for plain styles.
   useAnimatedStyleMapper(() => props.style, hostNode);
 
-  // ─── Imperative style update for accessor-based styles ────────────────────
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-    if (!hasStyleAccessor()) return;
-    setProperty(node, "style", resolvedStyle() ?? {});
-  });
+  const directTextContent = (): string | undefined => {
+    if (props.text != null) return String(props.text);
+    return extractTextContent(props.children);
+  };
+
+  // ─── Imperative property updates for host node ───────────────────────────
+  createEffect(
+    () => ({ node: hostNode(), st: resolvedStyle(), text: directTextContent() }),
+    ({ node, st, text }) => {
+      if (!node) return;
+      if (st != null) setProperty(node, "style", st);
+      if (text !== undefined) setProperty(node, "text", text);
+    }
+  );
 
   onCleanup(() => {
     setHostNode(null);
     props.ref?.(null);
   });
 
-  const coalescedChildren = createMemo(() => {
-    const children = resolvedChildren();
-    if (Array.isArray(children)) {
-      const result: unknown[] = [];
-      let currentString = "";
-      for (const child of children) {
-        if (typeof child === "string" || typeof child === "number") {
-          currentString += child;
-        } else {
-          if (currentString) {
-            result.push(currentString);
-            currentString = "";
-          }
-          if (child != null) result.push(child);
-        }
-      }
-      if (currentString) result.push(currentString);
-      if (result.length === 0) return "";
-      if (
-        result.length === 1 &&
-        (typeof result[0] === "string" || typeof result[0] === "number")
-      ) {
-        return String(result[0]);
-      }
-      // Preserve arrays for mixed content so nested text nodes still compose correctly.
-      return result;
-    }
-    return children ?? "";
-  });
-
-  const directTextContent = createMemo(() => {
-    if (props.text != null) return props.text;
-    const children = coalescedChildren();
-    if (typeof children === "string" || typeof children === "number") {
-      return String(children);
-    }
-    if (
-      Array.isArray(children) &&
-      children.length === 1 &&
-      (typeof children[0] === "string" || typeof children[0] === "number")
-    ) {
-      return String(children[0]);
-    }
-    return undefined;
-  });
-
   return (
-    <text
-      style={
-        (hasStyleAccessor()
-          ? undefined
-          : (resolvedStyle() as JSX.Element)) as JSX.Element
-      }
-      text={directTextContent()}
-      ref={refProp as unknown as any}
-    >
-      {directTextContent() === undefined ? coalescedChildren() : undefined}
+    <text ref={refProp as unknown as any}>
+      {directTextContent() === undefined ? (props.children as any) : undefined}
     </text>
   );
 };

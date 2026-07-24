@@ -3,7 +3,6 @@ import {
   createEffect,
   onCleanup,
   type Component,
-  type JSX,
 } from "solid-js";
 import { SafeAreaInsetsContext, SafeAreaFrameContext } from "./SafeAreaContext";
 import { getNativeSafeAreaModule } from "./NativeSafeAreaModule";
@@ -22,7 +21,7 @@ export interface SafeAreaProviderProps {
   /**
    * Children to render with safe area context
    */
-  children: JSX.Element;
+  children?: any;
 }
 
 /**
@@ -85,11 +84,14 @@ export const SafeAreaProvider: Component<SafeAreaProviderProps> = (props) => {
     onCleanup(unsubscribe);
   });
 
+  const InsetsProvider = SafeAreaInsetsContext as any;
+  const FrameProvider = SafeAreaFrameContext as any;
+
   return (
-    <SafeAreaInsetsContext.Provider value={() => metrics().insets}>
-      <SafeAreaFrameContext.Provider value={() => metrics().frame}>
+    <InsetsProvider value={() => metrics().insets}>
+      <FrameProvider value={() => metrics().frame}>
         {props.children}
-      </SafeAreaFrameContext.Provider>
-    </SafeAreaInsetsContext.Provider>
+      </FrameProvider>
+    </InsetsProvider>
   );
 };

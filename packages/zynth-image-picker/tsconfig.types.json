@@ -1,9 +1,12 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist/types",
     "declaration": true,
     "emitDeclarationOnly": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "types": [
+      "zynth-jsx"
+    ]
   }
 }

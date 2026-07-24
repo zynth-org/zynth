@@ -23,7 +23,7 @@ export function createAsyncStorageSignal<T>(
   key: string,
   options: AsyncStorageSignalOptions<T>
 ): AsyncStorageSignal<T> {
-  const [value, setValue] = createSignal<T>(options.initialValue);
+  const [value, setValue] = createSignal<T>(options.initialValue as any);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<Error | null>(null);
   const serialize = options.serialize ?? defaultSerialize;

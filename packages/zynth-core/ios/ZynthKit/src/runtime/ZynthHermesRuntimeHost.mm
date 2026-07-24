@@ -98,9 +98,12 @@ static void installConsole(Runtime &rt, ZynthHermesRuntimeHost *host, NSString *
           std::string messageUtf8 = message ? [message UTF8String] : "";
           std::string stackUtf8;
           if (levelLabel && [levelLabel isEqualToString:@"warn"]) {
-            const char *needle =
+            const char *ownerNeedle =
                 "computations created outside a `createRoot` or `render` will never be disposed";
-            if (messageUtf8.find(needle) != std::string::npos) {
+            const char *writeNeedle = "REACTIVE_WRITE_IN_OWNED_SCOPE";
+            if (messageUtf8.find(ownerNeedle) != std::string::npos ||
+                messageUtf8.find(writeNeedle) != std::string::npos ||
+                messageUtf8.find("signal was written to in an owned scope") != std::string::npos) {
               try {
                 Function errorCtor = rt.global().getPropertyAsFunction(rt, "Error");
                 Object errObj = errorCtor.callAsConstructor(

@@ -1,23 +1,44 @@
 import { createMemo as solidCreateMemo } from "solid-js";
-import { createRenderer } from "solid-js/universal";
+import { createRenderer } from "@solidjs/universal";
 import type { Host, HostNode, HostBatchMeta } from "./host/HostTypes";
 
+import { Platform, OS } from "./platform";
+import { createAndroidHost } from "./host/android";
+import { createIOSHost } from "./host/ios";
+import { createWebHost } from "./host/web";
+import { emitDevtoolsEvent } from "./devtools";
+
 let host: Host | null = null;
-export const setHost = (h: Host) => (host = h);
-export const getHost = (): Host | null => host;
+export const setHost = (h: Host) => {
+  host = h;
+  (globalThis as any).__zynth_host = h;
+};
+export const getHost = (): Host | null => host || (globalThis as any).__zynth_host || null;
 const H = (): Host => {
-  if (!host) throw new Error("Host not set");
-  return host;
+  let active = host || (globalThis as any).__zynth_host;
+  if (!active) {
+    if (Platform.OS === OS.WEB) {
+      active = createWebHost();
+    } else if (Platform.OS === OS.ANDROID) {
+      active = createAndroidHost();
+    } else {
+      active = createIOSHost();
+    }
+    setHost(active);
+  }
+  return active;
 };
 
 export const memo = <T>(fn: () => T) => solidCreateMemo(() => fn());
 
-// Create the Solid-backed renderer
+// Create the Solid-backed renderer. Solid 2 moved this implementation to the
+// standalone @solidjs/universal package; keeping its ownership and child
+// reconciliation here is required for native refs and dynamic JSX children.
 const r = createRenderer<HostNode>({
   createElement: (t: any) => H().createNode(t as any),
   createTextNode: (v: any) => H().createText(v),
   replaceText: (n: any, v: any) => H().setText(n, v),
-  setProperty: (n: any, k: any, v: any, prev: any) => {
+  setProperty: (n: any, k: any, v: any, prev?: any) => {
     if (k === "style") {
       const actualPrev = prev || n.__prevStyle;
       if (actualPrev && typeof actualPrev === "object") {
@@ -54,13 +75,32 @@ export const render: (
 ) => () => void = (code, container) => {
   let c = container as HostNode | null | undefined;
   if (!c || typeof (c as any).id !== "number") {
-    const make = (host as any)?.createRootContainer as
-      | ((arg: unknown) => HostNode)
-      | undefined;
-    c = make ? make(undefined) : ({ id: 0, type: "root" } as any);
+    c = H().createRootContainer(undefined);
   }
 
-  const dispose = r.render(code as any, c as any);
+  let dispose: (() => void) | undefined;
+  try {
+    dispose = r.render(code as any, c as any);
+  } catch (error) {
+    const value = error as {
+      message?: unknown;
+      stack?: unknown;
+      cause?: { message?: unknown; stack?: unknown };
+    } | null;
+    const cause = value?.cause;
+    emitDevtoolsEvent({
+      topic: "error/js",
+      level: "error",
+      tag: "render",
+      data: {
+        message: String(value?.message || error || "Render failed"),
+        ...(value?.stack ? { stack: String(value.stack) } : {}),
+        ...(cause?.message ? { cause: String(cause.message) } : {}),
+        ...(cause?.stack ? { causeStack: String(cause.stack) } : {}),
+      },
+    });
+    throw error;
+  }
 
   return () => {
     dispose?.();
@@ -88,23 +128,37 @@ export function withHostBatch<T>(meta: HostBatchMeta, fn: () => T): T {
   }
 }
 
-// Expose renderer operations as functions (stable, hoisted bindings)
-export function createElement(t: any) {
-  return H().createNode(t as any);
-}
-export function createTextNode(v: any) {
-  return H().createText(v);
-}
+import { ZynthLogger } from "./logger";
+
+export const createElement = (type: any, props?: any) => {
+  const node = r.createElement(type, props);
+  ZynthLogger.debug("Renderer", `createElement type=${type} node=${node?.id}`);
+  return node;
+};
+
+export const createTextNode = (text: any) => {
+  const node = r.createTextNode(text);
+  ZynthLogger.debug("Renderer", `createTextNode text="${text}" node=${node?.id}`);
+  return node;
+};
+
 export function replaceText(n: any, v: any) {
+  ZynthLogger.debug("Renderer", `replaceText node=${n?.id} value="${v}"`);
   return H().setText(n, v);
 }
+
 export function setProperty(n: any, k: any, v: any) {
+  ZynthLogger.debug("Renderer", `setProperty node=${n?.id} prop=${k}`, v);
   return H().setProperty(n, k, v);
 }
+
 export function insertNode(p: any, n: any, a?: any) {
+  ZynthLogger.debug("Renderer", `insertNode parent=${p?.id} child=${n?.id}`);
   return H().insertNode(p, n, a ?? null);
 }
+
 export function removeNode(p: any, n: any) {
+  ZynthLogger.debug("Renderer", `removeNode parent=${p?.id} child=${n?.id}`);
   return H().removeNode(p, n);
 }
 export function flush() {
@@ -136,8 +190,15 @@ export const spread = r.spread as (
   accessor: any,
   skipChildren?: boolean
 ) => any;
-export const use = r.use as (
-  fn: (value: any, arg: any) => any,
-  element: any,
-  arg: any
-) => any;
+
+export const use = (fn: any, element: any, arg?: any) => {
+  if (typeof fn === "function") {
+    fn(element, arg);
+  } else if (fn && typeof fn === "object" && "current" in fn) {
+    fn.current = element;
+  }
+};
+
+export const createComponent = r.createComponent;
+export const setProp = r.setProp;
+export const mergeProps = r.mergeProps;

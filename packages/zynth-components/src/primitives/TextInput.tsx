@@ -5,7 +5,6 @@ import {
   createSignal,
   onCleanup,
   Show,
-  splitProps,
 } from "solid-js";
 import type { HostNode, StyleProp, SyncSignalAccessor } from "@zynthjs/core";
 import { createWorklet, setProperty, flush } from "@zynthjs/core";
@@ -317,48 +316,7 @@ function isSyncSignal(value: unknown): value is SyncSignalAccessor<string> {
 }
 
 export const TextInput: Component<TextInputProps> = (props) => {
-  const [local] = splitProps(props, [
-    "value",
-    "defaultValue",
-    "placeholder",
-    "multiline",
-    "numberOfLines",
-    "maxLength",
-    "editable",
-    "secureTextEntry",
-    "inputMode",
-    "autoCapitalize",
-    "autoCorrect",
-    "spellCheck",
-    "returnKeyType",
-    "blurOnSubmit",
-    "submitBehavior",
-    "selection",
-    "selectionColor",
-    "caretColor",
-    "placeholderTextColor",
-    "clearButtonMode",
-    "showClearAccessory",
-    "inputFilter",
-    "handler",
-    "onChangeText",
-    "onChange",
-    "onSelectionChange",
-    "onContentSizeChange",
-    "onSubmitEditing",
-    "onKeyPress",
-    "onFocus",
-    "onBlur",
-    "onCompositionStart",
-    "onCompositionEnd",
-    "selectTextOnFocus",
-    "eventThrottleMs",
-    "allowProgrammaticJumpDuringEdit",
-    "ref",
-    "style",
-    "testID",
-    "debugSync",
-  ]);
+  const local = props;
   const controller = useTextInputRef({
     value: local.value ?? local.defaultValue,
     driveFromValue: local.value !== undefined,
@@ -368,7 +326,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
     __setTextFromNative?: (value: string) => void;
     __setSelectionFromNative?: (sel: Selection) => void;
   };
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
   let defaultAppliedNodeId: number | null = null;
   onCleanup(() => local.ref?.(null));
 
@@ -542,141 +500,120 @@ export const TextInput: Component<TextInputProps> = (props) => {
     controller.__setComposing?.(false);
   };
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node || !controller.__attachInternal) return;
+  createEffect(
+    () => hostNode(),
+    (node) => {
+      if (!node || !controller.__attachInternal) return;
+      const bridge: TextInputRefBridge = {
+        notifyNativeValue(value) {
+          setProperty(node, "value", value);
+        },
+        notifyNativeSelection(sel) {
+          setProperty(node, "selection", sel);
+        },
+        notifyEditing() {},
+        notifyComposing() {},
+      };
+      controller.__attachInternal(bridge);
+    }
+  );
 
-    const nodeId = (node as any)?.id;
-    // console.log("[TextInput] attach controller bridge", { nodeId });
-    const bridge: TextInputRefBridge = {
-      notifyNativeValue(value) {
-        // console.log("[TextInput] bridge notifyNativeValue", { nodeId, value });
-        setProperty(node, "value", value);
-      },
-      notifyNativeSelection(sel) {
-        // console.log("[TextInput] bridge notifyNativeSelection", {
-        //   nodeId,
-        //   selection: sel,
-        // });
-        setProperty(node, "selection", sel);
-      },
-      notifyEditing() {
-        /* editing state is tracked in JS */
-      },
-      notifyComposing() {
-        /* composition state is tracked in JS */
-      },
-    };
+  createEffect(
+    () => ({ node: hostNode(), signalId: syncSignalId() }),
+    ({ node, signalId }) => {
+      if (!node || typeof signalId !== "number") return;
+      bindRuntimeSyncSignalNode(signalId, node.id);
+      onCleanup(() => {
+        unbindRuntimeSyncSignalNode(signalId, node.id);
+      });
+    }
+  );
 
-    controller.__attachInternal(bridge);
-  });
+  createEffect(
+    () => ({
+      node: hostNode(),
+      controlledValue: typeof local.value === "function" ? local.value() : local.value,
+      isSyncSig: typeof local.value === "function" && (local.value as any).__zynth_sync_signal_id,
+      initialValue: local.defaultValue,
+    }),
+    ({ node, controlledValue, isSyncSig, initialValue }) => {
+      if (!node) return;
+      const nodeId = (node as any)?.id as number | undefined;
+      const normalizedNodeId = typeof nodeId === "number" ? nodeId : defaultAppliedNodeId;
 
-  createEffect(() => {
-    const node = hostNode();
-    const signalId = syncSignalId();
-    if (!node || typeof signalId !== "number") return;
-
-    bindRuntimeSyncSignalNode(signalId, node.id);
-    onCleanup(() => {
-      unbindRuntimeSyncSignalNode(signalId, node.id);
-    });
-  });
-
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-    const nodeId = (node as any)?.id as number | undefined;
-    const normalizedNodeId =
-      typeof nodeId === "number" ? nodeId : defaultAppliedNodeId;
-    const controlledValue =
-      typeof local.value === "function" ? local.value() : local.value;
-
-    if (controlledValue !== undefined) {
-      // If the value is a SyncSignal, we skip the bridge update effect.
-      // The native view now updates the sync buffer directly, and we don't want
-      // JS to push the same value back down, which triggers IME/cursor jumps.
-      if (
-        typeof local.value === "function" &&
-        (local.value as any).__zynth_sync_signal_id
-      ) {
+      if (controlledValue !== undefined) {
+        if (isSyncSig) return;
+        logSync("controlled-value", { nodeId, value: controlledValue });
+        setProperty(node, "value", controlledValue);
+        defaultAppliedNodeId = normalizedNodeId ?? null;
         return;
       }
 
-      logSync("controlled-value", { nodeId, value: controlledValue });
-      setProperty(node, "value", controlledValue);
-      defaultAppliedNodeId = normalizedNodeId ?? null;
-      return;
+      if (initialValue !== undefined && defaultAppliedNodeId !== normalizedNodeId) {
+        logSync("default-value", { nodeId, value: initialValue });
+        setProperty(node, "value", initialValue);
+        defaultAppliedNodeId = normalizedNodeId ?? null;
+      }
     }
+  );
 
-    const initialValue = local.defaultValue;
-    if (
-      initialValue !== undefined &&
-      defaultAppliedNodeId !== normalizedNodeId
-    ) {
-      // Ensure uncontrolled inputs get their initial text on mount.
-      logSync("default-value", { nodeId, value: initialValue });
-      setProperty(node, "value", initialValue);
-      defaultAppliedNodeId = normalizedNodeId ?? null;
+  createEffect(
+    () => ({ node: hostNode(), nextMultiline: isPotentiallySecure() ? false : (local.multiline ?? false) }),
+    ({ node, nextMultiline }) => {
+      if (!node) return;
+      const nodeId = (node as any)?.id;
+      logSync("multiline", { nodeId, value: nextMultiline });
+      setProperty(node, "multiline", nextMultiline);
     }
-  });
+  );
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-    const nodeId = (node as any)?.id;
-    const nextMultiline = isPotentiallySecure()
-      ? false
-      : (local.multiline ?? false);
-    logSync("multiline", { nodeId, value: nextMultiline });
-    setProperty(node, "multiline", nextMultiline);
-  });
+  createEffect(
+    () => hostNode(),
+    (node) => {
+      if (!node) return;
+      const nodeId = (node as any)?.id;
+      logSync("handlers", { nodeId });
+      setProperty(node, "onChange", handleChange);
+      setProperty(node, "onChangeText", handleChangeText);
+      setProperty(node, "onSelectionChange", handleSelectionChange);
+      setProperty(node, "onSubmitEditing", handleSubmit);
+      setProperty(node, "onKeyPress", handleKeyPress);
+      setProperty(node, "onFocus", handleFocus);
+      setProperty(node, "onBlur", handleBlur);
+      setProperty(node, "onCompositionStart", handleCompositionStart);
+      setProperty(node, "onCompositionEnd", handleCompositionEnd);
+    }
+  );
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-    const nodeId = (node as any)?.id;
-    logSync("handlers", { nodeId });
-    setProperty(node, "onChange", handleChange);
-    setProperty(node, "onChangeText", handleChangeText);
-    setProperty(node, "onSelectionChange", handleSelectionChange);
-    setProperty(node, "onSubmitEditing", handleSubmit);
-    setProperty(node, "onKeyPress", handleKeyPress);
-    setProperty(node, "onFocus", handleFocus);
-    setProperty(node, "onBlur", handleBlur);
-    setProperty(node, "onCompositionStart", handleCompositionStart);
-    setProperty(node, "onCompositionEnd", handleCompositionEnd);
-  });
+  createEffect(
+    () => ({ node: hostNode(), nextHandler: local.handler ?? noopInputHandlerWorklet }),
+    ({ node, nextHandler }) => {
+      if (!node) return;
+      const nodeId = (node as any)?.id;
+      logSync("handler-worklet", { nodeId, hasCustomHandler: local.handler !== undefined });
+      setProperty(node, "handler", nextHandler);
+    }
+  );
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-    const nodeId = (node as any)?.id;
-    const nextHandler = local.handler ?? noopInputHandlerWorklet;
-    logSync("handler-worklet", {
-      nodeId,
-      hasCustomHandler: local.handler !== undefined,
-    });
-    setProperty(node, "handler", nextHandler);
-  });
-
-  createEffect(() => {
-    const node = hostNode();
-    if (!node || !hasStyleAccessor) return;
-    const nextStyle = resolvedStyle();
-    logSync("style", { nodeId: (node as any)?.id, value: nextStyle });
-    setProperty(node, "style", nextStyle as any);
-  });
+  createEffect(
+    () => ({ node: hostNode(), nextStyle: resolvedStyle() }),
+    ({ node, nextStyle }) => {
+      if (!node || !hasStyleAccessor) return;
+      logSync("style", { nodeId: (node as any)?.id, value: nextStyle });
+      setProperty(node, "style", nextStyle as any);
+    }
+  );
 
   const syncOptionalProp = (name: string, value: Accessor<unknown>) => {
-    createEffect(() => {
-      const node = hostNode();
-      if (!node) return;
-      const nextValue = value();
-      if (nextValue === undefined) return;
-      if (isPotentiallySecure() && name === "numberOfLines") return;
-      logSync(`prop:${name}`, { nodeId: (node as any)?.id, value: nextValue });
-      setProperty(node, name, nextValue);
-    });
+    createEffect(
+      () => ({ node: hostNode(), nextValue: value() }),
+      ({ node, nextValue }) => {
+        if (!node || nextValue === undefined) return;
+        if (isPotentiallySecure() && name === "numberOfLines") return;
+        logSync(`prop:${name}`, { nodeId: (node as any)?.id, value: nextValue });
+        setProperty(node, name, nextValue);
+      }
+    );
   };
 
   syncOptionalProp("style", () =>
@@ -712,8 +649,9 @@ export const TextInput: Component<TextInputProps> = (props) => {
   );
   syncOptionalProp("testID", () => local.testID);
 
+  const ShowAny = Show as any;
   return (
-    <Show
+    <ShowAny
       when={isPotentiallySecure()}
       fallback={
         <text-input
@@ -790,6 +728,6 @@ export const TextInput: Component<TextInputProps> = (props) => {
         }
         style={hasStyleAccessor ? undefined : (resolvedStyle() as any)}
       />
-    </Show>
+    </ShowAny>
   );
 };

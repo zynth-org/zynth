@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, createComponent } from "solid-js";
+import { createSignal, createEffect, onCleanup, createComponent } from "solid-js";
 import { Text, TextProps, createStyle } from "@zynthjs/components";
 import { Font, platform } from "@zynthjs/apis";
 
@@ -45,7 +45,7 @@ export function createIcon(glyph: string, fontFamily: string) {
       Font.isLoaded(fontFamily)
     );
 
-    onMount(() => {
+    createEffect(() => {
       if (Font.isLoaded(fontFamily)) {
         setIsReady(true);
         return;

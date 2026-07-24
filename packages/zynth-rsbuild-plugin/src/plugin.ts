@@ -458,7 +458,7 @@ function ensureAliases(
     if (solidPaths.store)
       staticAliases["solid-js/store"] = solidPaths.store;
     if (solidPaths.universal)
-      staticAliases["solid-js/universal"] = solidPaths.universal;
+      staticAliases["@solidjs/universal"] = solidPaths.universal;
     if (solidPaths.packageRoot) {
       staticAliases["solid-js$"] = solidPaths.core ?? solidPaths.packageRoot;
     }
@@ -676,11 +676,7 @@ function resolveSolidPaths(roots: string[], isDev?: boolean): SolidPaths {
         : safeResolve(rootRequire, "solid-js/store/dist/store.js") ??
           safeResolve(rootRequire, "solid-js/store");
 
-      const universal = isDev
-        ? safeResolve(rootRequire, "solid-js/universal/dist/dev.js") ??
-          safeResolve(rootRequire, "solid-js/universal")
-        : safeResolve(rootRequire, "solid-js/universal/dist/universal.js") ??
-          safeResolve(rootRequire, "solid-js/universal");
+      const universal = safeResolve(rootRequire, "@solidjs/universal");
 
       const html =
         safeResolve(rootRequire, "solid-js/html/dist/html.js") ??
@@ -730,8 +726,8 @@ function createSolidAliases(paths: SolidPaths): Record<string, string> {
     aliases["solid-js/store"] = path.dirname(paths.store);
   }
   if (paths.universal) {
-    aliases["solid-js/universal$"] = paths.universal;
-    aliases["solid-js/universal"] = path.dirname(paths.universal);
+    aliases["@solidjs/universal$"] = paths.universal;
+    aliases["@solidjs/universal"] = path.dirname(paths.universal);
   }
   if (paths.html) {
     aliases["solid-js/html$"] = paths.html;

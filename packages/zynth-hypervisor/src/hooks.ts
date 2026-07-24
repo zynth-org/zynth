@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onCleanup, useContext } from "solid-js";
 import { createContext } from "solid-js";
-import { JSX } from "solid-js"; // Import JSX for element types if needed
+
 
 // --- Host-side API ---
 

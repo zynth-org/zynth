@@ -1,5 +1,5 @@
-import { children as resolveChildren, splitProps } from "solid-js";
-import type { JSX, ParentComponent } from "solid-js";
+import { children as resolveChildren } from "solid-js";
+import type { Element as SolidElement, ParentComponent } from "solid-js";
 import type { Style } from "@zynthjs/core";
 
 export type BlurViewTint = "default" | "light" | "dark";
@@ -7,7 +7,7 @@ export type BlurViewVariant = "blur" | "glass";
 
 export interface BlurViewProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   intensity?: number;
   tint?: BlurViewTint;
   variant?: BlurViewVariant;
@@ -18,17 +18,7 @@ export interface BlurViewProps {
 }
 
 export const BlurView: ParentComponent<BlurViewProps> = (props) => {
-  const [local] = splitProps(props, [
-    "style",
-    "children",
-    "intensity",
-    "tint",
-    "variant",
-    "interactive",
-    "tintColor",
-    "pointerEvents",
-    "testID",
-  ]);
+  const local = props;
   const resolvedChildren = resolveChildren(() => local.children);
 
   return (

@@ -161,7 +161,7 @@ function setNativeSharedSignal(id: number, value: number): boolean {
 export function createSharedSignal<T>(
   initialValue: T,
 ): [SharedSignalAccessor<T>, Setter<T>] {
-  const [value, setValue] = createSignal(initialValue);
+  const [value, setValue] = createSignal<any>(initialValue as any);
   let cachedValue = initialValue;
   let nativeId: number | null = null;
 

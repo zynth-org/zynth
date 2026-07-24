@@ -1,22 +1,53 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@zynthjs/core": ["../zynth-core/dist/types/index.d.ts"],
-      "@zynthjs/core/*": ["../zynth-core/dist/types/*"]
+      "solid-js/jsx-runtime": [
+        "types/zynth-jsx/jsx-runtime.d.ts"
+      ],
+      "solid-js/jsx-dev-runtime": [
+        "types/zynth-jsx/jsx-runtime.d.ts"
+      ],
+      "@zynthjs/apis": [
+        "packages/zynth-apis/src/index.ts"
+      ],
+      "@zynthjs/apis/*": [
+        "packages/zynth-apis/src/*"
+      ],
+      "@zynthjs/components": [
+        "packages/zynth-components/src/index.ts"
+      ],
+      "@zynthjs/components/*": [
+        "packages/zynth-components/src/*"
+      ],
+      "@zynthjs/core": [
+        "../zynth-core/dist/types/index.d.ts"
+      ],
+      "@zynthjs/core/*": [
+        "../zynth-core/dist/types/*"
+      ],
+      "@zynthjs/core/universal": [
+        "packages/zynth-core/src/universal.ts"
+      ],
+      "@zynthjs/ui": [
+        "packages/zynth-ui/src/index.ts"
+      ],
+      "@zynthjs/ui/*": [
+        "packages/zynth-ui/src/*"
+      ]
     },
-    "rootDir": "src",
     "outDir": "dist/esm",
     "declaration": false,
     "emitDeclarationOnly": false,
-    "strict": true,
-    "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "solid-js"
+    "types": [
+      "zynth-jsx"
+    ]
   },
-  "include": ["src"],
-  "exclude": ["src/index.web.ts"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/index.web.ts"
+  ],
+  "extends": "../../tsconfig.base.json"
 }

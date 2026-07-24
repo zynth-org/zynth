@@ -1,8 +1,5 @@
 import {
-  JSX,
-  Index,
-  batch,
-  createComputed,
+  Element as SolidElement,
   createEffect,
   createMemo,
   createRoot,
@@ -41,7 +38,7 @@ export type FlatListRenderItemInfo<T> = {
 
 export type FlatListProps<T> = {
   data: T[];
-  renderItem: (info: FlatListRenderItemInfo<T>) => JSX.Element;
+  renderItem: (info: FlatListRenderItemInfo<T>) => SolidElement;
   keyExtractor: (item: T, index: number) => string;
   numColumns?: number;
   recycle?: boolean;
@@ -62,10 +59,10 @@ export type FlatListProps<T> = {
   scrollEventMinDisplacementPx?: number;
   scrollBridgeCoalescing?: boolean;
   decelerationRate?: "normal" | "fast" | number;
-  ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => JSX.Element;
-  ListHeaderComponent?: JSX.Element | (() => JSX.Element);
-  ListFooterComponent?: JSX.Element | (() => JSX.Element);
-  ListEmptyComponent?: JSX.Element | (() => JSX.Element);
+  ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => SolidElement;
+  ListHeaderComponent?: SolidElement | (() => SolidElement);
+  ListFooterComponent?: SolidElement | (() => SolidElement);
+  ListEmptyComponent?: SolidElement | (() => SolidElement);
   testID?: string;
   onLayout?: (event: LayoutChangeEvent) => void;
   onStartReached?: () => void;
@@ -306,11 +303,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let measuredCount = 0;
   let dataKeyToIndex = new Map<string, number>();
 
-  createComputed(() => {
-    const estimate = estimatedItemSize();
-    setLayoutEstimate(estimate);
-    adaptiveLocked = false;
-  });
+  createEffect(
+    () => ({ estimate: estimatedItemSize() }),
+    ({ estimate }) => {
+      setLayoutEstimate(estimate);
+      adaptiveLocked = false;
+    }
+  );
 
   const defaultScrollViewStyle: Style = { overflow: "hidden" as const };
   const mergedScrollViewStyle = createMemo(() => {
@@ -660,8 +659,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const [flowOffset, setFlowOffset] = createSignal(0);
 
   const updateBindingsForOffset = (offset: number, viewport: number) => {
-    batch(() => {
-      const dataLength = getVirtualLength();
+    const dataLength = getVirtualLength();
       if (dataLength !== dataKeys.length) return;
       if (dataLength === 0 || poolSlotsRef.length === 0) {
         if (poolSlotsRef.length > 0) {
@@ -827,7 +825,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
         setIsFlowLayout(false);
         setFlowOffset(0);
       }
-    });
   };
 
   const scheduleBindingsUpdate = (
@@ -868,10 +865,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const hasHeaderDecorator = createMemo(() => !!props.ListHeaderComponent);
   const hasFooterDecorator = createMemo(() => !!props.ListFooterComponent);
 
-  createEffect(() => {
-    if (!hasHeaderDecorator()) setHeaderExtent(0);
-    if (!hasFooterDecorator()) setFooterExtent(0);
-  });
+  createEffect(
+    () => ({ h: hasHeaderDecorator(), f: hasFooterDecorator() }),
+    ({ h, f }) => {
+      if (!h) setHeaderExtent(0);
+      if (!f) setFooterExtent(0);
+    }
+  );
 
   const getHeaderExtent = () => (hasHeaderDecorator() ? headerExtent() : 0);
   const getFooterExtent = () => (hasFooterDecorator() ? footerExtent() : 0);
@@ -1102,9 +1102,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
   };
 
-  createComputed(() => {
-    batch(() => {
-      const _extra = props.extraData;
+  createEffect(
+    () => ({
+      _extra: props.extraData,
+      horiz: props.horizontal,
+      cols: columnCount(),
+      isMulti: isMultiColumn(),
+      dataLen: props.data.length,
+    }),
+    () => {
       const signature = `${props.horizontal ? 1 : 0}:${columnCount()}:${isMultiColumn() ? 1 : 0}`;
       const topologyChanged = signature !== previousVirtualizationSignature;
       previousVirtualizationSignature = signature;
@@ -1153,8 +1159,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
       if (!props.recycle) {
         setRenderEpoch((prev) => prev + 1);
       }
-    });
-  });
+    }
+  );
 
   const handleScroll = (event: ScrollEvent) => {
     runWithOwner(owner, () => {
@@ -1202,16 +1208,21 @@ export function FlatList<T>(props: FlatListProps<T>) {
     });
   };
 
-  createComputed(() => {
-    const viewport = effectiveViewport();
-    if (viewport <= 0) return;
-    lastViewport = viewport;
-    updateBindingsForOffset(lastOffset, viewport);
-  });
+  createEffect(
+    () => ({ viewport: effectiveViewport() }),
+    ({ viewport }) => {
+      if (viewport <= 0) return;
+      lastViewport = viewport;
+      updateBindingsForOffset(lastOffset, viewport);
+    }
+  );
 
-  createComputed(() => {
-    schedulePoolGrowth(desiredPoolSize());
-  });
+  createEffect(
+    () => ({ desired: desiredPoolSize() }),
+    ({ desired }) => {
+      schedulePoolGrowth(desired);
+    }
+  );
 
   onCleanup(() => {
     if (scrollIdleTimer) {
@@ -1296,7 +1307,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   });
 
   const renderDecorator = (
-    decorator: JSX.Element | (() => JSX.Element) | undefined,
+    decorator: SolidElement | (() => SolidElement) | undefined,
   ) => {
     if (!decorator) return null;
     return typeof decorator === "function" ? decorator() : decorator;
@@ -1390,9 +1401,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
     props.ref?.(null);
   });
 
+  const ForAny = For as any;
+  const ShowAny = Show as any;
   return (
-    <Show when={true} keyed>
-      {(_key) => (
+    <ShowAny when={true} keyed>
+      {(_key: any) => (
         <ScrollView
           ref={attachRef}
           horizontal={props.horizontal}
@@ -1421,9 +1434,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
           {renderHeader()}
           {hasData() ? (
             <View style={requiredContentStyle()}>
-              <Index each={poolSlots()}>
-                {(slot) => {
-                  const slotData = slot();
+              <ForAny each={poolSlots()}>
+                {(slotData: any) => {
                   const rowStartIndex = createMemo(() => {
                     const idx = slotData.index();
                     if (idx < 0) return -1;
@@ -1539,12 +1551,16 @@ export function FlatList<T>(props: FlatListProps<T>) {
                         onLayout={handleLayout()}
                       >
                         <View style={rowContentStyle()}>
-                          <For each={rowItemOffsets()}>
-                            {(columnOffset) => {
+                          <ForAny each={rowItemOffsets()}>
+                            {(((columnOffset: any) => {
                               const itemIndex = createMemo(() => {
                                 const start = rowStartIndex();
                                 if (start < 0) return -1;
-                                const index = start + columnOffset;
+                                const offset =
+                                  typeof columnOffset === "function"
+                                    ? columnOffset()
+                                    : columnOffset;
+                                const index = start + Number(offset);
                                 if (index < 0 || index >= props.data.length)
                                   return -1;
                                 return index;
@@ -1633,20 +1649,19 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
                               return (
                                 <View style={columnStyle()}>
-                                  <For each={renderKeyList()}>
-                                    {() =>
+                                  <ForAny each={renderKeyList()}>
+                                    {(() =>
                                       props.renderItem({
                                         item: itemProxy,
                                         index: indexValue,
                                         itemSignal,
                                         indexSignal: itemIndex,
-                                      })
-                                    }
-                                  </For>
+                                      })) as any}
+                                  </ForAny>
                                 </View>
                               );
-                            }}
-                          </For>
+                            }) as any)}
+                          </ForAny>
                         </View>
                         {(() => {
                           const SeparatorComponent =
@@ -1692,7 +1707,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
                     </View>
                   );
                 }}
-              </Index>
+              </ForAny>
             </View>
           ) : (
             renderDecorator(props.ListEmptyComponent)
@@ -1700,6 +1715,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
           {renderFooter()}
         </ScrollView>
       )}
-    </Show>
+    </ShowAny>
   );
 }

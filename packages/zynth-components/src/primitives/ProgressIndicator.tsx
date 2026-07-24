@@ -1,4 +1,4 @@
-import { splitProps, type Component } from "solid-js";
+import { type Component } from "solid-js";
 import type { Style } from "@zynthjs/core";
 
 export type ProgressIndicatorSize = "small" | "large";
@@ -17,13 +17,7 @@ export interface ProgressIndicatorProps {
 }
 
 export const ProgressIndicator: Component<ProgressIndicatorProps> = (props) => {
-  const [local] = splitProps(props, [
-    "color",
-    "size",
-    "animating",
-    "style",
-    "testID",
-  ]);
+  const local = props;
 
   return (
     <progress-indicator

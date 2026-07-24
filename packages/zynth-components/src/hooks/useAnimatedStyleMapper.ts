@@ -102,45 +102,35 @@ export function useAnimatedStyleMapper(
     }
   };
 
-  createEffect(() => {
-    const styleProp = getStyleProp();
-    const meta = getAnimatedStyleMeta(styleProp);
-
-    if (!meta) {
-      // Plain style (static object, array, or non-animated accessor).
-      // Detach any previously active mapper and return — no further cost.
-      detachMapper();
-      return;
-    }
-
-    // `meta.getMapping()` is backed by a `createMemo` inside `createAnimatedStyle`.
-    // Reading it here registers a fine-grained reactive dependency: the effect
-    // re-runs whenever the mapping contents change (shared values added/removed).
-    const mapping = meta.getMapping();
-    const nodeId = getHostNode()?.id;
-
-    if (!mapping || !nodeId) {
-      detachMapper();
-      return;
-    }
-
-    const nextKey = getMappingKey(mapping);
-
-    if (mapperId === null || mapperNodeId !== nodeId) {
-      // First attach or the host node was replaced — create a fresh mapper.
-      if (mapperId !== null) {
-        removeNativeStyleMapper(mapperId);
+  createEffect(
+    () => {
+      const styleProp = getStyleProp();
+      const meta = getAnimatedStyleMeta(styleProp);
+      if (!meta) return null;
+      const mapping = meta.getMapping();
+      const nodeId = getHostNode()?.id;
+      if (!mapping || !nodeId) return null;
+      return { mapping, nodeId, nextKey: getMappingKey(mapping) };
+    },
+    (data) => {
+      if (!data) {
+        detachMapper();
+        return;
       }
-      mapperId = createNativeStyleMapper(nodeId, mapping);
-      mapperNodeId = nodeId;
-      mapperKey = nextKey;
-    } else if (mapperKey !== nextKey) {
-      // Mapping identity changed (e.g. different transform properties) — update.
-      updateNativeStyleMapper(mapperId, mapping);
-      mapperKey = nextKey;
+      const { mapping, nodeId, nextKey } = data;
+      if (mapperId === null || mapperNodeId !== nodeId) {
+        if (mapperId !== null) {
+          removeNativeStyleMapper(mapperId);
+        }
+        mapperId = createNativeStyleMapper(nodeId, mapping);
+        mapperNodeId = nodeId;
+        mapperKey = nextKey;
+      } else if (mapperKey !== nextKey) {
+        updateNativeStyleMapper(mapperId, mapping);
+        mapperKey = nextKey;
+      }
     }
-    // If key is unchanged: mapping is identical, skip the native call.
-  });
+  );
 
   onCleanup(detachMapper);
 }

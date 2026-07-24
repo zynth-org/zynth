@@ -1,13 +1,11 @@
 import {
-  JSX,
   children as resolveChildren,
   createEffect,
   createMemo,
   createSignal,
   onCleanup,
-  splitProps,
 } from "solid-js";
-import type { ParentComponent } from "solid-js";
+import type { ParentComponent, Element as SolidElement } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
 import { setProperty } from "@zynthjs/core";
 import {
@@ -19,249 +17,227 @@ import type { KeyEvent, Modifiers } from "./events";
 import { useAnimatedStyleMapper } from "../hooks/useAnimatedStyleMapper";
 export type { KeyEvent } from "./events";
 
-export type PressablePointerType =
-  | "touch"
-  | "mouse"
-  | "pen"
-  | "keyboard"
-  | "programmatic";
-
-export type PressEvent = {
-  x: number;
-  y: number;
-  screenX: number;
-  screenY: number;
-  timestamp: number;
-  pointerType: PressablePointerType;
-  button?: number;
-  modifiers?: Modifiers;
-  canceled?: boolean;
-};
-
-export type PressableState = {
+export interface PressableState {
   pressed: boolean;
   hovered: boolean;
   focused: boolean;
   disabled: boolean;
   longPressActive: boolean;
-};
+}
 
-type HitSlop =
-  | number
-  | {
-      top?: number;
-      left?: number;
-      bottom?: number;
-      right?: number;
-    };
+export type PressableRole =
+  | "button"
+  | "link"
+  | "checkbox"
+  | "radio"
+  | "tab"
+  | "switch"
+  | "menuitem"
+  | "none";
 
-export type PressableProps = {
-  children?: JSX.Element | JSX.Element[];
+export type PressableType = "button" | "submit" | "reset";
+export type PressableEffect = "ripple" | "opacity" | "scale" | "highlight" | "none";
+
+export interface PressEvent {
+  nativeEvent: {
+    target: number;
+    timestamp: number;
+    x?: number;
+    y?: number;
+    absoluteX?: number;
+    absoluteY?: number;
+    pointerType?: "touch" | "mouse" | "pen";
+    button?: number;
+    buttons?: number;
+    altKey?: boolean;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+  };
+}
+
+export interface LongPressEvent {
+  durationMs: number;
+}
+
+export interface RectOffset {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+}
+
+export interface PressableProps {
+  asChild?: boolean;
   disabled?: boolean;
-  pressRetentionOffset?: number;
-  hitSlop?: HitSlop;
+  role?: PressableRole;
+  type?: PressableType;
+  pressEffect?: PressableEffect;
+  pressRetentionOffset?: RectOffset;
   delayPressInMs?: number;
   delayPressOutMs?: number;
   delayLongPressMs?: number;
   longPressMinDurationMs?: number;
+
   allowTouchPropagation?: boolean;
   cancelOnOutside?: boolean;
   enableDoublePress?: boolean;
   doublePressWindowMs?: number;
-  role?: "button" | "link" | "menuitem" | "none";
-  type?: "button" | "submit";
+
+  hitSlop?: number | RectOffset;
   focusable?: boolean;
   tabIndex?: number;
-  activateKeys?: Array<"Enter" | "Space">;
+  activateKeys?: string[];
   preventFocusOnPress?: boolean;
-  pressEffect?: "none" | "highlight" | "ripple";
-  stateLayerStyle?: Style | ((state: PressableState) => Style);
-  style?: Style | ((state: PressableState) => Style);
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   enableGlassIOS?: boolean;
   tintColor?: string;
-  ref?: (node: (HostNode & PressableRef) | null) => void;
-  asChild?: boolean;
+
   accessibilityLabel?: string;
   accessibilityHint?: string;
   testID?: string;
-  /**
-   * Internal mount gate for native rendering stability.
-   * Keep default `true` unless you intentionally coordinate first paint.
-   */
-  ready?: boolean;
+
+  style?: Style | ((state: PressableState) => Style | undefined);
+  stateLayerStyle?: Style | ((state: PressableState) => Style | undefined);
+
   onPressIn?: (event: PressEvent) => void;
   onPressOut?: (event: PressEvent) => void;
   onPress?: (event: PressEvent) => void;
-  onLongPress?: (event: { durationMs: number }) => void;
+  onLongPress?: (event: LongPressEvent) => void;
   onDoublePress?: (event: PressEvent) => void;
+
   onHoverIn?: () => void;
   onHoverOut?: () => void;
+
   onFocus?: () => void;
   onBlur?: () => void;
+
   onKeyDown?: (event: KeyEvent) => void;
   onKeyUp?: (event: KeyEvent) => void;
+
   onPressChange?: (pressed: boolean) => void;
+
+  ready?: boolean;
+
+  ref?: (node: (HostNode & PressableRef) | null) => void;
+  children?: SolidElement | ((state: PressableState) => SolidElement);
+}
+
+const DEFAULT_PRESS_RETENTION: RectOffset = {
+  top: 20,
+  right: 20,
+  bottom: 20,
+  left: 20,
 };
 
-const DEFAULT_PRESS_RETENTION = 20;
 const DEFAULT_DELAY_PRESS_IN = 0;
 const DEFAULT_DELAY_PRESS_OUT = 0;
 const DEFAULT_LONG_PRESS_MS = 500;
-const DEFAULT_DOUBLE_PRESS_WINDOW = 250;
+const DEFAULT_DOUBLE_PRESS_WINDOW = 300;
 
-const normalizeHitSlop = (value: HitSlop | undefined) => {
-  if (value === undefined) return undefined;
-  if (typeof value === "number") {
-    return {
-      top: value,
-      left: value,
-      bottom: value,
-      right: value,
-    };
+function defaultActivateKeysForRole(role: PressableRole): string[] {
+  switch (role) {
+    case "button":
+    case "checkbox":
+    case "radio":
+    case "switch":
+    case "tab":
+    case "menuitem":
+      return ["Enter", " "];
+    case "link":
+      return ["Enter"];
+    default:
+      return ["Enter", " "];
+  }
+}
+
+function normalizeHitSlop(input?: number | RectOffset): RectOffset {
+  if (!input) return { top: 0, right: 0, bottom: 0, left: 0 };
+  if (typeof input === "number") {
+    return { top: input, right: input, bottom: input, left: input };
   }
   return {
-    top: value.top ?? 0,
-    left: value.left ?? 0,
-    bottom: value.bottom ?? 0,
-    right: value.right ?? 0,
+    top: input.top ?? 0,
+    right: input.right ?? 0,
+    bottom: input.bottom ?? 0,
+    left: input.left ?? 0,
   };
-};
+}
 
-const defaultActivateKeysForRole = (
-  role: PressableProps["role"]
-): Array<"Enter" | "Space"> => {
-  if (role === "button") return ["Enter", "Space"];
-  if (role === "link") return ["Enter"];
-  return [];
-};
+function normalizeModifiers(raw: any): Modifiers {
+  return {
+    altKey: !!(raw?.alt ?? raw?.altKey),
+    ctrlKey: !!(raw?.ctrl ?? raw?.ctrlKey),
+    metaKey: !!(raw?.meta ?? raw?.metaKey),
+    shiftKey: !!(raw?.shift ?? raw?.shiftKey),
+  };
+}
 
-const normalizePressEvent = (payload: any): PressEvent => {
-  if (payload && typeof payload === "object") {
-    return {
-      x: Number(payload.x ?? 0),
-      y: Number(payload.y ?? 0),
-      screenX: Number(payload.screenX ?? 0),
-      screenY: Number(payload.screenY ?? 0),
-      timestamp: Number(payload.timestamp ?? Date.now()),
-      pointerType: (payload.pointerType as PressablePointerType) ?? "touch",
-      button:
-        payload.button !== undefined ? Number(payload.button) : undefined,
-      modifiers: payload.modifiers
-        ? {
-            altKey: !!payload.modifiers.altKey,
-            ctrlKey: !!payload.modifiers.ctrlKey,
-            metaKey: !!payload.modifiers.metaKey,
-            shiftKey: !!payload.modifiers.shiftKey,
-          }
-        : undefined,
-      canceled: payload.canceled ?? payload.cancelled ?? false,
-    };
+function normalizeKeyEvent(payload: any): KeyEvent {
+  return {
+    key: String(payload?.key ?? ""),
+    code: payload?.code ? String(payload.code) : undefined,
+    repeat: !!payload?.repeat,
+    modifiers: normalizeModifiers(payload?.modifiers),
+  };
+}
+
+function normalizePressEvent(payload: any): PressEvent {
+  if (payload && typeof payload === "object" && "nativeEvent" in payload) {
+    return payload as PressEvent;
   }
   return {
-    x: 0,
-    y: 0,
-    screenX: 0,
-    screenY: 0,
-    timestamp: Date.now(),
-    pointerType: "touch",
+    nativeEvent: {
+      target: Number(payload?.target ?? 0),
+      timestamp: Number(payload?.timestamp ?? Date.now()),
+      x: payload?.x != null ? Number(payload.x) : undefined,
+      y: payload?.y != null ? Number(payload.y) : undefined,
+      absoluteX: payload?.absoluteX != null ? Number(payload.absoluteX) : undefined,
+      absoluteY: payload?.absoluteY != null ? Number(payload.absoluteY) : undefined,
+      pointerType: payload?.pointerType ?? "touch",
+      button: payload?.button != null ? Number(payload.button) : undefined,
+      buttons: payload?.buttons != null ? Number(payload.buttons) : undefined,
+      altKey: !!payload?.altKey,
+      ctrlKey: !!payload?.ctrlKey,
+      metaKey: !!payload?.metaKey,
+      shiftKey: !!payload?.shiftKey,
+    },
   };
-};
+}
 
-const normalizeKeyEvent = (payload: any): KeyEvent => {
-  if (payload && typeof payload === "object") {
-    return {
-      key: String(payload.key ?? ""),
-      code: payload.code ? String(payload.code) : undefined,
-      repeat: !!payload.repeat,
-      modifiers: payload.modifiers
-        ? {
-            altKey: !!payload.modifiers.altKey,
-            ctrlKey: !!payload.modifiers.ctrlKey,
-            metaKey: !!payload.modifiers.metaKey,
-            shiftKey: !!payload.modifiers.shiftKey,
-          }
-        : undefined,
-    };
-  }
-  return { key: "" };
-};
+export const usePressableRef = () => createPressableRef();
 
 export const Pressable: ParentComponent<PressableProps> = (props) => {
-  const [local] = splitProps(props, [
-    "children",
-    "disabled",
-    "pressRetentionOffset",
-    "hitSlop",
-    "delayPressInMs",
-    "delayPressOutMs",
-    "delayLongPressMs",
-    "longPressMinDurationMs",
-    "allowTouchPropagation",
-    "cancelOnOutside",
-    "enableDoublePress",
-    "doublePressWindowMs",
-    "role",
-    "type",
-    "focusable",
-    "tabIndex",
-    "activateKeys",
-    "preventFocusOnPress",
-    "pressEffect",
-    "stateLayerStyle",
-    "style",
-    "pointerEvents",
-    "enableGlassIOS",
-    "tintColor",
-    "ref",
-    "asChild",
-    "accessibilityLabel",
-    "accessibilityHint",
-    "testID",
-    "ready",
-    "onPressIn",
-    "onPressOut",
-    "onPress",
-    "onLongPress",
-    "onDoublePress",
-    "onHoverIn",
-    "onHoverOut",
-    "onFocus",
-    "onBlur",
-    "onKeyDown",
-    "onKeyUp",
-    "onPressChange",
-  ]);
+  const local = props;
 
-  const controller: InternalPressableController = createPressableRef({
+  const controller = createPressableRef({
     disabled: local.disabled,
-  });
+  }) as unknown as InternalPressableController;
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
 
-  // ─── Animated style mapper ─────────────────────────────────────────────────
-  // Detects `createAnimatedStyle` metadata on the style prop and lazily
-  // attaches a native style mapper. Zero cost for plain Style objects.
-  // Note: `local.style` may be a state-based callback `(state) => Style` —
-  // `getAnimatedStyleMeta` will return null for those (no `__zynthAnimatedStyle`).
   useAnimatedStyleMapper(() => local.style, hostNode);
 
-  controller.__attachHost?.(hostNode());
-
-  createEffect(() => {
-    controller.__attachHost?.(hostNode());
-  });
+  createEffect(
+    () => ({ node: hostNode() }),
+    ({ node }) => {
+      controller.__attachHost?.(node);
+    }
+  );
 
   onCleanup(() => {
     controller.__attachHost?.(null);
     local.ref?.(null);
   });
 
-  createEffect(() => {
-    if (local.disabled !== undefined) {
-      controller.__syncDisabled?.(!!local.disabled);
+  createEffect(
+    () => ({ dis: local.disabled }),
+    ({ dis }) => {
+      if (dis !== undefined) {
+        controller.__syncDisabled?.(!!dis);
+      }
     }
-  });
+  );
 
   const resolvedDisabled = createMemo(
     () => local.disabled ?? controller.disabled()
@@ -348,16 +324,24 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     return value as Style | undefined;
   });
 
-  const resolvedChildren = resolveChildren(() => local.children);
+  const resolvedChildren = resolveChildren(() => {
+    const children = local.children;
+    if (typeof children === "function") {
+      return children(currentState());
+    }
+    return children;
+  });
 
   let lastPressed = controller.pressed();
-  createEffect(() => {
-    const pressed = controller.pressed();
-    if (pressed !== lastPressed) {
-      lastPressed = pressed;
-      local.onPressChange?.(pressed);
+  createEffect(
+    () => ({ pressed: controller.pressed() }),
+    ({ pressed }) => {
+      if (pressed !== lastPressed) {
+        lastPressed = pressed;
+        local.onPressChange?.(pressed);
+      }
     }
-  });
+  );
 
   const handlePressIn = (payload: any) => {
     if (resolvedDisabled()) return;
@@ -418,72 +402,99 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     local.onKeyUp?.(normalizeKeyEvent(payload));
   };
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
+  createEffect(
+    () => ({ node: hostNode(), st: resolvedStyle(), layerSt: resolvedStateLayerStyle() }),
+    ({ node, st, layerSt }) => {
+      if (!node) return;
+      setProperty(node, "style", st);
+      setProperty(node, "stateLayerStyle", layerSt);
+    }
+  );
 
-    setProperty(node, "style", resolvedStyle());
-    setProperty(node, "stateLayerStyle", resolvedStateLayerStyle());
-  });
+  createEffect(
+    () => ({
+      node: hostNode(),
+      dis: resolvedDisabled(),
+      eff: resolvedPressEffect(),
+      ret: resolvedPressRetention(),
+      slop: resolvedHitSlop(),
+      pressIn: resolvedDelayPressIn(),
+      pressOut: resolvedDelayPressOut(),
+      longPress: resolvedDelayLongPress(),
+      allowProp: resolvedAllowTouchPropagation(),
+      cancelOutside: resolvedCancelOnOutside(),
+      doublePress: resolvedEnableDoublePress(),
+      doubleWin: resolvedDoublePressWindow(),
+      role: resolvedRole(),
+      type: resolvedType(),
+      focusable: resolvedFocusable(),
+      tabIndex: resolvedTabIndex(),
+      activateKeys: resolvedActivateKeys(),
+      preventFocus: local.preventFocusOnPress ?? false,
+      pointer: pointerBehavior(),
+      glass: local.enableGlassIOS ?? false,
+      tint: local.tintColor,
+      label: local.accessibilityLabel,
+      hint: local.accessibilityHint,
+      testId: local.testID,
+    }),
+    (cfg) => {
+      const { node } = cfg;
+      if (!node) return;
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
+      setProperty(node, "disabled", cfg.dis);
+      setProperty(node, "pressEffect", cfg.eff);
+      setProperty(node, "pressRetentionOffset", cfg.ret);
+      setProperty(node, "hitSlop", cfg.slop);
+      setProperty(node, "delayPressInMs", cfg.pressIn);
+      setProperty(node, "delayPressOutMs", cfg.pressOut);
+      setProperty(node, "delayLongPressMs", cfg.longPress);
+      setProperty(node, "allowTouchPropagation", cfg.allowProp);
+      setProperty(node, "cancelOnOutside", cfg.cancelOutside);
+      setProperty(node, "enableDoublePress", cfg.doublePress);
+      setProperty(node, "doublePressWindowMs", cfg.doubleWin);
+      setProperty(node, "role", cfg.role);
+      setProperty(node, "accessibilityRole", cfg.role);
+      setProperty(node, "type", cfg.type);
+      setProperty(node, "focusable", cfg.focusable);
+      setProperty(node, "tabIndex", cfg.tabIndex);
+      setProperty(node, "activateKeys", cfg.activateKeys);
+      setProperty(node, "preventFocusOnPress", cfg.preventFocus);
+      setProperty(node, "pointerEvents", cfg.pointer);
+      setProperty(node, "enableGlassIOS", cfg.glass);
+      setProperty(node, "tintColor", cfg.tint);
+      setProperty(node, "accessibilityLabel", cfg.label);
+      setProperty(node, "accessibilityHint", cfg.hint);
+      setProperty(node, "testID", cfg.testId);
+    }
+  );
 
-    setProperty(node, "disabled", resolvedDisabled());
-    setProperty(node, "pressEffect", resolvedPressEffect());
-    setProperty(node, "pressRetentionOffset", resolvedPressRetention());
-    setProperty(node, "hitSlop", resolvedHitSlop());
-    setProperty(node, "delayPressInMs", resolvedDelayPressIn());
-    setProperty(node, "delayPressOutMs", resolvedDelayPressOut());
-    setProperty(node, "delayLongPressMs", resolvedDelayLongPress());
-    setProperty(node, "allowTouchPropagation", resolvedAllowTouchPropagation());
-    setProperty(node, "cancelOnOutside", resolvedCancelOnOutside());
-    setProperty(node, "enableDoublePress", resolvedEnableDoublePress());
-    setProperty(node, "doublePressWindowMs", resolvedDoublePressWindow());
-    setProperty(node, "role", resolvedRole());
-    setProperty(node, "accessibilityRole", resolvedRole());
-    setProperty(node, "type", resolvedType());
-    setProperty(node, "focusable", resolvedFocusable());
-    setProperty(node, "tabIndex", resolvedTabIndex());
-    setProperty(node, "activateKeys", resolvedActivateKeys());
-    setProperty(
-      node,
-      "preventFocusOnPress",
-      local.preventFocusOnPress ?? false
-    );
-    setProperty(node, "pointerEvents", pointerBehavior());
-    setProperty(node, "enableGlassIOS", local.enableGlassIOS ?? false);
-    setProperty(node, "tintColor", local.tintColor);
-    setProperty(node, "accessibilityLabel", local.accessibilityLabel);
-    setProperty(node, "accessibilityHint", local.accessibilityHint);
-    setProperty(node, "testID", local.testID);
-  });
+  createEffect(
+    () => hostNode(),
+    (node) => {
+      if (!node) return;
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
+      setProperty(node, "onPressIn", handlePressIn);
+      setProperty(node, "onPressOut", handlePressOut);
+      setProperty(node, "onPress", handlePress);
+      setProperty(node, "onLongPress", handleLongPress);
+      setProperty(node, "onDoublePress", handleDoublePress);
+      setProperty(node, "onHoverIn", handleHoverIn);
+      setProperty(node, "onHoverOut", handleHoverOut);
+      setProperty(node, "onFocus", handleFocus);
+      setProperty(node, "onBlur", handleBlur);
+      setProperty(node, "onKeyDown", handleKeyDown);
+      setProperty(node, "onKeyUp", handleKeyUp);
+    }
+  );
 
-    setProperty(node, "onPressIn", handlePressIn);
-    setProperty(node, "onPressOut", handlePressOut);
-    setProperty(node, "onPress", handlePress);
-    setProperty(node, "onLongPress", handleLongPress);
-    setProperty(node, "onDoublePress", handleDoublePress);
-    setProperty(node, "onHoverIn", handleHoverIn);
-    setProperty(node, "onHoverOut", handleHoverOut);
-    setProperty(node, "onFocus", handleFocus);
-    setProperty(node, "onBlur", handleBlur);
-    setProperty(node, "onKeyDown", handleKeyDown);
-    setProperty(node, "onKeyUp", handleKeyUp);
-  });
-
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-
-    // Keep native pressable hidden until this prop pass has configured visuals/events.
-    setProperty(node, "ready", local.ready ?? true);
-  });
+  createEffect(
+    () => ({ node: hostNode(), isReady: local.ready ?? true }),
+    ({ node, isReady }) => {
+      if (!node) return;
+      setProperty(node, "ready", isReady);
+    }
+  );
 
   if (local.asChild) {
     console.warn(

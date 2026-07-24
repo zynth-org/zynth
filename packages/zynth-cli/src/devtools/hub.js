@@ -110,6 +110,10 @@ function createDevtoolsHub({
       dataIsObject && typeof data.message === "string" ? data.message : null;
     const dataStack =
       dataIsObject && typeof data.stack === "string" ? data.stack : null;
+    const dataCause =
+      dataIsObject && typeof data.cause === "string" ? data.cause : null;
+    const dataCauseStack =
+      dataIsObject && typeof data.causeStack === "string" ? data.causeStack : null;
     const dataContext =
       dataIsObject && typeof data.context === "string" ? data.context : null;
     const dataRuntime =
@@ -121,7 +125,10 @@ function createDevtoolsHub({
     if (dataMessage) {
       const contextSuffix = dataContext ? ` (${dataContext})` : "";
       const stackSuffix = dataStack ? `\n${dataStack}` : "";
-      message = `${dataMessage}${contextSuffix}${stackSuffix}`;
+      const causeSuffix = dataCause
+        ? `\nCause: ${dataCause}${dataCauseStack ? `\n${dataCauseStack}` : ""}`
+        : "";
+      message = `${dataMessage}${contextSuffix}${causeSuffix}${stackSuffix}`;
     } else if (typeof data === "string") {
       message = data;
     } else if (dataIsObject) {

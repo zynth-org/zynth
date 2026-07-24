@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, type Component } from "solid-js";
+import { createSignal, onCleanup, onSettled, type Component } from "solid-js";
 import { Font, Glyphs } from "@zynthjs/apis";
 import { Platform } from "@zynthjs/core";
 import { Text, type TextProps } from "./Text";
@@ -37,7 +37,7 @@ export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
     }
   };
 
-  onMount(() => {
+  onSettled(() => {
     const entry = resolveEntry();
     if (!entry) {
       if (!warnedMissingGlyph.has(props.name)) {

@@ -1,7 +1,10 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist/esm",
-    "declaration": false
+    "declaration": false,
+    "types": [
+      "zynth-jsx"
+    ]
   }
 }

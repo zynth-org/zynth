@@ -174,7 +174,7 @@ export function createSyncSignal<T extends string = string>(
   initialValue: T,
 ): [SyncSignalAccessor<T>, SyncSignalSetter<T>] {
   const normalizedInitial = String(initialValue) as T;
-  const [value, setValue] = createSignal<T>(normalizedInitial);
+  const [value, setValue] = createSignal<any>(normalizedInitial as any);
   const syncId = createNativeSyncSignal(normalizedInitial);
   let cached = normalizedInitial;
 

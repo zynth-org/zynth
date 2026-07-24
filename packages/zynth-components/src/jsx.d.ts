@@ -1,5 +1,5 @@
 import type { Style, StyleRef } from "@zynthjs/core";
-import type { JSX } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 import type { ImageElementProps } from "./primitives/Image";
 import type { TextInputProps } from "./primitives/TextInput";
 import type { TextFieldProps } from "./primitives/TextField";
@@ -17,8 +17,8 @@ import type {
   TapGestureEvent,
 } from "@zynthjs/core/gesture";
 
-type ZynthChildren = JSX.Element | JSX.Element[] | null | undefined;
-type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;
+type ZynthChildren = SolidElement | SolidElement[] | null | undefined;
+type SolidButtonProps = { [key: string]: unknown };
 
 interface ViewElementProps {
   style?: Style | StyleRef;
@@ -84,7 +84,7 @@ interface TextElementProps {
   ref?: (node: any) => void;
 }
 
-declare module "solid-js" {
+declare module "solid-js/jsx-runtime" {
   namespace JSX {
     interface IntrinsicElements {
       view: ViewElementProps;

@@ -1,5 +1,5 @@
 import { callNative, getGlobalObject } from "@zynthjs/core";
-import { createSignal, createEffect, createResource, type Accessor, type Resource } from "solid-js";
+import { createSignal, createEffect, type Accessor } from "solid-js";
 
 type WebFontSources = Record<string, string>;
 const webLoadedFonts = new Set<string>();
@@ -281,33 +281,32 @@ export const Font = {
 };
 
 /**
- * Utility to load multiple fonts and return a Solid Resource.
- * Integrates with Suspense and ErrorBoundary.
+ * Utility to load multiple fonts and return an Accessor for completion state.
  *
  * @example
  * const fonts = createFontLoader({ "Diablo": diabloFont });
  *
  * // In JSX
- * <Suspense fallback={<Loading />}>
- *   <MyContent ready={fonts()} />
- * </Suspense>
+ * <Show when={fonts()}>
+ *   <MyContent />
+ * </Show>
  */
 export function createFontLoader(
   map: Record<string, string | FontAssetDescriptor>,
-): Resource<boolean> {
-  const [resource] = createResource(async () => {
+): Accessor<boolean> {
+  const [loaded, setLoaded] = createSignal(false);
+
+  createEffect(() => {
     const families = Object.keys(map);
-    const results = await Promise.all(
+    Promise.all(
       families.map((family) => Font.loadAsync(family, map[family]!)),
-    );
-
-    const failed = results.find((r) => !r.success);
-    if (failed) {
-      throw new Error(failed.error ?? "Failed to load one or more fonts");
-    }
-
-    return true;
+    ).then((results) => {
+      const failed = results.find((r) => !r.success);
+      if (!failed) {
+        setLoaded(true);
+      }
+    });
   });
 
-  return resource;
+  return loaded;
 }

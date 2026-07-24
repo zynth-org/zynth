@@ -1,5 +1,4 @@
 import {
-  splitProps,
   createSignal,
   createEffect,
   createMemo,
@@ -114,47 +113,20 @@ export interface TextFieldProps {
   onFocus?: () => void;
   /** Called when the text field loses focus */
   onBlur?: () => void;
-  /** Called when the return/submit key is pressed */
-  onSubmit?: (event: { value: string }) => void;
-
-  /** Ref for imperative control */
-  ref?: ((node: (HostNode & TextFieldRef) | null) => void) | null;
-
-  /** Style props */
+  /** Additional style */
   style?: Style;
   /** Test ID for testing frameworks */
   testID?: string;
+  /** Ref for imperative operations */
+  ref?: (node: (HostNode & TextFieldRef) | null) => void;
 }
 
-type TextFieldEvent<T> = {
-  target: number;
-} & T;
+type TextFieldEvent<T = Record<string, unknown>> = T & { target: number };
 
 export const TextField: Component<TextFieldProps> = (props) => {
-  const [local] = splitProps(props, [
-    "value",
-    "defaultValue",
-    "placeholder",
-    "placeholderColor",
-    "disabled",
-    "editable",
-    "secureTextEntry",
-    "keyboardType",
-    "returnKeyType",
-    "autoCapitalize",
-    "autoCorrect",
-    "maxLength",
-    "variant",
-    "onChange",
-    "onFocus",
-    "onBlur",
-    "onSubmit",
-    "ref",
-    "style",
-    "testID",
-  ]);
+  const local = props;
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
   const [text, setText] = createSignal(local.value ?? local.defaultValue ?? "");
   const [focused, setFocused] = createSignal(false);
   const style = createMemo<Record<string, unknown> | undefined>(() =>
@@ -169,57 +141,48 @@ export const TextField: Component<TextFieldProps> = (props) => {
 
   onCleanup(() => assignRef(null));
 
-  // Handle text change from native
   const handleChange = (event: TextFieldEvent<{ value: string }>) => {
     setText(event.value);
     local.onChange?.(event.value);
   };
 
-  // Handle focus from native
   const handleFocus = () => {
     setFocused(true);
     local.onFocus?.();
   };
 
-  // Handle blur from native
   const handleBlur = () => {
     setFocused(false);
     local.onBlur?.();
   };
 
-  // Handle submit from native
-  const handleSubmit = (event: TextFieldEvent<{ value: string }>) => {
-    local.onSubmit?.({ value: event.value });
-  };
-
-  // Sync controlled value to native
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-
-    if (local.value !== undefined) {
-      setText(local.value);
-      setProperty(node, "value", local.value);
+  createEffect(
+    () => ({ node: hostNode(), val: local.value }),
+    ({ node, val }) => {
+      if (!node || val === undefined) return;
+      setText(val);
+      setProperty(node, "value", val);
     }
-  });
+  );
 
-  // Sync props to native
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-
-    setProperty(node, "onChange", handleChange);
-    setProperty(node, "onFocus", handleFocus);
-    setProperty(node, "onBlur", handleBlur);
-    setProperty(node, "onSubmit", handleSubmit);
-  });
+  createEffect(
+    () => hostNode(),
+    (node) => {
+      if (!node) return;
+      setProperty(node, "onChange", handleChange);
+      setProperty(node, "onFocus", handleFocus);
+      setProperty(node, "onBlur", handleBlur);
+    }
+  );
 
   const syncProp = (name: string, value: () => unknown) => {
-    createEffect(() => {
-      const node = hostNode();
-      if (!node) return;
-      setProperty(node, name, value());
-    });
+    createEffect(
+      () => ({ node: hostNode(), val: value() }),
+      ({ node, val }) => {
+        if (!node) return;
+        setProperty(node, name, val);
+      }
+    );
   };
 
   syncProp("placeholder", () => local.placeholder ?? "");
@@ -233,7 +196,6 @@ export const TextField: Component<TextFieldProps> = (props) => {
   syncProp("variant", () => local.variant);
   syncProp("maxLength", () => local.maxLength);
 
-  // Sync style properties to native
   syncProp("backgroundColor", () => style()?.backgroundColor);
   syncProp("borderRadius", () => style()?.borderRadius);
   syncProp("borderWidth", () => style()?.borderWidth);
@@ -244,7 +206,6 @@ export const TextField: Component<TextFieldProps> = (props) => {
     () => local.placeholderColor ?? style()?.placeholderColor
   );
 
-  // Filter out styles that are handled natively to avoid double-application
   const filteredStyle = createMemo(() => {
     const nextStyle = style();
     if (!nextStyle) return undefined;

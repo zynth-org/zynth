@@ -80,6 +80,10 @@ export function start(App: () => any): () => void {
   ensureDevtoolsBridge();
   installDevtoolsConsole();
   installDevtoolsErrorHandlers();
+
+  const platform = Platform.OS;
+  setHost(platform === OS.ANDROID ? createAndroidHost() : createIOSHost());
+
   const g = globalThis as any;
 
   currentApp = App;

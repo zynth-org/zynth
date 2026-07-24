@@ -187,9 +187,21 @@ export function normalizeStyle(style: any): any {
   return next;
 }
 
-import { createStore } from "solid-js/store";
-import { render } from "solid-js/web";
-import { createComponent } from "solid-js";
+import { createStore, createComponent, createRoot, createEffect } from "solid-js";
+
+function webRender(code: () => any, container: HTMLElement) {
+  return createRoot((dispose) => {
+    createEffect(
+      () => code(),
+      (val) => {
+        if (val instanceof Node) {
+          container.appendChild(val);
+        }
+      }
+    );
+    return dispose;
+  });
+}
 
 /**
  * High-level helper to register a Solid component as a Zynth web component.
@@ -217,7 +229,7 @@ export function registerComponent(
       const [props, setProps] = createStore(initialProps || {});
       (container as any).__setProps = setProps;
 
-      render(() => createComponent(Component, props), container);
+      webRender(() => createComponent(Component, props), container);
 
       return container;
     },

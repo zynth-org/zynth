@@ -1,24 +1,18 @@
-import { children as resolveChildren, splitProps } from "solid-js";
-import type { JSX, ParentComponent } from "solid-js";
+import { children as resolveChildren } from "solid-js";
+import type { Element as SolidElement, ParentComponent } from "solid-js";
 import type { Style } from "@zynthjs/core";
 import { platform } from "@zynthjs/apis";
 
 export interface GlassContainerProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   spacing?: number;
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   testID?: string;
 }
 
 export const GlassContainer: ParentComponent<GlassContainerProps> = (props) => {
-  const [local] = splitProps(props, [
-    "style",
-    "children",
-    "spacing",
-    "pointerEvents",
-    "testID",
-  ]);
+  const local = props;
   const resolvedChildren = resolveChildren(() => local.children);
 
   if (platform.current === "android") {

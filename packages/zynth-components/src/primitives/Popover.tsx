@@ -2,7 +2,7 @@ import {
   createMemo,
   onCleanup,
   type Component,
-  type JSX,
+  type Element as SolidElement,
   type ParentComponent,
 } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
@@ -19,7 +19,7 @@ export interface PopoverProps {
    * Use Popover.Content child styles to size the popup.
    */
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   onOpen?: () => void;
   onClose?: () => void;
   ref?: (node: (HostNode & PopoverRef) | null) => void;
@@ -32,13 +32,13 @@ export interface PopoverProps {
 
 export interface PopoverTriggerProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   testID?: string;
 }
 
 export interface PopoverContentProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   testID?: string;
 }
 

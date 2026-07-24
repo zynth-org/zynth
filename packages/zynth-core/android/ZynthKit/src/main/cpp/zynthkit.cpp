@@ -548,8 +548,24 @@ void installConsole(Runtime &rt, RuntimeState *state) {
           if (i > 0) message += " ";
           message += valueToString(rt, args[i]);
         }
-        __android_log_print(ANDROID_LOG_WARN, "ZynthJS", "%s", message.c_str());
-        emitDevtoolsEvent(state, "log/console", "warn", "console", message);
+        std::string payload = message;
+        if (message.find("REACTIVE_WRITE_IN_OWNED_SCOPE") != std::string::npos ||
+            message.find("signal was written to in an owned scope") != std::string::npos) {
+          try {
+            Function errorCtor = rt.global().getPropertyAsFunction(rt, "Error");
+            Object error = errorCtor
+                .callAsConstructor(rt, String::createFromUtf8(rt, "Solid warning stack"))
+                .asObject(rt);
+            Value stackValue = error.getProperty(rt, "stack");
+            if (stackValue.isString()) {
+              payload += "\n" + stackValue.asString(rt).utf8(rt);
+            }
+          } catch (...) {
+            // Preserve the original warning if stack capture is unavailable.
+          }
+        }
+        __android_log_print(ANDROID_LOG_WARN, "ZynthJS", "%s", payload.c_str());
+        emitDevtoolsEvent(state, "log/console", "warn", "console", payload);
         return Value::undefined();
       });
 

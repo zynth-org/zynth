@@ -51,7 +51,7 @@
   },
   "peerDependencies": {
     "@zynthjs/core": ">=0.0.1-alpha.4",
-    "solid-js": ">=1.8.0"
+    "solid-js": "2.0.0-beta.23"
   },
   "scripts": {
     "build": "yarn build:js && yarn build:types",

@@ -3,9 +3,9 @@ import type { Style } from "@zynthjs/core";
 import {
   createEffect,
   createMemo,
-  mergeProps,
+  merge,
   type Component,
-  type JSX,
+  type Element as SolidElement,
 } from "solid-js";
 import { createSafeAreaInsets } from "@zynthjs/apis";
 
@@ -33,7 +33,7 @@ export interface SafeAreaViewProps {
   /**
    * Children to render inside the safe area
    */
-  children?: JSX.Element;
+  children?: SolidElement;
 }
 
 /**
@@ -60,7 +60,7 @@ export interface SafeAreaViewProps {
  * ```
  */
 export const SafeAreaView: Component<SafeAreaViewProps> = (props) => {
-  const merged = mergeProps(
+  const merged = merge(
     {
       edges: ["top", "right", "bottom", "left"] as SafeAreaEdge[],
       mode: "padding" as SafeAreaMode,

@@ -1,15 +1,14 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "node",
-    "strict": true,
-    "skipLibCheck": true,
     "outDir": "dist/types",
     "declaration": true,
     "emitDeclarationOnly": true,
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js"
+    "types": [
+      "zynth-jsx"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ],
+  "extends": "../../tsconfig.base.json"
 }

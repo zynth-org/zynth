@@ -67,7 +67,7 @@ export {
 } from "./nativeRuntime";
 export type { SignalRuntime, SignalRuntimeKind } from "./nativeRuntime";
 // Re-export select core helpers so Babel can import from @zynthjs/core when targeting universal
-export { createComponent, mergeProps, untrack } from "solid-js";
+export { createComponent, merge, omit, untrack } from "solid-js";
 
 // Export image types for use in type declarations
 export type { ImageAssetDescriptor } from "./host/HostTypes";
@@ -101,9 +101,6 @@ export {
   setPerformanceOverlayEnabled,
   getPerformanceOverlayStats,
 } from "./performanceOverlay";
-export type {
-  CoreSystemFeature,
-  CoreSystemMetricsSnapshot,
-  StartupTimeMetrics,
-} from "./coreSystem";
+export type { CoreSystemFeature, CoreSystemMetricsSnapshot, StartupTimeMetrics } from "./coreSystem";
 export type { PerformanceOverlayStats } from "./performanceOverlay";
+export { ZynthLogger } from "./logger";

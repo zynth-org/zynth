@@ -8,9 +8,6 @@ import deepmerge from "deepmerge";
 import type { DefineZynthConfigOptions } from "./types.js";
 import { createZynthRsbuildPlugin } from "./plugin.js";
 import { createWorkletBabelPlugin } from "./babel/worklet-plugin.js";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
 
 const DEFAULT_NATIVE_CONFIG: RsbuildConfig = {
   source: {
@@ -164,21 +161,6 @@ function createNativeBabelPlugin(
       basePlugins.unshift(createWorkletBabelPlugin());
       options.plugins = basePlugins;
       
-      const isDev = typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
-      if (isDev) {
-        let solidRefreshPath: string | undefined;
-        try {
-          solidRefreshPath = require.resolve("solid-refresh/babel");
-        } catch {
-          // Fallback to raw name if resolution fails (though unlikely)
-          solidRefreshPath = "solid-refresh/babel";
-        }
-
-        options.plugins = [
-          ...(options.plugins ?? []),
-          [solidRefreshPath, { bundler: "rspack-esm", jsx: false }],
-        ];
-      }
       return options;
     },
   });

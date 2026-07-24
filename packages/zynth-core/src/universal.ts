@@ -1,5 +1,5 @@
 // Solid core helpers expected by the Babel universal transform
-export { createComponent, mergeProps, untrack } from "solid-js";
+export { createComponent, merge, merge as mergeProps, omit, untrack } from "solid-js";
 
 // Renderer operations exposed for the universal runtime (named exports only)
 export {

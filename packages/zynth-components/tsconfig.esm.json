@@ -1,12 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
     "outDir": "dist/esm",
     "declaration": false,
     "emitDeclarationOnly": false,
-    "types": ["zynth-jsx"],
-    "paths": {}
+    "types": [
+      "zynth-jsx"
+    ]
   },
   "include": [
     "src"

@@ -12,6 +12,7 @@ import {
   stopNativeTransition,
   type NativeTransitionConfig,
 } from "../animation/native";
+import { ZynthLogger } from "../logger";
 
 export function createAndroidHost(): Host {
   const g: any =
@@ -935,6 +936,7 @@ export function createAndroidHost(): Host {
         id = ui.createNode(type, hasMeasureFunc);
       }
       const node = { id, type } as HostNode;
+      ZynthLogger.debug("Host:Android", `createElement type=${type} id=${id}`);
       if (registry && !recycled) registry.register(node, id);
       PARENTS.set(id, null);
       CHILDREN.set(id, []);

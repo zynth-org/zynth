@@ -1,4 +1,4 @@
-import { mergeProps, splitProps, createComponent } from "solid-js";
+import { merge, omit, createComponent } from "solid-js";
 import { View } from "@zynthjs/components";
 
 interface IconProps {
@@ -29,7 +29,7 @@ export function createSvgIcon(definition: IconDefinition) {
     }
 
     // 2. Web-only logic below this point
-    const merged = mergeProps(
+    const merged: any = merge(
       {
         stroke: "currentColor",
         fill: "currentColor",
@@ -39,7 +39,13 @@ export function createSvgIcon(definition: IconDefinition) {
       props
     );
 
-    const [local, others] = splitProps(merged, ["size", "color", "title", "style"]);
+    const local = {
+      size: merged.size,
+      color: merged.color,
+      title: merged.title,
+      style: merged.style,
+    };
+    const others = omit(merged, "size", "color", "title", "style");
 
     // We use a dynamic component approach to avoid JSX compilation to document.createElement
     // in environments where it might cause issues during static analysis or bundling.

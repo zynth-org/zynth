@@ -1,14 +1,13 @@
 import {
-  splitProps,
   type ParentComponent,
   type Component,
-  type JSX,
+  type Element as SolidElement,
 } from "solid-js";
 import type { Style } from "@zynthjs/core";
 
 export interface MenuProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   onOpen?: () => void;
   onClose?: () => void;
   testID?: string;
@@ -16,7 +15,7 @@ export interface MenuProps {
 
 export interface MenuTriggerProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   testID?: string;
   openOn?: "press" | "longPress";
 }
@@ -28,17 +27,11 @@ export interface MenuItemProps {
   disabled?: boolean;
   style?: Style;
   testID?: string;
-  icon?: JSX.Element;
+  icon?: SolidElement;
 }
 
 const MenuRoot: ParentComponent<MenuProps> = (props) => {
-  const [local] = splitProps(props, [
-    "style",
-    "children",
-    "testID",
-    "onOpen",
-    "onClose",
-  ]);
+  const local = props;
 
   return (
     <menu-view
@@ -53,7 +46,7 @@ const MenuRoot: ParentComponent<MenuProps> = (props) => {
 };
 
 const MenuTrigger: ParentComponent<MenuTriggerProps> = (props) => {
-  const [local] = splitProps(props, ["style", "children", "testID", "openOn"]);
+  const local = props;
 
   return (
     <menu-trigger-view
@@ -67,15 +60,7 @@ const MenuTrigger: ParentComponent<MenuTriggerProps> = (props) => {
 };
 
 const MenuItem: Component<MenuItemProps> = (props) => {
-  const [local] = splitProps(props, [
-    "label",
-    "onPress",
-    "destructive",
-    "disabled",
-    "style",
-    "testID",
-    "icon",
-  ]);
+  const local = props;
 
   return (
     <menu-item-view

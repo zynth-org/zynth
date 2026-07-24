@@ -1,4 +1,4 @@
-import { splitProps, type Component } from "solid-js";
+import { type Component } from "solid-js";
 import type { Style } from "@zynthjs/core";
 
 export interface SliderProps {
@@ -51,22 +51,7 @@ const roundToPrecision = (value: number, precision: number) => {
 };
 
 export const Slider: Component<SliderProps> = (props) => {
-  const [local] = splitProps(props, [
-    "value",
-    "defaultValue",
-    "minimumValue",
-    "maximumValue",
-    "step",
-    "disabled",
-    "minimumTrackTintColor",
-    "maximumTrackTintColor",
-    "thumbTintColor",
-    "onValueChange",
-    "onSlidingComplete",
-    "style",
-    "testID",
-    "precision",
-  ]);
+  const local = props;
 
   const precision = () =>
     typeof local.precision === "number" ? local.precision : 5;

@@ -6,7 +6,6 @@ import {
   createSignal,
   getOwner,
   runWithOwner,
-  splitProps,
   onCleanup,
   type ParentComponent,
 } from "solid-js";
@@ -219,16 +218,7 @@ function invokePhaseCallback<TEvent extends BaseGestureEvent>(
  * ```
  */
 export const GestureDetector: ParentComponent<GestureDetectorProps> = (props) => {
-  const [local] = splitProps(props, [
-    "gesture",
-    "style",
-    "pointerEvents",
-    "panSharedSignalX",
-    "panSharedSignalY",
-    "testID",
-    "ref",
-    "children",
-  ]);
+  const local = props;
 
   const owner = getOwner();
 
@@ -295,12 +285,13 @@ export const GestureDetector: ParentComponent<GestureDetectorProps> = (props) =>
     (local.ref ?? noopRef)(null);
   });
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
-    if (!hasStyleAccessor()) return;
-    setProperty(node, "style", resolvedStyle());
-  });
+  createEffect(
+    () => ({ node: hostNode(), hasAcc: hasStyleAccessor(), st: resolvedStyle() }),
+    ({ node, hasAcc, st }) => {
+      if (!node || !hasAcc) return;
+      setProperty(node, "style", st);
+    }
+  );
 
   const handleTapGesture = (event: unknown) => {
     const normalized = normalizeTapEvent(event);

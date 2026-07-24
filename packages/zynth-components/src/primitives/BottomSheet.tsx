@@ -3,8 +3,7 @@ import {
   createMemo,
   createSignal,
   onCleanup,
-  splitProps,
-  type JSX,
+  type Element as SolidElement,
   type ParentComponent,
 } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
@@ -50,7 +49,7 @@ type InternalRef = BottomSheetRef & {
 };
 
 export interface BottomSheetProps {
-  children?: JSX.Element;
+  children?: SolidElement;
   ref?: (node: (HostNode & BottomSheetRef) | null) => void;
   snapPoints?: SnapPoint[];
   initialSnapIndex?: number;
@@ -148,16 +147,14 @@ export const createBottomSheetRef = (): BottomSheetRef => {
   let host: HostNode | null = null;
   let currentIndex = 0;
 
-  const handle: InternalRef = {
+  const handle: BottomSheetRef = {
     open: (index) => {
-      handle.__setOpenState?.(true);
       sendCommand(
         host,
         index != null ? { type: "open", index } : { type: "open" },
       );
     },
     close: () => {
-      handle.__setOpenState?.(false);
       sendCommand(host, { type: "close" });
     },
     snapTo: (index) => {
@@ -170,40 +167,15 @@ export const createBottomSheetRef = (): BottomSheetRef => {
       sendCommand(host, { type: "collapse" });
     },
     getCurrentIndex: () => currentIndex,
-    __attachHost: (node) => {
-      host = node;
-    },
-    __updateIndex: (index) => {
-      currentIndex = index;
-    },
   };
 
   return handle;
 };
 
 export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
-  const [local] = splitProps(props, [
-    "children",
-    "ref",
-    "snapPoints",
-    "initialSnapIndex",
-    "open",
-    "defaultOpen",
-    "overlayColor",
-    "overlayOpacity",
-    "dismissOnOverlayPress",
-    "allowBackgroundInteraction",
-    "allowDismissOnInteraction",
-    "dynamicContentHeight",
-    "style",
-    "contentContainerStyle",
-    "onOpenChange",
-    "onSnapChange",
-    "onDismiss",
-    "testID",
-  ]);
+  const local = props;
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
   const [contentHeightHint, setContentHeightHint] = createSignal(0);
   let currentIndex = local.initialSnapIndex ?? 0;
   let lastDynamicLayoutHeight = 0;
@@ -222,23 +194,28 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     ? allocateBottomSheetSurfaceId()
     : null;
 
-  createEffect(() => {
-    const unsubscribe = viewport.observe("window", (metrics) => {
-      setWindowSize(metrics);
-    });
-    onCleanup(unsubscribe);
-  });
-
-  createEffect(() => {
-    if (isControlled()) return;
-    if (!local.defaultOpen) return;
-    const timeoutId = setTimeout(() => {
-      requestAnimationFrame(() => {
-        setUncontrolledOpen(true);
+  createEffect(
+    () => null,
+    () => {
+      const unsubscribe = viewport.observe("window", (metrics) => {
+        setWindowSize(metrics);
       });
-    }, 84);
-    onCleanup(() => clearTimeout(timeoutId));
-  });
+      onCleanup(unsubscribe);
+    }
+  );
+
+  createEffect(
+    () => ({ controlled: isControlled(), defOpen: local.defaultOpen }),
+    ({ controlled, defOpen }) => {
+      if (controlled || !defOpen) return;
+      const timeoutId = setTimeout(() => {
+        requestAnimationFrame(() => {
+          setUncontrolledOpen(true);
+        });
+      }, 84);
+      onCleanup(() => clearTimeout(timeoutId));
+    }
+  );
 
   const maxSnapHeight = createMemo(() => {
     const points =
@@ -351,12 +328,15 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     sendCommand(host, delta > 0 ? { type: "expand" } : { type: "collapse" });
   };
 
-  createEffect(() => {
-    if (!resolvedOpen()) {
-      lastDynamicLayoutHeight = 0;
-      dynamicLayoutCommandCooldownUntil = 0;
+  createEffect(
+    () => ({ openState: resolvedOpen() }),
+    ({ openState }) => {
+      if (!openState) {
+        lastDynamicLayoutHeight = 0;
+        dynamicLayoutCommandCooldownUntil = 0;
+      }
     }
-  });
+  );
 
   const attachHost = (node: HostNode | null) => {
     setHostNode(node);
@@ -397,117 +377,100 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     local.ref?.(null);
   });
 
-  createEffect(() => {
-    const host = hostNode();
-    if (!host) return;
-    setProperty(host, "style", sheetStyle());
-    setProperty(
-      host,
-      "snapPoints",
-      local.snapPoints ??
-        (local.dynamicContentHeight ? [] : DEFAULT_SNAP_POINTS),
-    );
-    // `initialSnapIndex` is a pre-open hint. Re-applying it while the sheet is open
-    // can force UIKit to re-resolve detents mid-gesture and cause snap jitter.
-    if (!resolvedOpen()) {
-      setProperty(host, "initialSnapIndex", local.initialSnapIndex ?? 0);
-    }
-    if (local.overlayColor != null) {
-      setProperty(host, "overlayColor", local.overlayColor);
-    }
-    if (local.overlayOpacity != null) {
-      setProperty(host, "overlayOpacity", local.overlayOpacity);
-    }
-    if (local.dismissOnOverlayPress != null) {
-      setProperty(host, "dismissOnOverlayPress", local.dismissOnOverlayPress);
-    }
-    if (local.allowBackgroundInteraction != null) {
-      setProperty(
-        host,
-        "allowBackgroundInteraction",
-        local.allowBackgroundInteraction,
-      );
-    }
-    if (local.allowDismissOnInteraction != null) {
-      setProperty(
-        host,
-        "allowDismissOnInteraction",
-        local.allowDismissOnInteraction,
-      );
-    }
-    const dynamicContentEnabled = !!local.dynamicContentHeight;
-    setProperty(host, "dynamicContentHeight", dynamicContentEnabled);
-    if (dynamicContentEnabled) {
-      setProperty(host, "contentHeightHint", contentHeightHint());
-    } else {
-      setProperty(host, "contentHeightHint", null);
-    }
-    if (local.testID) {
-      setProperty(host, "testID", local.testID);
-    }
-    const nextOpen = resolvedOpen();
-    const lastOpen = lastSentOpen();
-    if (nextOpen !== lastOpen) {
-      if (nextOpen) {
-        ignoreCloseUntil = Date.now() + 700;
-        hasConfirmedOpen = false;
-        sendCommand(host, {
-          type: "open",
-          index: local.initialSnapIndex ?? 0,
-        });
-      } else if (lastOpen === true) {
-        sendCommand(host, { type: "close" });
+  createEffect(
+    () => ({
+      host: hostNode(),
+      st: sheetStyle(),
+      points: local.snapPoints ?? (local.dynamicContentHeight ? [] : DEFAULT_SNAP_POINTS),
+      initIndex: local.initialSnapIndex ?? 0,
+      ovColor: local.overlayColor,
+      ovOpacity: local.overlayOpacity,
+      disOverlay: local.dismissOnOverlayPress,
+      allowBg: local.allowBackgroundInteraction,
+      allowDismiss: local.allowDismissOnInteraction,
+      dynHeight: !!local.dynamicContentHeight,
+      heightHint: contentHeightHint(),
+      testId: local.testID,
+      nextOpen: resolvedOpen(),
+      lastOpen: lastSentOpen(),
+    }),
+    (cfg) => {
+      const { host } = cfg;
+      if (!host) return;
+      setProperty(host, "style", cfg.st);
+      setProperty(host, "snapPoints", cfg.points);
+      if (!cfg.nextOpen) {
+        setProperty(host, "initialSnapIndex", cfg.initIndex);
       }
-      setLastSentOpen(nextOpen);
-    }
-  });
+      if (cfg.ovColor != null) setProperty(host, "overlayColor", cfg.ovColor);
+      if (cfg.ovOpacity != null) setProperty(host, "overlayOpacity", cfg.ovOpacity);
+      if (cfg.disOverlay != null) setProperty(host, "dismissOnOverlayPress", cfg.disOverlay);
+      if (cfg.allowBg != null) setProperty(host, "allowBackgroundInteraction", cfg.allowBg);
+      if (cfg.allowDismiss != null) setProperty(host, "allowDismissOnInteraction", cfg.allowDismiss);
+      setProperty(host, "dynamicContentHeight", cfg.dynHeight);
+      setProperty(host, "contentHeightHint", cfg.dynHeight ? cfg.heightHint : null);
+      if (cfg.testId) setProperty(host, "testID", cfg.testId);
 
-  createEffect(() => {
-    const host = hostNode();
-    if (!host) return;
-
-    const handleSnap = (payload?: { index?: number; progress?: number }) => {
-      if (!payload) return;
-      const index =
-        typeof payload.index === "number" && Number.isFinite(payload.index)
-          ? payload.index
-          : currentIndex;
-      const progress =
-        typeof payload.progress === "number" &&
-        Number.isFinite(payload.progress)
-          ? payload.progress
-          : 0;
-      currentIndex = index;
-      local.onSnapChange?.({ index, progress });
-    };
-
-    setProperty(host, "onSnapChange", handleSnap);
-
-    const handleDismiss = () => {
-      if (!isControlled()) {
-        setUncontrolledOpen(false);
-      }
-      local.onDismiss?.();
-    };
-
-    setProperty(host, "onDismiss", handleDismiss);
-
-    setProperty(host, "onOpenChange", (payload: { open: boolean }) => {
-      const next = !!payload?.open;
-      if (!isControlled()) {
-        if (next) {
-          hasConfirmedOpen = true;
-        } else if (!hasConfirmedOpen) {
-          return;
+      if (cfg.nextOpen !== cfg.lastOpen) {
+        if (cfg.nextOpen) {
+          ignoreCloseUntil = Date.now() + 700;
+          hasConfirmedOpen = false;
+          sendCommand(host, { type: "open", index: cfg.initIndex });
+        } else if (cfg.lastOpen === true) {
+          sendCommand(host, { type: "close" });
         }
-        if (!next && Date.now() < ignoreCloseUntil) {
-          return;
-        }
-        setUncontrolledOpen(next);
+        setLastSentOpen(cfg.nextOpen);
       }
-      local.onOpenChange?.(next);
-    });
-  });
+    }
+  );
+
+  createEffect(
+    () => hostNode(),
+    (host) => {
+      if (!host) return;
+
+      const handleSnap = (payload?: { index?: number; progress?: number }) => {
+        if (!payload) return;
+        const index =
+          typeof payload.index === "number" && Number.isFinite(payload.index)
+            ? payload.index
+            : currentIndex;
+        const progress =
+          typeof payload.progress === "number" && Number.isFinite(payload.progress)
+            ? payload.progress
+            : 0;
+        currentIndex = index;
+        local.onSnapChange?.({ index, progress });
+      };
+
+      setProperty(host, "onSnapChange", handleSnap);
+
+      const handleDismiss = () => {
+        if (!isControlled()) {
+          setUncontrolledOpen(false);
+        }
+        local.onDismiss?.();
+      };
+
+      setProperty(host, "onDismiss", handleDismiss);
+
+      setProperty(host, "onOpenChange", (payload: { open: boolean }) => {
+        const next = !!payload?.open;
+        if (!isControlled()) {
+          if (next) {
+            hasConfirmedOpen = true;
+          } else if (!hasConfirmedOpen) {
+            return;
+          }
+          if (!next && Date.now() < ignoreCloseUntil) {
+            return;
+          }
+          setUncontrolledOpen(next);
+        }
+        local.onOpenChange?.(next);
+      });
+    }
+  );
 
   const sheetNode = () => (
     <zynth-bottom-sheet ref={attachHost} style={sheetStyle()}>
@@ -549,18 +512,19 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   );
 
   if (useSurfacePortal() && portalSurfaceId != null) {
-    createEffect(() => {
-      const surfaceId = portalSurfaceId;
-      // Ensure native surface exists before we render into it.
-      runWithSurface(surfaceId, () => undefined);
-      const dispose = render(
-        () => runWithSurface(surfaceId, () => sheetNode()),
-        { id: surfaceId, type: "root" } as HostNode,
-      );
-      onCleanup(() => {
-        dispose();
-      });
-    });
+    createEffect(
+      () => portalSurfaceId,
+      (surfaceId) => {
+        runWithSurface(surfaceId, () => undefined);
+        const dispose = render(
+          () => runWithSurface(surfaceId, () => sheetNode()),
+          { id: surfaceId, type: "root" } as HostNode,
+        );
+        onCleanup(() => {
+          dispose();
+        });
+      }
+    );
 
     return (
       <View

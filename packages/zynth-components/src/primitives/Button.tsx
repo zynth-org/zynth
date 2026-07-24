@@ -1,5 +1,4 @@
 import {
-  JSX,
   children as resolveChildren,
   createEffect,
   createMemo,
@@ -7,9 +6,9 @@ import {
   getOwner,
   onCleanup,
   runWithOwner,
-  splitProps,
+  untrack,
 } from "solid-js";
-import type { ParentComponent } from "solid-js";
+import type { ParentComponent, Element as SolidElement } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
 import { setProperty } from "@zynthjs/core";
 import { Text } from "./Text";
@@ -174,14 +173,14 @@ export function createButtonRef(opts?: {
   };
 
   controller.__syncDisabled = (value) => {
-    if (disabled() !== value) {
-      setDisabledState(value);
+    if (untrack(disabled) !== value) {
+      untrack(() => setDisabledState(value));
     }
   };
 
   controller.__syncLoading = (value) => {
-    if (loading() !== value) {
-      setLoadingState(value);
+    if (untrack(loading) !== value) {
+      untrack(() => setLoadingState(value));
     }
   };
 
@@ -189,10 +188,10 @@ export function createButtonRef(opts?: {
 }
 
 export type ButtonProps = {
-  children?: JSX.Element;
+  children?: SolidElement;
   label?: string;
-  startIcon?: JSX.Element;
-  endIcon?: JSX.Element;
+  startIcon?: SolidElement;
+  endIcon?: SolidElement;
   iconOnly?: boolean;
   numberOfLines?: number;
   type?: ButtonType;
@@ -210,7 +209,7 @@ export type ButtonProps = {
   rounded?: "none" | "sm" | "md" | "lg" | "pill" | "full";
   elevation?: 0 | 1 | 2 | 3;
   pressEffect?: PressEffect;
-  loadingIndicator?: JSX.Element;
+  loadingIndicator?: SolidElement;
   loadingPlacement?: "overlay" | "start" | "end";
   loadingAriaLabel?: string;
   haptics?: HapticsMode;
@@ -290,58 +289,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     return callback(...args);
   };
 
-  const [local] = splitProps(props, [
-    "children",
-    "label",
-    "startIcon",
-    "endIcon",
-    "iconOnly",
-    "numberOfLines",
-    "type",
-    "disabled",
-    "loading",
-    "preventFocusOnPress",
-    "allowMultiplePresses",
-    "pressRetentionOffset",
-    "hitSlop",
-    "minimumTouchSize",
-    "variant",
-    "tone",
-    "size",
-    "fullWidth",
-    "rounded",
-    "elevation",
-    "pressEffect",
-    "loadingIndicator",
-    "loadingPlacement",
-    "loadingAriaLabel",
-    "haptics",
-    "onPress",
-    "onLongPress",
-    "onPressIn",
-    "onPressOut",
-    "onFocus",
-    "onBlur",
-    "onKeyDown",
-    "onKeyUp",
-    "pressBehavior",
-    "pendingBehavior",
-    "style",
-    "enableGlassIOS",
-    "tintColor",
-    "labelStyle",
-    "iconStyle",
-    "pressedStyle",
-    "disabledStyle",
-    "loadingStyle",
-    "asChild",
-    "ref",
-    "accessibilityLabel",
-    "accessibilityHint",
-    "testID",
-    "baseColor",
-    "ready",
-  ]);
+  const local = props;
 
   const controller: ButtonControllerInternal = createButtonRef({
     disabled: local.disabled,
@@ -349,28 +297,36 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  controller.__attachHost?.(hostNode());
 
-  createEffect(() => {
-    controller.__attachHost?.(hostNode());
-  });
+  createEffect(
+    () => ({ node: hostNode() }),
+    ({ node }) => {
+      controller.__attachHost?.(node);
+    }
+  );
 
   onCleanup(() => {
     controller.__attachHost?.(null);
     local.ref?.(null);
   });
 
-  createEffect(() => {
-    if (local.disabled !== undefined) {
-      controller.__syncDisabled?.(!!local.disabled);
+  createEffect(
+    () => ({ dis: local.disabled }),
+    ({ dis }) => {
+      if (dis !== undefined) {
+        controller.__syncDisabled?.(!!dis);
+      }
     }
-  });
+  );
 
-  createEffect(() => {
-    if (local.loading !== undefined) {
-      controller.__syncLoading?.(!!local.loading);
+  createEffect(
+    () => ({ load: local.loading }),
+    ({ load }) => {
+      if (load !== undefined) {
+        controller.__syncLoading?.(!!load);
+      }
     }
-  });
+  );
 
   const pendingBehavior = createMemo<PendingBehavior>(() => {
     if (local.pendingBehavior) return local.pendingBehavior;
@@ -421,9 +377,12 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       resolvedDisabledBase() || disableWhilePending() || disableWhileLoading()
   );
 
-  createEffect(() => {
-    controller.__syncLoading?.(computedLoading());
-  });
+  createEffect(
+    () => ({ loadingState: computedLoading() }),
+    ({ loadingState }) => {
+      controller.__syncLoading?.(loadingState);
+    }
+  );
 
   const resolvedType = createMemo<ButtonType>(() => local.type ?? "button");
   const resolvedVariant = createMemo<Variant>(() => local.variant ?? "solid");
@@ -444,9 +403,12 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   const titleContent = createMemo(() => {
     const resolved = resolvedChildren();
     if (typeof resolved === "string") return resolved;
-    // Also check if label prop is provided
     if (local.label) return local.label;
     return undefined;
+  });
+
+  const useNativeTitle = createMemo<boolean>(() => {
+    return false;
   });
 
   const isStringContent = createMemo(() => titleContent() !== undefined);
@@ -649,127 +611,142 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     callWithOwner(local.onKeyUp, { key });
   };
 
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
+  createEffect(
+    () => ({
+      node: hostNode(),
+      variant: resolvedVariant(),
+      tone: resolvedTone(),
+      style: resolvedButtonStyle() as Style | undefined,
+      glass: !!local.enableGlassIOS,
+      baseColorProp: local.baseColor,
+      type: resolvedType(),
+      disabled: resolvedDisabled(),
+      loading: computedLoading(),
+      useTitle: useNativeTitle(),
+      title: titleContent(),
+      iconOnly: local.iconOnly ?? false,
+      size: resolvedSize(),
+      fullWidth: local.fullWidth ?? false,
+      rounded: resolvedRounded() ?? null,
+      elevation: resolvedElevation(),
+      pressEffect: resolvedPressEffect(),
+      retention: local.pressRetentionOffset,
+      slop: resolvedHitSlop(),
+      minTouch: resolvedMinimumTouch(),
+      tint: local.tintColor,
+      preventFocus: local.preventFocusOnPress ?? false,
+      loadingPlacement: resolvedLoadingPlacement(),
+      loadingAriaLabel: local.loadingAriaLabel,
+      haptics: local.haptics ?? "none",
+      labelStyle: local.labelStyle,
+      iconStyle: local.iconStyle,
+      pressedStyle: local.pressedStyle,
+      disabledStyle: local.disabledStyle,
+      loadingStyle: local.loadingStyle,
+      accLabel: resolvedAccessibilityLabel(),
+      accHint: local.accessibilityHint,
+      testID: local.testID,
+      isReady: local.ready ?? true,
+    }),
+    (cfg) => {
+      const { node } = cfg;
+      if (!node) return;
 
-    // Native Variant Mapping
-    let effectiveVariant = resolvedVariant();
-    // Map JS variants to native Material variants
-    if (effectiveVariant === "solid") effectiveVariant = "filled" as any;
-    else if (effectiveVariant === "outline")
-      effectiveVariant = "outlined" as any;
-    else if (effectiveVariant === "ghost") effectiveVariant = "text" as any;
-    else if (effectiveVariant === "link") effectiveVariant = "text" as any;
+      let effectiveVariant = cfg.variant;
+      if (effectiveVariant === "solid") effectiveVariant = "filled" as any;
+      else if (effectiveVariant === "outline") effectiveVariant = "outlined" as any;
+      else if (effectiveVariant === "ghost") effectiveVariant = "text" as any;
+      else if (effectiveVariant === "link") effectiveVariant = "text" as any;
 
-    // Native Role Mapping
-    let effectiveRole = "normal";
-    if (resolvedTone() === "danger") {
-      effectiveRole = "destructive";
-    } else if (resolvedTone() === "neutral") {
-      // maybe?
+      let effectiveRole = "normal";
+      if (cfg.tone === "danger") {
+        effectiveRole = "destructive";
+      }
+
+      const shouldUseBackgroundBase = cfg.glass || cfg.variant === "solid";
+      const styleBaseColor = shouldUseBackgroundBase
+        ? resolveStyleBackgroundColor(cfg.style)
+        : undefined;
+      const color =
+        cfg.baseColorProp ??
+        styleBaseColor ??
+        (cfg.tone === "danger" ? toneColorMap[cfg.tone as Tone] : undefined);
+
+      const styleToPass = cfg.style ? { ...cfg.style } : undefined;
+      if (shouldUseBackgroundBase && styleBaseColor && styleToPass) {
+        delete styleToPass.backgroundColor;
+      }
+
+      setProperty(node, "style", styleToPass);
+      setProperty(node, "type", cfg.type);
+      setProperty(node, "disabled", cfg.disabled);
+      setProperty(node, "loading", cfg.loading);
+      setProperty(node, "variant", effectiveVariant);
+      setProperty(node, "role", effectiveRole);
+      if (color) setProperty(node, "baseColor", color);
+      if (cfg.useTitle) {
+        setProperty(node, "title", cfg.title);
+      }
+
+      setProperty(node, "tone", cfg.tone);
+      setProperty(node, "iconOnly", cfg.iconOnly);
+
+      let nativeSize: any = cfg.size;
+      switch (cfg.size) {
+        case "xs":
+          nativeSize = "mini" as any;
+          break;
+        case "sm":
+          nativeSize = "small" as any;
+          break;
+        case "lg":
+        case "xl":
+          nativeSize = "large" as any;
+          break;
+        default:
+          nativeSize = "medium" as any;
+          break;
+      }
+      setProperty(node, "size", nativeSize);
+      setProperty(node, "fullWidth", cfg.fullWidth);
+      setProperty(node, "rounded", cfg.rounded);
+      setProperty(node, "elevation", cfg.elevation);
+      setProperty(node, "pressEffect", cfg.pressEffect);
+      setProperty(node, "pressRetentionOffset", cfg.retention);
+      setProperty(node, "hitSlop", cfg.slop);
+      setProperty(node, "minimumTouchSize", cfg.minTouch);
+      setProperty(node, "enableGlassIOS", cfg.glass);
+      setProperty(node, "tintColor", cfg.tint);
+      setProperty(node, "preventFocusOnPress", cfg.preventFocus);
+      setProperty(node, "loadingPlacement", cfg.loadingPlacement);
+      setProperty(node, "loadingIndicator", false);
+      setProperty(node, "loadingAriaLabel", cfg.loadingAriaLabel);
+      setProperty(node, "haptics", cfg.haptics);
+      setProperty(node, "labelStyle", cfg.labelStyle);
+      setProperty(node, "iconStyle", cfg.iconStyle);
+      setProperty(node, "pressedStyle", cfg.pressedStyle);
+      setProperty(node, "disabledStyle", cfg.disabledStyle);
+      setProperty(node, "loadingStyle", cfg.loadingStyle);
+      setProperty(node, "accessibilityLabel", cfg.accLabel);
+      setProperty(node, "accessibilityHint", cfg.accHint);
+      setProperty(node, "testID", cfg.testID);
+      setProperty(node, "onPressIn", handlePressIn);
+      setProperty(node, "onPressOut", handlePressOut);
+      setProperty(node, "onPress", handlePress);
+      setProperty(node, "onLongPress", (payload: { durationMs: number }) => {
+        handleLongPress(payload?.durationMs ?? 0);
+      });
+      setProperty(node, "onFocus", handleFocus);
+      setProperty(node, "onBlur", handleBlur);
+      setProperty(node, "onKeyDown", (payload: { key: string }) => {
+        handleKeyDown(payload?.key ?? "");
+      });
+      setProperty(node, "onKeyUp", (payload: { key: string }) => {
+        handleKeyUp(payload?.key ?? "");
+      });
+      setProperty(node, "ready", cfg.isReady);
     }
-
-    // Base Color — let the system choose unless explicitly provided or destructive tone
-    const resolvedStyle = resolvedButtonStyle() as Style | undefined;
-    const shouldUseBackgroundBase =
-      !!local.enableGlassIOS || resolvedVariant() === "solid";
-    const styleBaseColor = shouldUseBackgroundBase
-      ? resolveStyleBackgroundColor(resolvedStyle)
-      : undefined;
-    const color =
-      local.baseColor ??
-      styleBaseColor ??
-      (resolvedTone() === "danger" ? toneColorMap[resolvedTone()] : undefined);
-
-    // If we extracted the background color to use as the button's base color (native tint),
-    // we should remove it from the container view's style to prevent it from rendering
-    // a square background behind the rounded button (which causes "disappearing corners").
-    const styleToPass = resolvedStyle ? { ...resolvedStyle } : undefined;
-    if (shouldUseBackgroundBase && styleBaseColor && styleToPass) {
-      delete styleToPass.backgroundColor;
-    }
-
-    setProperty(node, "style", styleToPass);
-    setProperty(node, "type", resolvedType());
-    setProperty(node, "disabled", resolvedDisabled());
-    setProperty(node, "loading", computedLoading());
-
-    // Pass native props
-    setProperty(node, "variant", effectiveVariant);
-    setProperty(node, "role", effectiveRole);
-    if (color) setProperty(node, "baseColor", color);
-    if (useNativeTitle()) {
-      setProperty(node, "title", titleContent());
-    }
-
-    setProperty(node, "tone", resolvedTone());
-    setProperty(node, "iconOnly", local.iconOnly ?? false);
-    // Map JS size to native UIButtonConfiguration sizes
-    let nativeSize: any = resolvedSize();
-    switch (resolvedSize()) {
-      case "xs":
-        nativeSize = "mini" as any;
-        break;
-      case "sm":
-        nativeSize = "small" as any;
-        break;
-      case "lg":
-      case "xl":
-        nativeSize = "large" as any;
-        break;
-      default:
-        nativeSize = "medium" as any;
-        break;
-    }
-    setProperty(node, "size", nativeSize);
-    setProperty(node, "fullWidth", local.fullWidth ?? false);
-    setProperty(node, "rounded", resolvedRounded() ?? null);
-    setProperty(node, "elevation", resolvedElevation());
-    setProperty(node, "pressEffect", resolvedPressEffect());
-    setProperty(node, "pressRetentionOffset", local.pressRetentionOffset);
-    setProperty(node, "hitSlop", resolvedHitSlop());
-    setProperty(node, "minimumTouchSize", resolvedMinimumTouch());
-    setProperty(node, "enableGlassIOS", local.enableGlassIOS ?? false);
-    setProperty(node, "tintColor", local.tintColor);
-    setProperty(
-      node,
-      "preventFocusOnPress",
-      local.preventFocusOnPress ?? false
-    );
-    setProperty(node, "loadingPlacement", resolvedLoadingPlacement());
-    // We handle loading indicator in JS now, so disable native spinner always
-    setProperty(node, "loadingIndicator", false);
-    setProperty(node, "loadingAriaLabel", local.loadingAriaLabel);
-    setProperty(node, "haptics", local.haptics ?? "none");
-    // labelStyle, iconStyle, pressedStyle etc might not be needed for native text,
-    // unless we want to allow overriding native text attributes (requires more native code)
-    setProperty(node, "labelStyle", local.labelStyle);
-    setProperty(node, "iconStyle", local.iconStyle);
-    setProperty(node, "pressedStyle", local.pressedStyle);
-    setProperty(node, "disabledStyle", local.disabledStyle);
-    setProperty(node, "loadingStyle", local.loadingStyle);
-    setProperty(node, "accessibilityLabel", resolvedAccessibilityLabel());
-    setProperty(node, "accessibilityHint", local.accessibilityHint);
-    setProperty(node, "testID", local.testID);
-    setProperty(node, "onPressIn", handlePressIn);
-    setProperty(node, "onPressOut", handlePressOut);
-    setProperty(node, "onPress", handlePress);
-    setProperty(node, "onLongPress", (payload: { durationMs: number }) => {
-      handleLongPress(payload?.durationMs ?? 0);
-    });
-    setProperty(node, "onFocus", handleFocus);
-    setProperty(node, "onBlur", handleBlur);
-    setProperty(node, "onKeyDown", (payload: { key: string }) => {
-      handleKeyDown(payload?.key ?? "");
-    });
-    setProperty(node, "onKeyUp", (payload: { key: string }) => {
-      handleKeyUp(payload?.key ?? "");
-    });
-    // Keep Android button hidden until all prop mutations in this pass are applied.
-    // `ready` is set last so native can reveal only after final visual state is configured.
-    setProperty(node, "ready", local.ready ?? true);
-  });
+  );
 
   const renderLoadingIndicator = () => {
     if (!computedLoading()) return null;
@@ -785,14 +762,6 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     // Let's leave it for now, but native config usually handles "showsActivityIndicator".
     return null;
   };
-
-  // Decide whether to use native title rendering.
-  const useNativeTitle = createMemo(() => {
-    // Force JS rendering to ensure Yoga can measure the text content.
-    // Native title rendering often collapses to minWidth because the native view
-    // doesn't report intrinsic content size to Yoga correctly in all cases.
-    return false;
-  });
 
   const resolvedTextColor = createMemo(() => {
     const style = local.labelStyle as Style;

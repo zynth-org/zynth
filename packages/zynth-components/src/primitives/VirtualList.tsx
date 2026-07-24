@@ -1,6 +1,6 @@
 import {
   For,
-  JSX,
+  Element as SolidElement,
   createEffect,
   createMemo,
   createSignal,
@@ -70,7 +70,7 @@ export type VirtualListRef<T> = ScrollViewRef & {
   scrollToOffset: (params: VirtualListScrollToOffsetParams) => void;
 };
 
-type VirtualListSlot = JSX.Element | null | undefined;
+type VirtualListSlot = SolidElement | null | undefined;
 type Range = { first: number; last: number };
 type RowMetric = { index: number; length: number; offset: number };
 
@@ -244,7 +244,7 @@ const defaultKeyExtractor = (item: unknown, index: number): string => {
   return String(index);
 };
 
-const renderSlot = (slot: VirtualListSlot): JSX.Element | null => {
+const renderSlot = (slot: VirtualListSlot): SolidElement | null => {
   if (slot === undefined || slot === null) return null;
   return slot;
 };
@@ -337,7 +337,7 @@ export interface VirtualListProps<T>
   /** Enables imperative access to the underlying scroll host plus list helpers. */
   ref?: ((node: (HostNode & VirtualListRef<T>) | null) => void) | null;
   /** Row renderer. */
-  renderItem: (info: VirtualListRenderItemInfo<T>) => JSX.Element;
+  renderItem: (info: VirtualListRenderItemInfo<T>) => SolidElement;
   /** Virtualization kill switch for debugging or tiny datasets. */
   disableVirtualization?: boolean;
   /** Compatibility prop preserved for API parity. */
@@ -1036,43 +1036,49 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     props.ref(host);
   };
 
-  createEffect(() => {
-    const totalRows = rowCount();
-    let removed = false;
-    for (const [rowIndex] of rowMetrics) {
-      if (rowIndex < totalRows) continue;
-      rowMetrics.delete(rowIndex);
-      removed = true;
+  createEffect(
+    () => ({ totalRows: rowCount() }),
+    ({ totalRows }) => {
+      let removed = false;
+      for (const [rowIndex] of rowMetrics) {
+        if (rowIndex < totalRows) continue;
+        rowMetrics.delete(rowIndex);
+        removed = true;
+      }
+      for (const [rowIndex] of rowLayoutHandlers) {
+        if (rowIndex < totalRows) continue;
+        rowLayoutHandlers.delete(rowIndex);
+      }
+      if (removed) {
+        syncMeasurementStats();
+        setMeasurementVersion((value) => value + 1);
+      }
     }
-    for (const [rowIndex] of rowLayoutHandlers) {
-      if (rowIndex < totalRows) continue;
-      rowLayoutHandlers.delete(rowIndex);
-    }
-    if (removed) {
-      syncMeasurementStats();
-      setMeasurementVersion((value) => value + 1);
-    }
-  });
+  );
 
-  createEffect(() => {
-    const nextColumns = itemsPerRow();
-    if (lastColumns === -1) {
+  createEffect(
+    () => ({ nextColumns: itemsPerRow() }),
+    ({ nextColumns }) => {
+      if (lastColumns === -1) {
+        lastColumns = nextColumns;
+        return;
+      }
+      if (lastColumns === nextColumns) return;
       lastColumns = nextColumns;
-      return;
-    }
-    if (lastColumns === nextColumns) return;
-    lastColumns = nextColumns;
-    clearMeasurements();
-  });
-
-  createEffect(() => {
-    const nextHeader = headerLength();
-    if (lastHeader === nextHeader) return;
-    lastHeader = nextHeader;
-    if (!props.getItemLayout) {
       clearMeasurements();
     }
-  });
+  );
+
+  createEffect(
+    () => ({ nextHeader: headerLength() }),
+    ({ nextHeader }) => {
+      if (lastHeader === nextHeader) return;
+      lastHeader = nextHeader;
+      if (!props.getItemLayout) {
+        clearMeasurements();
+      }
+    }
+  );
 
   const commitRenderRange = (previous: Range, next: Range) => {
     const addedRows = countAddedRows(previous, next);
@@ -1120,108 +1126,122 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     }, delay);
   };
 
-  createEffect(() => {
-    props.data.length;
-    props.disableVirtualization;
-    props.initialNumToRender;
-    props.initialScrollIndex;
-    props.maxToRenderPerBatch;
-    props.overscan;
-    props.updateCellsBatchingPeriod;
-    props.windowSize;
-    axisViewportLength();
-    headerLength();
-    scrollOffset();
-    scrollVelocity();
-    totalRowsLength();
-    measurementVersion();
-
-    const current = untrack(renderRange);
-    const next = computeWindowStep(current);
-    if (!isRangeEqual(current, next)) {
-      const addedRows = countAddedRows(current, next);
-      const batchingPeriod =
-        props.updateCellsBatchingPeriod ??
-        DEFAULT_UPDATE_CELLS_BATCHING_PERIOD;
-      if (addedRows > 0 && batchingPeriod > 0) {
-        scheduleRenderRangeCommit();
-        return;
-      }
-      // During active scroll, coalesce range commits to at most one per
-      // animation frame.  This prevents multiple synchronous Yoga layout
-      // passes when scrollOffset fires faster than the display refresh.
-      if (isScrollActive && typeof requestAnimationFrame === "function") {
-        if (!rangeRafPending) {
-          rangeRafPending = true;
-          requestAnimationFrame(() => {
-            rangeRafPending = false;
-            const latest = untrack(renderRange);
-            const latestNext = computeWindowStep(latest);
-            if (!isRangeEqual(latest, latestNext)) {
-              commitRenderRange(latest, latestNext);
-            }
-          });
+  createEffect(
+    () => ({
+      len: props.data.length,
+      dis: props.disableVirtualization,
+      initNum: props.initialNumToRender,
+      initIndex: props.initialScrollIndex,
+      maxBatch: props.maxToRenderPerBatch,
+      overscan: props.overscan,
+      batchPeriod: props.updateCellsBatchingPeriod,
+      windowSize: props.windowSize,
+      vpLen: axisViewportLength(),
+      hLen: headerLength(),
+      offset: scrollOffset(),
+      vel: scrollVelocity(),
+      totLen: totalRowsLength(),
+      measVer: measurementVersion(),
+    }),
+    () => {
+      const current = untrack(renderRange);
+      const next = computeWindowStep(current);
+      if (!isRangeEqual(current, next)) {
+        const addedRows = countAddedRows(current, next);
+        const batchingPeriod =
+          props.updateCellsBatchingPeriod ??
+          DEFAULT_UPDATE_CELLS_BATCHING_PERIOD;
+        if (addedRows > 0 && batchingPeriod > 0) {
+          scheduleRenderRangeCommit();
+          return;
         }
-        return;
-      }
-      commitRenderRange(current, next);
-    }
-  });
-
-  createEffect(() => {
-    const viewport = axisViewportLength();
-    const totalRows = rowCount();
-    if (viewport <= 0 || totalRows <= 0) return;
-
-    const distanceFromStart = Math.max(0, scrollOffset() - headerLength());
-    const distanceFromEnd = Math.max(
-      0,
-      totalRowsLength() + footerLength() - distanceFromStart - viewport
-    );
-
-    if (props.onStartReached) {
-      const threshold =
-        Math.max(0, props.onStartReachedThreshold ?? 2) * viewport;
-      if (distanceFromStart <= threshold) {
-        const token = Math.floor(distanceFromStart);
-        if (edgeStartToken !== token) {
-          edgeStartToken = token;
-          untrack(() => props.onStartReached?.({ distanceFromStart }));
+        if (isScrollActive && typeof requestAnimationFrame === "function") {
+          if (!rangeRafPending) {
+            rangeRafPending = true;
+            requestAnimationFrame(() => {
+              rangeRafPending = false;
+              const latest = untrack(renderRange);
+              const latestNext = computeWindowStep(latest);
+              if (!isRangeEqual(latest, latestNext)) {
+                commitRenderRange(latest, latestNext);
+              }
+            });
+          }
+          return;
         }
-      } else {
-        edgeStartToken = -1;
+        commitRenderRange(current, next);
       }
     }
+  );
 
-    if (props.onEndReached) {
-      const threshold =
-        Math.max(0, props.onEndReachedThreshold ?? 2) * viewport;
-      if (distanceFromEnd <= threshold) {
-        const token = Math.floor(distanceFromEnd);
-        if (edgeEndToken !== token) {
-          edgeEndToken = token;
-          untrack(() => props.onEndReached?.({ distanceFromEnd }));
+  createEffect(
+    () => ({
+      viewport: axisViewportLength(),
+      totalRows: rowCount(),
+      offset: scrollOffset(),
+      hLen: headerLength(),
+      totRowsLen: totalRowsLength(),
+      fLen: footerLength(),
+    }),
+    ({ viewport, totalRows, offset, hLen, totRowsLen, fLen }) => {
+      if (viewport <= 0 || totalRows <= 0) return;
+
+      const distanceFromStart = Math.max(0, offset - hLen);
+      const distanceFromEnd = Math.max(
+        0,
+        totRowsLen + fLen - distanceFromStart - viewport
+      );
+
+      if (props.onStartReached) {
+        const threshold =
+          Math.max(0, props.onStartReachedThreshold ?? 2) * viewport;
+        if (distanceFromStart <= threshold) {
+          const token = Math.floor(distanceFromStart);
+          if (edgeStartToken !== token) {
+            edgeStartToken = token;
+            untrack(() => props.onStartReached?.({ distanceFromStart }));
+          }
+        } else {
+          edgeStartToken = -1;
         }
-      } else {
-        edgeEndToken = -1;
+      }
+
+      if (props.onEndReached) {
+        const threshold =
+          Math.max(0, props.onEndReachedThreshold ?? 2) * viewport;
+        if (distanceFromEnd <= threshold) {
+          const token = Math.floor(distanceFromEnd);
+          if (edgeEndToken !== token) {
+            edgeEndToken = token;
+            untrack(() => props.onEndReached?.({ distanceFromEnd }));
+          }
+        } else {
+          edgeEndToken = -1;
+        }
       }
     }
-  });
+  );
 
-  createEffect(() => {
-    const nextInitialScrollIndex = props.initialScrollIndex;
-    if (lastInitialScrollIndex !== nextInitialScrollIndex) {
-      lastInitialScrollIndex = nextInitialScrollIndex;
-      initialScrollApplied = false;
+  createEffect(
+    () => ({
+      nextInitialScrollIndex: props.initialScrollIndex,
+      vpLen: axisViewportLength(),
+      sNode: scrollNode(),
+    }),
+    ({ nextInitialScrollIndex, vpLen, sNode }) => {
+      if (lastInitialScrollIndex !== nextInitialScrollIndex) {
+        lastInitialScrollIndex = nextInitialScrollIndex;
+        initialScrollApplied = false;
+      }
+
+      if (nextInitialScrollIndex === undefined || initialScrollApplied) return;
+      if (vpLen <= 0) return;
+      if (!sNode) return;
+
+      scrollToIndex({ animated: false, index: nextInitialScrollIndex });
+      initialScrollApplied = true;
     }
-
-    if (nextInitialScrollIndex === undefined || initialScrollApplied) return;
-    if (axisViewportLength() <= 0) return;
-    if (!scrollNode()) return;
-
-    scrollToIndex({ animated: false, index: nextInitialScrollIndex });
-    initialScrollApplied = true;
-  });
+  );
 
   onCleanup(() => {
     if (rangeUpdateTimer) {
@@ -1244,25 +1264,30 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     return Array.from({ length: count }, (_, index) => range.first + index);
   });
 
-  createEffect(() => {
-    const rows = visibleRowIndices();
-    const totalRows = rowCount();
-    const viewport = axisViewportLength();
-    const offset = scrollOffset();
-    const range = renderRange();
-    if (props.data.length > 0 && viewport > 0 && rows.length === 0) {
-      const now = nowMs();
-      if (now - lastBlankDebugAt >= DEBUG_LOG_INTERVAL_MS) {
-        lastBlankDebugAt = now;
-        logVirtualList("blank-visible-rows", {
-          offset,
-          range,
-          totalRows,
-          viewport,
-        });
+  createEffect(
+    () => ({
+      rows: visibleRowIndices(),
+      totalRows: rowCount(),
+      viewport: axisViewportLength(),
+      offset: scrollOffset(),
+      range: renderRange(),
+      dataLen: props.data.length,
+    }),
+    ({ rows, totalRows, viewport, offset, range, dataLen }) => {
+      if (dataLen > 0 && viewport > 0 && rows.length === 0) {
+        const now = nowMs();
+        if (now - lastBlankDebugAt >= DEBUG_LOG_INTERVAL_MS) {
+          lastBlankDebugAt = now;
+          logVirtualList("blank-visible-rows", {
+            offset,
+            range,
+            totalRows,
+            viewport,
+          });
+        }
       }
     }
-  });
+  );
 
   const leadingSpacerLength = createMemo(() => {
     if (props.disableVirtualization) return 0;
@@ -1365,6 +1390,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     return <View style={childInversionStyle()!}>{separator}</View>;
   };
 
+  const ForAny = For as any;
   return (
     <ScrollView
       bounces={props.bounces}
@@ -1448,8 +1474,9 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
           />
         ) : null}
 
-        <For each={visibleRowIndices()}>
-          {(rowIndex) => {
+        <ForAny each={visibleRowIndices()}>
+          {(((rIdx: any) => {
+            const rowIndex = Number(typeof rIdx === "function" ? rIdx() : rIdx);
             const rowItemIndices = createMemo(() => {
               props.extraData;
               const start = rowIndex * itemsPerRow();
@@ -1499,8 +1526,9 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
 
             return (
               <View onLayout={rowOnLayout} style={rowStyle()}>
-                <For each={rowItemIndices()}>
-                  {(itemIndex) => {
+                <ForAny each={rowItemIndices()}>
+                  {(((iIdx: any) => {
+                    const itemIndex = Number(typeof iIdx === "function" ? iIdx() : iIdx);
                     const item = createMemo(() => props.data[itemIndex]);
                     const itemKey = createMemo(() =>
                       props.keyExtractor
@@ -1517,8 +1545,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
                         {props.renderItem({ item: item(), index: itemIndex })}
                       </View>
                     );
-                  }}
-                </For>
+                  }) as any)}
+                </ForAny>
 
                 {itemsPerRow() > 1
                   ? Array.from({
@@ -1538,8 +1566,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
                 {renderSeparatorForRow(rowIndex)}
               </View>
             );
-          }}
-        </For>
+          }) as any)}
+        </ForAny>
 
         {trailingSpacerLength() > 0 ? (
           <View

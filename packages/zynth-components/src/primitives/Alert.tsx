@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, splitProps, createSignal } from "solid-js";
+import { createEffect, onCleanup, createSignal } from "solid-js";
 import type { Component } from "solid-js";
 import type { HostNode } from "@zynthjs/core";
 import { setProperty } from "@zynthjs/core";
@@ -129,15 +129,9 @@ export const createAlertRef = (): AlertRef => {
  * ```
  */
 export const Alert: Component<AlertProps> = (props) => {
-  const [local] = splitProps(props, [
-    "title",
-    "message",
-    "buttons",
-    "onDismiss",
-    "ref",
-  ]);
+  const local = props;
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
 
   // Store button callbacks for matching with native events
   let buttonCallbacks: Array<(() => void) | undefined> = [];
@@ -155,44 +149,48 @@ export const Alert: Component<AlertProps> = (props) => {
   });
 
   // Sync props to native
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
+  createEffect(
+    () => ({ node: hostNode(), title: local.title, message: local.message, buttons: local.buttons }),
+    ({ node, title, message, buttons }) => {
+      if (!node) return;
 
-    if (local.title != null) {
-      setProperty(node, "title", local.title);
+      if (title != null) {
+        setProperty(node, "title", title);
+      }
+      if (message != null) {
+        setProperty(node, "message", message);
+      }
+
+      // Serialize buttons config (text + style only, callbacks handled separately)
+      const btns = buttons ?? [{ text: "OK", style: "default" }];
+      buttonCallbacks = btns.map((btn: AlertButton) => btn.onPress);
+
+      const buttonsConfig = btns.map((btn: AlertButton) => ({
+        text: btn.text,
+        style: btn.style ?? "default",
+      }));
+      setProperty(node, "buttons", JSON.stringify(buttonsConfig));
     }
-    if (local.message != null) {
-      setProperty(node, "message", local.message);
-    }
-
-    // Serialize buttons config (text + style only, callbacks handled separately)
-    const buttons = local.buttons ?? [{ text: "OK", style: "default" }];
-    buttonCallbacks = buttons.map((btn) => btn.onPress);
-
-    const buttonsConfig = buttons.map((btn) => ({
-      text: btn.text,
-      style: btn.style ?? "default",
-    }));
-    setProperty(node, "buttons", JSON.stringify(buttonsConfig));
-  });
+  );
 
   // Set up event handlers
-  createEffect(() => {
-    const node = hostNode();
-    if (!node) return;
+  createEffect(
+    () => hostNode(),
+    (node) => {
+      if (!node) return;
 
-    // Handle button press events from native
-    setProperty(node, "onButtonPress", (payload: { index: number }) => {
-      const callback = buttonCallbacks[payload.index];
-      callback?.();
-    });
+      // Handle button press events from native
+      setProperty(node, "onButtonPress", (payload: { index: number }) => {
+        const callback = buttonCallbacks[payload.index];
+        callback?.();
+      });
 
-    // Handle dismiss event
-    setProperty(node, "onDismiss", () => {
-      local.onDismiss?.();
-    });
-  });
+      // Handle dismiss event
+      setProperty(node, "onDismiss", () => {
+        local.onDismiss?.();
+      });
+    }
+  );
 
   return <zynth-alert ref={attachHost} />;
 };

@@ -1,4 +1,4 @@
-import { splitProps, type Component } from "solid-js";
+import { type Component } from "solid-js";
 
 export type StatusBarStyle = "default" | "light-content" | "dark-content";
 export type StatusBarAnimation = "none" | "fade" | "slide";
@@ -17,13 +17,7 @@ export interface StatusBarProps {
 }
 
 export const StatusBar: Component<StatusBarProps> = (props) => {
-  const [local] = splitProps(props, [
-    "animated",
-    "backgroundColor",
-    "barStyle",
-    "showHideTransition",
-    "hidden",
-  ]);
+  const local = props;
 
   return (
     <zynth-status-bar

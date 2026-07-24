@@ -2,9 +2,8 @@ import {
   createEffect,
   createSignal,
   onCleanup,
-  splitProps,
   type ParentComponent,
-  type JSX,
+  type Element as SolidElement,
 } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
 import { setProperty } from "@zynthjs/core";
@@ -22,13 +21,13 @@ export interface DatePickerProps {
   onDismiss?: () => void;
   ref?: (node: (HostNode & DatePickerRef) | null) => void;
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   testID?: string;
 }
 
 export interface DatePickerTriggerProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: SolidElement;
   testID?: string;
 }
 
@@ -125,22 +124,7 @@ const extractRange = (
 };
 
 const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
-  const [local] = splitProps(props, [
-    "mode",
-    "title",
-    "value",
-    "defaultValue",
-    "confirmText",
-    "cancelText",
-    "onChange",
-    "onRangeChange",
-    "onCancel",
-    "onDismiss",
-    "ref",
-    "style",
-    "children",
-    "testID",
-  ]);
+  const local = props;
 
   const selection = () => {
     if (local.mode === "range") {
@@ -166,7 +150,7 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
       handler?.(next);
     };
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
   onCleanup(() => local.ref?.(null));
 
   const attachRef = (node: any) => {
@@ -207,7 +191,7 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
 };
 
 const DatePickerTrigger: ParentComponent<DatePickerTriggerProps> = (props) => {
-  const [local] = splitProps(props, ["style", "children", "testID"]);
+  const local = props;
 
   return (
     <date-picker-trigger-view style={local.style} testID={local.testID}>
