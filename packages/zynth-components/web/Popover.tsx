@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
 type CommandPayload =
@@ -69,33 +69,38 @@ const Popover = (props: Record<string, unknown>) => {
     openFromTrigger();
   };
 
-  createEffect(() => {
-    const command = props.__command as CommandPayload | undefined;
-    if (!command) return;
-    if (command.type === "dismiss") {
-      dismiss();
-      return;
+  createEffect(
+    () => props.__command as CommandPayload | undefined,
+    (command) => {
+      if (!command) return;
+      if (command.type === "dismiss") {
+        dismiss();
+        return;
+      }
+      if (
+        command.type === "show" &&
+        command.source === "coordinates" &&
+        typeof command.x === "number" &&
+        typeof command.y === "number"
+      ) {
+        openFromCoordinates(command.x, command.y);
+        return;
+      }
+      openFromTrigger();
     }
-    if (
-      command.type === "show" &&
-      command.source === "coordinates" &&
-      typeof command.x === "number" &&
-      typeof command.y === "number"
-    ) {
-      openFromCoordinates(command.x, command.y);
-      return;
-    }
-    openFromTrigger();
-  });
+  );
 
-  createEffect(() => {
-    if (!isOpen()) return;
-    const close = () => dismiss();
-    window.addEventListener("click", close);
-    onCleanup(() => {
-      window.removeEventListener("click", close);
-    });
-  });
+  createEffect(
+    () => isOpen(),
+    (open) => {
+      if (!open) return;
+      const close = () => dismiss();
+      window.addEventListener("click", close);
+      return () => {
+        window.removeEventListener("click", close);
+      };
+    }
+  );
 
   return (
     <div style="display: contents;">

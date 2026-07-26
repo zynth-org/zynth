@@ -6,8 +6,6 @@ import {
   createSignal,
   onCleanup,
   For,
-  getOwner,
-  runWithOwner,
   Show,
 } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
@@ -236,14 +234,13 @@ const createPoolSlot = <T,>(slotIndex: number): PoolSlot<T> => {
 };
 
 export function FlatList<T>(props: FlatListProps<T>) {
-  const owner = getOwner();
   const log = (msg: string, ...args: any[]) => {
     if (props.debug) {
       console.log(`[FlatList] ${msg}`, ...args);
     }
   };
 
-  const [scrollRef, setScrollRef] = createSignal<ScrollViewRef | null>(null);
+  const [scrollRef, setScrollRef] = createSignal<ScrollViewRef | null>(null, { ownedWrite: true });
 
   const [viewportSize, setViewportSize] = createSignal(0);
   let lastOffset = 0;
@@ -1163,49 +1160,44 @@ export function FlatList<T>(props: FlatListProps<T>) {
   );
 
   const handleScroll = (event: ScrollEvent) => {
-    runWithOwner(owner, () => {
-      isScrolling = true;
-      if (scrollIdleTimer) clearTimeout(scrollIdleTimer);
-      scrollIdleTimer = setTimeout(() => {
-        isScrolling = false;
-        flushPendingMeasurements();
-      }, 120);
-      const offset = props.horizontal
-        ? (event.contentOffset?.x ?? 0)
-        : (event.contentOffset?.y ?? 0);
-      const viewport = props.horizontal
-        ? (event.layoutMeasurement?.width ?? 0)
-        : (event.layoutMeasurement?.height ?? 0);
+    isScrolling = true;
+    if (scrollIdleTimer) clearTimeout(scrollIdleTimer);
+    scrollIdleTimer = setTimeout(() => {
+      isScrolling = false;
+      flushPendingMeasurements();
+    }, 120);
+    const offset = props.horizontal
+      ? (event.contentOffset?.x ?? 0)
+      : (event.contentOffset?.y ?? 0);
+    const viewport = props.horizontal
+      ? (event.layoutMeasurement?.width ?? 0)
+      : (event.layoutMeasurement?.height ?? 0);
 
-      // Protection against spurious 0-offset events (e.g. from race conditions or layout invalidation)
-      // that cause the list to momentarily render at the top, creating a "disappearing" flicker.
-      // We only block this if we were significantly scrolled down (> viewport) and suddenly jumped to 0.
-      if (offset === 0 && lastOffset > (lastViewport || 500)) {
-        if (props.debug) {
-          log(
-            `Ignoring suspicious scroll jump to 0. lastOffset=${lastOffset.toFixed(1)}`,
-          );
-        }
-        return;
+    if (offset === 0 && lastOffset > (lastViewport || 500)) {
+      if (props.debug) {
+        log(
+          `Ignoring suspicious scroll jump to 0. lastOffset=${lastOffset.toFixed(1)}`,
+        );
       }
+      return;
+    }
 
-      lastOffset = offset;
-      lastViewport = viewport > 0 ? viewport : lastViewport;
-      if (viewport > 0) {
-        setViewportSize(viewport);
-      }
-      scheduleBindingsUpdate(
-        offset,
-        viewport > 0 ? viewport : effectiveViewport(),
-        true,
-      );
-      handleBoundaryEvents(
-        offset,
-        viewport > 0 ? viewport : effectiveViewport(),
-      );
-      updateAnchor(offset, viewport > 0 ? viewport : effectiveViewport());
-      props.onScroll?.(event);
-    });
+    lastOffset = offset;
+    lastViewport = viewport > 0 ? viewport : lastViewport;
+    if (viewport > 0) {
+      setViewportSize(viewport);
+    }
+    scheduleBindingsUpdate(
+      offset,
+      viewport > 0 ? viewport : effectiveViewport(),
+      true,
+    );
+    handleBoundaryEvents(
+      offset,
+      viewport > 0 ? viewport : effectiveViewport(),
+    );
+    updateAnchor(offset, viewport > 0 ? viewport : effectiveViewport());
+    props.onScroll?.(event);
   };
 
   createEffect(
@@ -1527,7 +1519,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
                   const handleLayout = createMemo(() => {
                     const token = slotData.layoutToken();
                     return (event: LayoutChangeEvent) => {
-                      runWithOwner(owner, () => {
                         if (slotData.layoutToken() !== token) return;
                         const idx = slotData.index();
                         if (idx < 0 || idx >= dataKeys.length) return;
@@ -1539,7 +1530,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
                           ? layout.width
                           : layout.height;
                         recordMeasurement(key, idx, size);
-                      });
                     };
                   });
 

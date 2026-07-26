@@ -4,6 +4,7 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  runWithOwner,
   untrack,
 } from "solid-js";
 import { platform } from "@zynthjs/apis";
@@ -177,13 +178,15 @@ export function createScrollViewRef(): ScrollViewRef {
   };
 
   controller.__applyMetrics = (next, state) => {
-    setMetrics(next);
-    if (state?.dragging !== undefined) {
-      setDragging(state.dragging);
-    }
-    if (state?.decelerating !== undefined) {
-      setDecelerating(state.decelerating);
-    }
+    runWithOwner(null, () => {
+      setMetrics(next);
+      if (state?.dragging !== undefined) {
+        setDragging(state.dragging);
+      }
+      if (state?.decelerating !== undefined) {
+        setDecelerating(state.decelerating);
+      }
+    });
   };
 
   return controller;
@@ -607,18 +610,22 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
       ax: axis(),
       scrollEn: resolvedScrollEnabled(),
       st: scrollViewStyle() as any,
+      node: hostNode(),
     }),
-    () => {
-      const node = hostNode();
+    ({ node }) => {
       if (node) {
-        applyScrollViewProps(node);
+        untrack(() => applyScrollViewProps(node));
       }
     }
   );
 
   createEffect(
-    () => ({ cSize: local.contentSize }),
-    ({ cSize }) => {
+    () => ({
+      cSize: local.contentSize,
+      drag: isDragging(),
+      decel: isDecelerating(),
+    }),
+    ({ cSize, drag, decel }) => {
       if (!cSize) return;
       const previousMetrics = untrack(metrics);
       if (
@@ -631,10 +638,10 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
         ...previousMetrics,
         contentSize: cSize,
       };
-      setMetrics(nextMetrics);
+      runWithOwner(null, () => setMetrics(nextMetrics));
       imperativeRef.__applyMetrics?.(nextMetrics, {
-        dragging: isDragging(),
-        decelerating: isDecelerating(),
+        dragging: drag,
+        decelerating: decel,
       });
     }
   );

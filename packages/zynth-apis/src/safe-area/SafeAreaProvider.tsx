@@ -1,7 +1,7 @@
 import {
   createSignal,
   createEffect,
-  onCleanup,
+  runWithOwner,
   type Component,
 } from "solid-js";
 import { SafeAreaInsetsContext, SafeAreaFrameContext } from "./SafeAreaContext";
@@ -72,17 +72,16 @@ export const SafeAreaProvider: Component<SafeAreaProviderProps> = (props) => {
   const [metrics, setMetrics] = createSignal<WindowMetrics>(initial);
 
   // Subscribe to native metrics changes
-  createEffect(() => {
-    if (!nativeModule) {
-      return;
+  createEffect(
+    () => !!nativeModule,
+    (_, prev) => {
+      if (!nativeModule) return;
+      const unsubscribe = nativeModule.addMetricsChangeListener((newMetrics) => {
+        runWithOwner(null, () => setMetrics(newMetrics));
+      });
+      return () => unsubscribe();
     }
-
-    const unsubscribe = nativeModule.addMetricsChangeListener((newMetrics) => {
-      setMetrics(newMetrics);
-    });
-
-    onCleanup(unsubscribe);
-  });
+  );
 
   const InsetsProvider = SafeAreaInsetsContext as any;
   const FrameProvider = SafeAreaFrameContext as any;

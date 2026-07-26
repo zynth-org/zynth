@@ -36,7 +36,7 @@ export const WebView: ParentComponent<WebViewProps> = (props) => {
     "ref",
   ]);
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
   const hasStyleAccessor = typeof local.style === "function";
   const resolveStyle = () => {
     const style = local.style;

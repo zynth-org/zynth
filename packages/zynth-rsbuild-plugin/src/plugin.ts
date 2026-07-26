@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -656,44 +657,88 @@ function resolveSolidPaths(roots: string[], isDev?: boolean): SolidPaths {
   for (const root of roots) {
     try {
       const rootRequire = createRequire(path.join(root, "package.json"));
+
+      // solid-js@2.0.0-beta.23+ uses an "exports" field that blocks subpath
+      // access (e.g. "./dist/dev.js", "./web"). Node's require.resolve() throws
+      // ERR_PACKAGE_PATH_NOT_EXPORTED for those, and the bare "solid-js" fallback
+      // resolves to the "main" field which is the SSR stub (server.cjs).
+      // Work around this by resolving "solid-js/package.json" (which IS exported)
+      // and constructing all paths manually from the package root.
+      const packageJsonPath = safeResolve(rootRequire, "solid-js/package.json");
+      if (!packageJsonPath) continue;
+      const packageRoot = path.dirname(packageJsonPath);
+      const distDir = path.join(packageRoot, "dist");
+
+      // Core entry: prefer dev.js in dev mode, solid.js in production.
+      // If the preferred file doesn't exist, fall back to the other.
       const core = isDev
-        ? safeResolve(rootRequire, "solid-js/dist/dev.js") ??
-          safeResolve(rootRequire, "solid-js")
-        : safeResolve(rootRequire, "solid-js/dist/solid.js") ??
-          safeResolve(rootRequire, "solid-js");
+        ? pickFirstFileSync(
+            path.join(distDir, "dev.js"),
+            path.join(distDir, "solid.js"),
+            path.join(distDir, "server.js"),
+          )
+        : pickFirstFileSync(
+            path.join(distDir, "solid.js"),
+            path.join(distDir, "dev.js"),
+            path.join(distDir, "server.js"),
+          );
 
       if (!core) continue;
 
-      const packageJson = safeResolve(rootRequire, "solid-js/package.json");
-      const packageRoot = packageJson ? path.dirname(packageJson) : null;
+      // JSX runtimes — solid-js@2.0 beta moved these under dist/.
+      const jsxRuntime = pickFirstFileSync(
+        path.join(distDir, "jsx.js"),
+        path.join(packageRoot, "h", "jsx-runtime", "dist", "jsx.js"),
+        path.join(packageRoot, "h", "jsx-runtime"),
+      );
+      const jsxDevRuntime = pickFirstFileSync(
+        path.join(distDir, "jsx-dev.js"),
+        path.join(packageRoot, "h", "jsx-dev-runtime", "dist", "jsx.js"),
+        path.join(packageRoot, "h", "jsx-dev-runtime"),
+      );
 
-      const jsxRuntime =
-        safeResolve(rootRequire, "solid-js/h/jsx-runtime/dist/jsx.js") ??
-        safeResolve(rootRequire, "solid-js/h/jsx-runtime");
-      const jsxDevRuntime =
-        safeResolve(rootRequire, "solid-js/h/jsx-dev-runtime/dist/jsx.js") ??
-        safeResolve(rootRequire, "solid-js/h/jsx-dev-runtime");
-      const hyperscript =
-        safeResolve(rootRequire, "solid-js/h/dist/h.cjs") ??
-        safeResolve(rootRequire, "solid-js/h");
+      // Hyperscript (solid-js/h)
+      const hyperscript = pickFirstFileSync(
+        path.join(distDir, "h.js"),
+        path.join(packageRoot, "h", "dist", "h.cjs"),
+        path.join(packageRoot, "h"),
+      );
 
+      // solid-js/web
       const web = isDev
-        ? safeResolve(rootRequire, "solid-js/web/dist/dev.js") ??
-          safeResolve(rootRequire, "solid-js/web")
-        : safeResolve(rootRequire, "solid-js/web/dist/web.js") ??
-          safeResolve(rootRequire, "solid-js/web");
+        ? pickFirstFileSync(
+            path.join(distDir, "web", "dev.js"),
+            path.join(distDir, "web.js"),
+            path.join(packageRoot, "web"),
+          )
+        : pickFirstFileSync(
+            path.join(distDir, "web.js"),
+            path.join(distDir, "web", "dev.js"),
+            path.join(packageRoot, "web"),
+          );
 
+      // solid-js/store
       const store = isDev
-        ? safeResolve(rootRequire, "solid-js/store/dist/dev.js") ??
-          safeResolve(rootRequire, "solid-js/store")
-        : safeResolve(rootRequire, "solid-js/store/dist/store.js") ??
-          safeResolve(rootRequire, "solid-js/store");
+        ? pickFirstFileSync(
+            path.join(distDir, "store", "dev.js"),
+            path.join(distDir, "store.js"),
+            path.join(packageRoot, "store"),
+          )
+        : pickFirstFileSync(
+            path.join(distDir, "store.js"),
+            path.join(distDir, "store", "dev.js"),
+            path.join(packageRoot, "store"),
+          );
 
+      // @solidjs/universal — separate package, resolved via root export.
       const universal = safeResolve(rootRequire, "@solidjs/universal");
 
-      const html =
-        safeResolve(rootRequire, "solid-js/html/dist/html.js") ??
-        safeResolve(rootRequire, "solid-js/html");
+      // solid-js/html
+      const html = pickFirstFileSync(
+        path.join(distDir, "html.js"),
+        path.join(packageRoot, "html", "dist", "html.js"),
+        path.join(packageRoot, "html"),
+      );
 
       return {
         core,
@@ -722,6 +767,16 @@ function resolveSolidPaths(roots: string[], isDev?: boolean): SolidPaths {
     universal: null,
     html: null,
   };
+}
+
+function pickFirstFileSync(...candidates: string[]): string | null {
+  for (const p of candidates) {
+    try {
+      fsSync.accessSync(p);
+      return p;
+    } catch {}
+  }
+  return null;
 }
 
 function createSolidAliases(paths: SolidPaths): Record<string, string> {

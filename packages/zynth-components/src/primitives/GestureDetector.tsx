@@ -4,8 +4,6 @@ import {
   
   createMemo,
   createSignal,
-  getOwner,
-  runWithOwner,
   onCleanup,
   type ParentComponent,
 } from "solid-js";
@@ -220,9 +218,7 @@ function invokePhaseCallback<TEvent extends BaseGestureEvent>(
 export const GestureDetector: ParentComponent<GestureDetectorProps> = (props) => {
   const local = props;
 
-  const owner = getOwner();
-
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
 
   // Reactive memo — avoids stale closure capture.
   const hasStyleAccessor = createMemo(() => typeof local.style === "function");
@@ -232,7 +228,6 @@ export const GestureDetector: ParentComponent<GestureDetectorProps> = (props) =>
     event: TEvent,
   ): void => {
     if (!callback) return;
-    if (owner) { runWithOwner(owner, () => callback(event)); return; }
     callback(event);
   };
 

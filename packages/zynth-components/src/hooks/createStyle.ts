@@ -22,15 +22,23 @@ export const createStyle = (
   style: Accessor<StyleProp | undefined>
 ): Accessor<Style | undefined> => {
   return createMemo(() => {
-    const s = style();
-    if (s === undefined) return undefined;
-    if (!Array.isArray(s)) return s;
+    let s = typeof style === "function" ? style() : style;
+    while (typeof s === "function") {
+      s = (s as Function)();
+    }
+    if (s === undefined || s === null) return undefined;
+    if (!Array.isArray(s)) return s as Style;
 
     return s.reduce<Style>((acc, curr) => {
       if (!curr) return acc;
-      return { ...acc, ...curr };
+      let resolved = typeof curr === "function" ? (curr as Function)() : curr;
+      while (typeof resolved === "function") {
+        resolved = (resolved as Function)();
+      }
+      if (!resolved || typeof resolved !== "object") return acc;
+      return { ...acc, ...resolved };
     }, {});
-  });
+  }, { lazy: true });
 };
 
 /**

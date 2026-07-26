@@ -4,6 +4,7 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  runWithOwner,
   type JSX,
 } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
@@ -53,10 +54,14 @@ export const Modal = (props: any) => {
 
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => setIsAnimatingOpen(true));
+        requestAnimationFrame(() => {
+          runWithOwner(null, () => setIsAnimatingOpen(true));
+        });
       });
     } else {
-      setTimeout(() => setIsAnimatingOpen(true), 16);
+      setTimeout(() => {
+        runWithOwner(null, () => setIsAnimatingOpen(true));
+      }, 16);
     }
   };
 
@@ -72,23 +77,27 @@ export const Modal = (props: any) => {
     }
 
     closeTimer = setTimeout(() => {
-      setIsOpen(false);
-      setIsClosing(false);
-      closeTimer = null;
+      runWithOwner(null, () => {
+        setIsOpen(false);
+        setIsClosing(false);
+        closeTimer = null;
+      });
     }, ANIMATION_DURATION_MS);
   };
 
-  createEffect(() => {
-    if (props.open === undefined) return;
-    const next = !!props.open;
-    const prev = lastOpen();
-    if (prev && !next) {
-      props.onDismiss?.();
+  createEffect(
+    () => ({ open: props.open, prev: lastOpen() }),
+    ({ open, prev }) => {
+      if (open === undefined) return;
+      const next = !!open;
+      if (prev && !next) {
+        props.onDismiss?.();
+      }
+      if (next) startOpen();
+      else startClose();
+      setLastOpen(next);
     }
-    if (next) startOpen();
-    else startClose();
-    setLastOpen(next);
-  });
+  );
 
   onCleanup(() => clearCloseTimer());
 
@@ -103,34 +112,39 @@ export const Modal = (props: any) => {
     }
   };
 
-  createEffect(() => {
-    const cmd = props.__command;
-    if (!cmd) return;
-    try {
-      const parsed = typeof cmd === "string" ? JSON.parse(cmd) : cmd;
-      if (parsed?.type === "show") {
-        applyOpenChange(true);
+  createEffect(
+    () => props.__command,
+    (cmd) => {
+      if (!cmd) return;
+      try {
+        const parsed = typeof cmd === "string" ? JSON.parse(cmd) : cmd;
+        if (parsed?.type === "show") {
+          applyOpenChange(true);
+        }
+        if (parsed?.type === "dismiss") {
+          applyOpenChange(false);
+        }
+      } catch (e) {
+        // ignore
       }
-      if (parsed?.type === "dismiss") {
-        applyOpenChange(false);
-      }
-    } catch (e) {
-      // ignore
     }
-  });
+  );
 
-  createEffect(() => {
-    if (!isOpen()) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      props.onRequestClose?.();
-      applyOpenChange(false);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => {
-      window.removeEventListener("keydown", handleKeyDown);
-    });
-  });
+  createEffect(
+    () => isOpen(),
+    (open) => {
+      if (!open) return;
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== "Escape") return;
+        props.onRequestClose?.();
+        applyOpenChange(false);
+      };
+      window.addEventListener("keydown", handleKeyDown);
+      return () => {
+        window.removeEventListener("keydown", handleKeyDown);
+      };
+    }
+  );
 
   const handleRootClick = (event: MouseEvent) => {
     if (!resolvedDismissOnOverlayPress()) return;

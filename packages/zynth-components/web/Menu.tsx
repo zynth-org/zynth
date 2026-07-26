@@ -4,7 +4,6 @@ import {
   createEffect,
   For,
   Show,
-  onCleanup,
   createMemo,
 } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
@@ -40,16 +39,18 @@ export const Menu = (props: any) => {
     }
   };
 
-  createEffect(() => {
-    if (isOpen()) {
+  createEffect(
+    () => isOpen(),
+    (open) => {
+      if (!open) return;
       window.addEventListener("click", close);
       window.addEventListener("zynth-menu-close", close);
-      onCleanup(() => {
+      return () => {
         window.removeEventListener("click", close);
         window.removeEventListener("zynth-menu-close", close);
-      });
+      };
     }
-  });
+  );
 
   return (
     <div style="display: contents">
@@ -104,14 +105,14 @@ export const MenuItem = (props: any) => {
   };
 
   // Ensure the host element (zynth-web-host) doesn't capture dimensions or hide
-  createEffect(() => {
-    if (itemRef && itemRef.parentElement) {
-      const host = itemRef.parentElement;
-      if (host.tagName === "ZYNTH-WEB-HOST") {
+  createEffect(
+    () => itemRef?.parentElement,
+    (host) => {
+      if (host && host.tagName === "ZYNTH-WEB-HOST") {
         host.style.display = "contents";
       }
     }
-  });
+  );
 
   const filteredStyle = createMemo(() => {
     const s = { ...props.style };

@@ -274,9 +274,9 @@ export const View: ParentComponent<ViewProps> = (props) => {
   };
 
   // ─── Native transition helpers ─────────────────────────────────────────────
-  const startNativePhase = (phase: "enter" | "exit"): void => {
-    const nodeId = hostNode()?.id;
+  const startNativePhase = (phase: "enter" | "exit", nodeId?: number | string): void => {
     if (!nodeId) return;
+    const numNodeId = typeof nodeId === "string" ? Number(nodeId) : nodeId;
     const input = phase === "enter" ? local.entering : local.exiting;
     const config = resolveNativeTransitionConfig(input);
     if (!config) {
@@ -295,7 +295,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
     const animationId = nextAnimationId++;
     activeAnimationId = animationId;
     void startNativeTransition({
-      nodeId,
+      nodeId: numNodeId,
       animationId,
       phase,
       from: config.from as Style,
@@ -347,7 +347,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
         }
       },
     );
-    onCleanup(() => subscription.remove());
+    return () => subscription.remove();
   });
 
   // ─── Layout transition setup ───────────────────────────────────────────────
@@ -383,8 +383,8 @@ export const View: ParentComponent<ViewProps> = (props) => {
 
   // ─── Visibility / presence effect ──────────────────────────────────────────
   createEffect(
-    () => local.visible !== false,
-    (shouldShow) => {
+    () => ({ show: local.visible !== false, nodeId: hostNode()?.id }),
+    ({ show: shouldShow, nodeId }) => {
       const mounted = untrack(isMounted);
       const exiting = untrack(isExiting);
       if (!isNative) {
@@ -426,7 +426,6 @@ export const View: ParentComponent<ViewProps> = (props) => {
           });
           didStartEnter = false;
         } else if (exiting) {
-          const nodeId = hostNode()?.id;
           if (nodeId) void stopNativeTransition(nodeId);
           untrack(() => setIsExiting(false));
           didStartEnter = false;
@@ -435,7 +434,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
       }
       if (mounted && !exiting) {
         untrack(() => setIsExiting(true));
-        startNativePhase("exit");
+        startNativePhase("exit", nodeId);
       }
     }
   );
@@ -446,7 +445,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
     ({ isNat, mounted, nodeId }) => {
       if (!isNat || !mounted || !nodeId || didStartEnter) return;
       didStartEnter = true;
-      startNativePhase("enter");
+      startNativePhase("enter", nodeId);
     }
   );
 

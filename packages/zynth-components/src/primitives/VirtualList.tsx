@@ -351,7 +351,7 @@ export interface VirtualListProps<T>
 export function VirtualList<T>(props: VirtualListProps<T>) {
   const [scrollNode, setScrollNode] = createSignal<
     (HostNode & ScrollViewRef) | null
-  >(null);
+  >(null, { ownedWrite: true });
   const [viewportSize, setViewportSize] = createSignal(
     { width: 0, height: 0 },
     {
@@ -1142,10 +1142,13 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       vel: scrollVelocity(),
       totLen: totalRowsLength(),
       measVer: measurementVersion(),
+      rowCount: rowCount(),
+      ipr: itemsPerRow(),
+      avg: averageRowLength(),
     }),
     () => {
       const current = untrack(renderRange);
-      const next = computeWindowStep(current);
+      const next = untrack(() => computeWindowStep(current));
       if (!isRangeEqual(current, next)) {
         const addedRows = countAddedRows(current, next);
         const batchingPeriod =
@@ -1161,7 +1164,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
             requestAnimationFrame(() => {
               rangeRafPending = false;
               const latest = untrack(renderRange);
-              const latestNext = computeWindowStep(latest);
+              const latestNext = untrack(() => computeWindowStep(latest));
               if (!isRangeEqual(latest, latestNext)) {
                 commitRenderRange(latest, latestNext);
               }

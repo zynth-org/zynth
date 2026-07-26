@@ -75,10 +75,10 @@ export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
         }
       });
 
-    onCleanup(() => {
+    return () => {
       cancelled = true;
       unsubscribe();
-    });
+    };
   });
 
   const mergedStyle = () => {

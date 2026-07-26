@@ -13,20 +13,22 @@ export const Alert = (props: any) => {
     }
   });
 
-  createEffect(() => {
-    const cmd = props.__command;
-    if (!cmd) return;
-    try {
-      const parsed = JSON.parse(cmd);
-      if (parsed.type === "show") setVisible(true);
-      if (parsed.type === "dismiss") {
-        setVisible(false);
-        props.onDismiss?.();
+  createEffect(
+    () => props.__command,
+    (cmd) => {
+      if (!cmd) return;
+      try {
+        const parsed = JSON.parse(cmd);
+        if (parsed.type === "show") setVisible(true);
+        if (parsed.type === "dismiss") {
+          setVisible(false);
+          props.onDismiss?.();
+        }
+      } catch (e) {
+        // ignore
       }
-    } catch (e) {
-      // ignore
     }
-  });
+  );
 
   const handleButtonPress = (index: number) => {
     props.onButtonPress?.({ index });

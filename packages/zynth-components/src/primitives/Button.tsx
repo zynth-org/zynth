@@ -3,9 +3,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  getOwner,
   onCleanup,
-  runWithOwner,
   untrack,
 } from "solid-js";
 import { flush } from "@solidjs/signals";
@@ -278,18 +276,12 @@ const withAlphaHex = (hex: string, alpha: number): string => {
 };
 
 export const Button: ParentComponent<ButtonProps> = (props) => {
-  const owner = getOwner();
   const callWithOwner = <T extends (...args: any[]) => any>(
     callback: T | undefined,
     ...args: Parameters<T>
   ): ReturnType<T> | undefined => {
     if (!callback) return undefined;
-    let res: ReturnType<T> | undefined;
-    if (owner) {
-      res = runWithOwner(owner, () => callback(...args));
-    } else {
-      res = callback(...args);
-    }
+    const res = callback(...args);
     flush();
     return res;
   };
@@ -301,7 +293,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     loading: local.loading,
   });
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
 
   createEffect(
     () => ({ node: hostNode() }),
@@ -389,19 +381,19 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     }
   );
 
-  const resolvedType = createMemo<ButtonType>(() => local.type ?? "button");
-  const resolvedVariant = createMemo<Variant>(() => local.variant ?? "solid");
-  const resolvedTone = createMemo<Tone>(() => local.tone ?? "primary");
-  const resolvedSize = createMemo<Size>(() => local.size ?? "md");
-  const resolvedElevation = createMemo(() => local.elevation ?? 0);
+  const resolvedType = createMemo<ButtonType>(() => local.type ?? "button", { lazy: true });
+  const resolvedVariant = createMemo<Variant>(() => local.variant ?? "solid", { lazy: true });
+  const resolvedTone = createMemo<Tone>(() => local.tone ?? "primary", { lazy: true });
+  const resolvedSize = createMemo<Size>(() => local.size ?? "md", { lazy: true });
+  const resolvedElevation = createMemo(() => local.elevation ?? 0, { lazy: true });
   const resolvedPressEffect = createMemo<PressEffect>(() => {
     if (local.pressEffect) return local.pressEffect;
     return "highlight";
-  });
+  }, { lazy: true });
   const resolvedMinimumTouch = createMemo<Required<MinimumTouchSize>>(() =>
-    ensureMinimumTouch(local.minimumTouchSize)
+    ensureMinimumTouch(local.minimumTouchSize), { lazy: true }
   );
-  const resolvedHitSlop = createMemo(() => local.hitSlop ?? 0);
+  const resolvedHitSlop = createMemo(() => local.hitSlop ?? 0, { lazy: true });
   const resolvedChildren = resolveChildren(() => local.children);
 
   // Detect if children is a simple string to use native title
@@ -410,13 +402,13 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (typeof resolved === "string") return resolved;
     if (local.label) return local.label;
     return undefined;
-  });
+  }, { lazy: true });
 
   const useNativeTitle = createMemo<boolean>(() => {
     return false;
-  });
+  }, { lazy: true });
 
-  const isStringContent = createMemo(() => titleContent() !== undefined);
+  const isStringContent = createMemo(() => titleContent() !== undefined, { lazy: true });
 
   const labelForRender = createMemo(() => {
     const resolved = resolvedChildren();
@@ -425,16 +417,16 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       return local.label ?? null;
     }
     return resolved;
-  });
+  }, { lazy: true });
   const resolvedLoadingPlacement = createMemo(
-    () => local.loadingPlacement ?? "overlay"
+    () => local.loadingPlacement ?? "overlay", { lazy: true }
   );
   const resolvedAccessibilityLabel = createMemo(() => {
     if (local.accessibilityLabel) return local.accessibilityLabel;
     const labelContent = labelForRender();
     if (typeof labelContent === "string") return labelContent;
     return local.label;
-  });
+  }, { lazy: true });
   const resolvedRounded = createMemo<
     ButtonProps["rounded"] | undefined
   >(() => {
@@ -444,7 +436,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       return undefined;
     }
     return "md" as const;
-  });
+  }, { lazy: true });
 
   // Removed: sizePaddingMap, baseRadiusMap, etc. since native handles layout.
 
@@ -468,7 +460,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       paddingHorizontal: metrics.paddingH,
       paddingVertical: metrics.paddingV,
     };
-  });
+  }, { lazy: true });
 
   const resolvedButtonStyle = createMemo<Style>(() => {
     const composed: Style = { ...defaultButtonStyle() };
@@ -488,10 +480,16 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       composed.paddingVertical = 0;
     }
     if (local.style) {
-      Object.assign(composed, local.style as Style);
+      let extraStyle: any = local.style;
+      while (typeof extraStyle === "function") {
+        extraStyle = extraStyle();
+      }
+      if (extraStyle && typeof extraStyle === "object") {
+        Object.assign(composed, extraStyle);
+      }
     }
     return composed;
-  });
+  }, { lazy: true });
 
   // Removed: resolvedLabelStyle logic (native handles text style)
 
@@ -539,7 +537,6 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   });
 
   const runPressHandler = () => {
-    console.log("[Button:DEBUG] runPressHandler called! onPress=", !!local.onPress);
     if (!local.onPress) return;
     if (resolvedDisabled()) return;
 
@@ -555,7 +552,6 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   };
 
   const handlePress = () => {
-    console.log("[Button:DEBUG] handlePress triggered from native!");
     if (resolvedDisabled()) return;
 
     const behavior = pressBehavior();
@@ -727,11 +723,11 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       size: resolvedSize(),
       accLabel: resolvedAccessibilityLabel(),
       ready: local.ready,
+      node: hostNode(),
     }),
-    () => {
-      const node = hostNode();
+    ({ node }) => {
       if (node) {
-        applyButtonProps(node);
+        untrack(() => applyButtonProps(node));
       }
     }
   );

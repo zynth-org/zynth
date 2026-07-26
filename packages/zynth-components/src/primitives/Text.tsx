@@ -1,14 +1,14 @@
-import { children, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type { ParentComponent } from "solid-js";
 import type { HostNode, StyleProp } from "@zynthjs/core";
-import { effect, setProperty } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
 import { createStyle } from "../hooks/createStyle";
 import { useAnimatedStyleMapper } from "../hooks/useAnimatedStyleMapper";
 
 export interface TextProps {
   style?: StyleProp | (() => StyleProp | undefined);
   numberOfLines?: number;
-  text?: string;
+  text?: string | number | (() => string | number | undefined);
   ref?: (node: HostNode | null) => void;
 }
 
@@ -40,8 +40,9 @@ export const Text: ParentComponent<TextProps> = (props) => {
     return typeof nextStyle === "function" ? nextStyle() : nextStyle;
   });
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  const resolvedChildren = children(() => props.children);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, {
+    ownedWrite: true,
+  });
 
   const applyTextProps = (node: HostNode) => {
     const st = resolvedStyle();
@@ -66,29 +67,30 @@ export const Text: ParentComponent<TextProps> = (props) => {
   // style accessor from `createAnimatedStyle`. Zero cost for plain styles.
   useAnimatedStyleMapper(() => props.style, hostNode);
 
-  const directTextContent = createMemo<string | undefined>(() => {
-    if (props.text != null) return String(props.text);
-    const result = extractTextContent(resolvedChildren());
-    console.log("[Text:DEBUG] directTextContent memo computed! result=", result);
-    return result;
-  });
+  const directTextContent = createMemo<string | undefined>(
+    () => {
+      const rawText =
+        typeof props.text === "function" ? props.text() : props.text;
+      if (rawText != null) return String(rawText);
+      const result = extractTextContent(props.children);
+      return result;
+    },
+    { lazy: true }
+  );
 
   // ─── Imperative property updates for host node ───────────────────────────
-  effect(
-    () => {
-      const node = hostNode();
-      const st = resolvedStyle();
-      const text = directTextContent();
-      console.log("[Text:DEBUG] effect compute run — node=", node?.id, "text=", text);
-      return { node, st, text };
-    },
+  createEffect(
+    () => ({
+      node: hostNode(),
+      st: resolvedStyle(),
+      text: directTextContent(),
+    }),
     ({ node, st, text }) => {
-      console.log("[Text:DEBUG] effectFn run — node=", node?.id, "text=", text);
       if (!node) return;
       if (st != null) setProperty(node, "style", st);
       if (text !== undefined) setProperty(node, "text", text);
     }
-  , { scope: true });
+  );
 
   onCleanup(() => {
     setHostNode(null);

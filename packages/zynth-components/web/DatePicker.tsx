@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createSignal, createEffect, For, Show, createMemo, onCleanup } from "solid-js";
+import { createSignal, createEffect, For, Show, createMemo } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
 const MONTHS = [
@@ -18,15 +18,17 @@ export const DatePicker = (props: any) => {
   const value = () => props.value;
   const mode = () => props.mode || "date";
 
-  createEffect(() => {
-    const cmd = props.__command;
-    if (!cmd) return;
-    if (cmd.type === "show") {
-      setVisible(true);
-      setViewMode(mode() === "year" ? "year" : "month");
+  createEffect(
+    () => ({ cmd: props.__command, m: mode() }),
+    ({ cmd, m }) => {
+      if (!cmd) return;
+      if (cmd.type === "show") {
+        setVisible(true);
+        setViewMode(m === "year" ? "year" : "month");
+      }
+      if (cmd.type === "dismiss") setVisible(false);
     }
-    if (cmd.type === "dismiss") setVisible(false);
-  });
+  );
 
   const handleDayClick = (date: Date) => {
     if (mode() === "range") {

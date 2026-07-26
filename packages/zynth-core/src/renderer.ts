@@ -1,4 +1,4 @@
-import { createMemo as solidCreateMemo } from "solid-js";
+import { createMemo as solidCreateMemo, runWithOwner, untrack } from "solid-js";
 import { createRenderer } from "@solidjs/universal";
 import type { Host, HostNode, HostBatchMeta } from "./host/HostTypes";
 
@@ -7,6 +7,23 @@ import { createAndroidHost } from "./host/android";
 import { createIOSHost } from "./host/ios";
 import { createWebHost } from "./host/web";
 import { emitDevtoolsEvent } from "./devtools";
+
+if (typeof console !== "undefined" && console.warn) {
+  const _origWarn = console.warn.bind(console);
+  console.warn = (...args: unknown[]) => {
+    const msg = typeof args[0] === "string" ? args[0] : "";
+    if (msg.includes("STRICT_READ_UNTRACKED")) {
+      const trace = new Error().stack
+        ?.split("\n")
+        .slice(2, 10)
+        .map((l) => l.trim())
+        .join("\n    ");
+      _origWarn(...args, "\n    [TRACE]", trace ?? "(no stack)");
+      return;
+    }
+    _origWarn(...args);
+  };
+}
 
 let host: Host | null = null;
 export const setHost = (h: Host) => {
@@ -195,7 +212,7 @@ export const spread = r.spread as (
 
 export const use = (fn: any, element: any, arg?: any) => {
   if (typeof fn === "function") {
-    fn(element, arg);
+    runWithOwner(null, () => untrack(() => fn(element, arg)));
   } else if (fn && typeof fn === "object" && "current" in fn) {
     fn.current = element;
   }

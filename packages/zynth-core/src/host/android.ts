@@ -552,13 +552,6 @@ export function createAndroidHost(): Host {
         sentAnyOps = true;
         const meta = currentMeta ?? { kind: "flush", scope: "global" };
 
-        if ((globalThis as any).__ZYNTH_HMR_DEBUG) {
-          console.log("[HOST-ANDROID] applyBatch", {
-            ops: batchAccumulator.length,
-            meta: { kind: meta.kind, scope: meta.scope, extras: meta.extras },
-          });
-        }
-
         (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator, meta));
         batchAccumulator = [];
         currentMeta = null;

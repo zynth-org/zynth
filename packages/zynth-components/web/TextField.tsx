@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, splitProps } from "solid-js";
+import { createEffect, createMemo, splitProps, untrack } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
 const resolveInputType = (keyboardType?: string, secure?: boolean) => {
@@ -107,34 +107,46 @@ export const TextField = (props: any) => {
   let ref: HTMLInputElement | undefined;
   let lastStyleKeys = new Set<string>();
 
-  createEffect(() => {
-    if (!ref) return;
-    if (local.value !== undefined && ref.value !== local.value) {
-      ref.value = local.value;
+  createEffect(
+    () => local.value,
+    (val) => {
+      if (!ref) return;
+      if (val !== undefined && ref.value !== val) {
+        ref.value = val;
+      }
     }
-  });
+  );
 
-  createEffect(() => {
-    if (!ref) return;
-    if (local.value !== undefined) return;
-    if (local.defaultValue !== undefined && ref.value !== local.defaultValue) {
-      ref.value = local.defaultValue;
+  createEffect(
+    () => ({ value: local.value, defaultValue: local.defaultValue }),
+    ({ value, defaultValue }) => {
+      if (!ref) return;
+      if (value !== undefined) return;
+      if (defaultValue !== undefined && ref.value !== defaultValue) {
+        ref.value = defaultValue;
+      }
     }
-  });
+  );
 
-  createEffect(() => {
-    if (!ref) return;
-    if (local.requestFocus) {
-      ref.focus();
+  createEffect(
+    () => local.requestFocus,
+    (shouldFocus) => {
+      if (!ref) return;
+      if (shouldFocus) {
+        ref.focus();
+      }
     }
-  });
+  );
 
-  createEffect(() => {
-    if (!ref) return;
-    if (local.requestBlur) {
-      ref.blur();
+  createEffect(
+    () => local.requestBlur,
+    (shouldBlur) => {
+      if (!ref) return;
+      if (shouldBlur) {
+        ref.blur();
+      }
     }
-  });
+  );
 
   const baseStyle = createMemo(() => {
     const variantStyle = resolveVariantStyle(local.variant);
@@ -210,9 +222,12 @@ export const TextField = (props: any) => {
     lastStyleKeys = nextKeys;
   };
 
-  createEffect(() => {
-    applyInlineStyle();
-  });
+  createEffect(
+    () => ({ base: baseStyle(), input: inputStyle(), hasRef: !!ref }),
+    () => {
+      untrack(applyInlineStyle);
+    }
+  );
 
   const handleInput = (event: Event) => {
     const target = event.currentTarget as HTMLInputElement;

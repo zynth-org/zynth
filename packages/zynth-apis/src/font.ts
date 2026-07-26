@@ -296,17 +296,20 @@ export function createFontLoader(
 ): Accessor<boolean> {
   const [loaded, setLoaded] = createSignal(false);
 
-  createEffect(() => {
-    const families = Object.keys(map);
-    Promise.all(
-      families.map((family) => Font.loadAsync(family, map[family]!)),
-    ).then((results) => {
-      const failed = results.find((r) => !r.success);
-      if (!failed) {
-        setLoaded(true);
-      }
-    });
-  });
+  createEffect(
+    () => map,
+    () => {
+      const families = Object.keys(map);
+      Promise.all(
+        families.map((family) => Font.loadAsync(family, map[family]!)),
+      ).then((results) => {
+        const failed = results.find((r) => !r.success);
+        if (!failed) {
+          setLoaded(true);
+        }
+      });
+    }
+  );
 
   return loaded;
 }

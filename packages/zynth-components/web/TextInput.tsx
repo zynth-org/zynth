@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createMemo, splitProps, createEffect, on } from "solid-js";
+import { createMemo, splitProps, createEffect } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 import type { Style } from "@zynthjs/core";
 
@@ -29,14 +29,12 @@ export const TextInput = (props: any) => {
 
   // Sync value from props to DOM
   createEffect(
-    on(
-      () => local.value,
-      (val) => {
-        if (ref && val !== undefined && ref.value !== val) {
-          ref.value = val;
-        }
+    () => local.value,
+    (val) => {
+      if (ref && val !== undefined && ref.value !== val) {
+        ref.value = val;
       }
-    )
+    }
   );
 
   const handleInput = (e: Event) => {

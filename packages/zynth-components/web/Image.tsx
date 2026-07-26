@@ -178,10 +178,12 @@ const Image = (props: {
     });
   };
 
-  createEffect(() => {
-    local.source;
-    setCurrentSourceIndex(0);
-  });
+  createEffect(
+    () => local.source,
+    () => {
+      setCurrentSourceIndex(0);
+    }
+  );
 
   return (
     <img
