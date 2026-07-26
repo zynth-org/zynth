@@ -136,16 +136,27 @@ onSettled(() => {
 
 ---
 
-### 1.5. `JSX.Element` Removed
+### 1.5. `JSX.Element` — Namespace Removed
 
-`JSX.Element` no longer exists in `solid-js` types. Use `Element as SolidElement`:
+`JSX.Element` as a namespace type no longer exists in SolidJS 2.0. The `Element` type is still exported directly from `solid-js`:
 
 ```ts
-// ❌ BAD
-import { Element } from "solid-js";
+// solid-js/types/types.d.ts
+export type Element = RenderedElement | ArrayElement | (string & {}) | number | boolean | null | undefined;
+```
 
-// ✅ GOOD
-import { Element as SolidElement } from "solid-js";
+If you were importing `JSX.Element`, switch to importing `Element` directly. The `as SolidElement` rename is optional — it's the same export, just renamed to avoid conflicts with the DOM's `Element` type:
+
+```ts
+// ❌ BAD — JSX namespace doesn't exist in Solid 2.0
+import type { JSX } from "solid-js";
+const x: JSX.Element = <div />;
+
+// ✅ GOOD — Element is exported directly
+import type { Element } from "solid-js";
+
+// ✅ ALSO GOOD — renamed to avoid DOM Element conflict
+import type { Element as SolidElement } from "solid-js";
 ```
 
 ---
@@ -154,7 +165,7 @@ import { Element as SolidElement } from "solid-js";
 
 ### What It Is
 
-In SolidJS 2.0, writing to a signal inside an owned scope (a component, a computation, or a `createEffect` effect callback) is forbidden unless the signal was created with `{ ownedWrite: true }`.
+SolidJS 2.0 added a restriction: writing to a signal inside an owned scope (a component, a computation, or a `createEffect` effect callback) is forbidden unless the signal was created with `{ ownedWrite: true }`.
 
 The check happens in `setSignal` (`@solidjs/signals/dist/dev.js:36759`):
 
@@ -164,13 +175,26 @@ if (!(el._config & CONFIG_OWNED_WRITE) && context && el._firewall !== context) {
 }
 ```
 
-### When You Need It
+**This is a framework-level concern, not an end-user concern.** SolidJS 2.0 added this restriction to prevent accidental signal writes inside tracking scopes, which can cause subtle reactivity bugs. In normal SolidJS usage (effects, computations), users write signals freely — the framework manages the scope. But in Zynth's custom renderer architecture (`@solidjs/universal`), ref callbacks run inside the component's owned scope (the JSX compiler calls `use()` from within the component body), so signals written there need `{ ownedWrite: true }`.
 
-Any signal that is written inside a `refProp` callback (which runs inside the component's owned scope) **must** use `{ ownedWrite: true }`:
+### When You Need It (Framework Internals Only)
+
+In Zynth, `refProp` callbacks are invoked inside the component's owned scope. Any signal written inside a `refProp` callback must use `{ ownedWrite: true }`:
 
 ```ts
+// In a Zynth primitive component
 const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
+
+const refProp = (node: HostNode | null) => {
+  if (node) {
+    // setHostNode(node) runs inside the component's owned scope
+    // Without { ownedWrite: true }, this throws REACTIVE_WRITE_IN_OWNED_SCOPE
+    setHostNode(node);
+  }
+};
 ```
+
+**End users building components never need to use `{ ownedWrite: true }`** — they use the standard `refProp` + `createEffect` pattern and the framework handles the rest.
 
 ### Where It's Applied in Zynth
 
