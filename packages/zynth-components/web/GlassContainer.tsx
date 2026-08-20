@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createMemo, splitProps } from "solid-js";
+import { createMemo } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
 const resolvePointerEvents = (value: string | undefined) => {
@@ -8,12 +8,7 @@ const resolvePointerEvents = (value: string | undefined) => {
 };
 
 export const GlassContainer = (props: any) => {
-  const [local] = splitProps(props, [
-    "style",
-    "spacing",
-    "pointerEvents",
-    "class",
-  ]);
+  const local = props;
 
   const baseStyle = createMemo(() => {
     const base: Record<string, any> = {

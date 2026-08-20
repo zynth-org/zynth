@@ -23,6 +23,10 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OVERLAY_SHIM_PATH = path.join(__dirname, "shims/overlay-empty.js");
 const CSS_SHIM_PATH = path.join(__dirname, "shims/css-empty.js");
+const SOLID_WEB_SHIM_PATH = pickFirstFileSync(
+  path.join(__dirname, "shims/solid-web-shim.ts"),
+  path.join(__dirname, "shims/solid-web-shim.js"),
+) ?? path.join(__dirname, "shims/solid-web-shim.ts");
 const IMAGE_ASSET_LOADER_PATH = path.join(
   __dirname,
   "loaders/image-asset-loader.cjs",
@@ -379,6 +383,17 @@ function configureModuleResolution(config: rspack.Configuration) {
     test: /[\\/]node_modules[\\/](solid-js|@solidjs[\\/].*)[\\/]/,
     sideEffects: true,
   });
+  config.module.parser = {
+    ...config.module.parser,
+    javascript: {
+      ...((config.module.parser as any)?.javascript ?? {}),
+      exprContextCritical: false,
+    },
+  };
+  config.ignoreWarnings = [
+    ...(config.ignoreWarnings ?? []),
+    /Critical dependency: the request of a dependency is an expression/,
+  ];
 }
 
 function createStaticAssetMiddleware() {
@@ -704,18 +719,30 @@ function resolveSolidPaths(roots: string[], isDev?: boolean): SolidPaths {
         path.join(packageRoot, "h"),
       );
 
-      // solid-js/web
-      const web = isDev
-        ? pickFirstFileSync(
-            path.join(distDir, "web", "dev.js"),
-            path.join(distDir, "web.js"),
-            path.join(packageRoot, "web"),
-          )
-        : pickFirstFileSync(
-            path.join(distDir, "web.js"),
-            path.join(distDir, "web", "dev.js"),
-            path.join(packageRoot, "web"),
-          );
+      // @solidjs/web (Solid 2.0) or legacy solid-js/web (Solid 1.x)
+      const solidWebResolved = safeResolve(rootRequire, "@solidjs/web");
+      const webDist = solidWebResolved ? path.dirname(solidWebResolved) : null;
+      const web = webDist
+        ? (isDev
+            ? pickFirstFileSync(
+                path.join(webDist, "dev.js"),
+                path.join(webDist, "web.js"),
+              )
+            : pickFirstFileSync(
+                path.join(webDist, "web.js"),
+                path.join(webDist, "dev.js"),
+              ))
+        : (isDev
+            ? pickFirstFileSync(
+                path.join(distDir, "web", "dev.js"),
+                path.join(distDir, "web.js"),
+                path.join(packageRoot, "web"),
+              )
+            : pickFirstFileSync(
+                path.join(distDir, "web.js"),
+                path.join(distDir, "web", "dev.js"),
+                path.join(packageRoot, "web"),
+              ));
 
       // solid-js/store
       const store = isDev
@@ -786,8 +813,10 @@ function createSolidAliases(paths: SolidPaths): Record<string, string> {
     aliases["solid-js"] = paths.core;
   }
   if (paths.web) {
-    aliases["solid-js/web$"] = paths.web;
-    aliases["solid-js/web"] = path.dirname(paths.web);
+    aliases["solid-js/web$"] = SOLID_WEB_SHIM_PATH;
+    aliases["solid-js/web"] = SOLID_WEB_SHIM_PATH;
+    aliases["@solidjs/web$"] = paths.web;
+    aliases["@solidjs/web"] = path.dirname(paths.web);
   }
   if (paths.store) {
     aliases["solid-js/store$"] = paths.store;

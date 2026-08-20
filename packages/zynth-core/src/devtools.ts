@@ -214,6 +214,8 @@ export function installDevtoolsConsole(): void {
 
   const consoleObj = (g.console ||= {});
   const nativeConsoleOwnsDevtools = Boolean(g.__ZYNTH_NATIVE_CONSOLE_DEVTOOLS__);
+  if (nativeConsoleOwnsDevtools) return;
+
   const levels = ["log", "info", "warn", "error", "debug"] as const;
 
   for (const level of levels) {

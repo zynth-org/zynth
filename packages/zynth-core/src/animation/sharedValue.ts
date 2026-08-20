@@ -731,6 +731,8 @@ function buildNativeStyleMapping(style: Style): {
 
     if (resolvedTransforms.length > 0) {
       resolved.transform = resolvedTransforms as typeof style.transform;
+    } else {
+      delete (resolved as Record<string, unknown>).transform;
     }
     if (mappedTransforms.length > 0) {
       mapping.transform =

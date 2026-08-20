@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, splitProps } from "solid-js";
+import { createEffect, createMemo, createSignal, omit } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 import type {
   ImageErrorEvent,
@@ -119,14 +119,16 @@ const Image = (props: {
   onError?: (event: ImageErrorEvent) => void;
   [key: string]: any;
 }) => {
-  const [local, rest] = splitProps(props, [
+  const local = props;
+  const rest = omit(
+    props,
     "source",
     "class",
     "style",
     "resizeMode",
     "onLoad",
-    "onError",
-  ]);
+    "onError"
+  );
 
   const [currentSourceIndex, setCurrentSourceIndex] = createSignal(0);
 

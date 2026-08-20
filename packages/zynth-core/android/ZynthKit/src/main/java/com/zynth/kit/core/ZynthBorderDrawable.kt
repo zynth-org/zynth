@@ -234,52 +234,60 @@ class ZynthBorderDrawable : Drawable() {
             }
             if (effTopLeft > 0f && borderTopWidth > 0f && borderLeftWidth > 0f && borderTopColor != Color.TRANSPARENT && borderLeftColor != Color.TRANSPARENT) {
                 borderPaint.color = borderTopColor
-                borderPaint.strokeWidth = borderTopWidth.coerceAtLeast(borderLeftWidth)
-                applyBorderStyle(borderPaint, borderTopWidth.coerceAtLeast(borderLeftWidth), borderStyle)
+                val strokeW = borderTopWidth.coerceAtLeast(borderLeftWidth)
+                borderPaint.strokeWidth = strokeW
+                applyBorderStyle(borderPaint, strokeW, borderStyle)
+                val halfStroke = strokeW / 2f
                 rectF.set(
-                    bounds.left + halfLeft,
-                    bounds.top + halfTop,
-                    bounds.left + effTopLeft * 2,
-                    bounds.top + effTopLeft * 2
+                    bounds.left + halfStroke,
+                    bounds.top + halfStroke,
+                    bounds.left + effTopLeft * 2f - halfStroke,
+                    bounds.top + effTopLeft * 2f - halfStroke
                 )
                 canvas.drawArc(rectF, 180f, 90f, false, borderPaint)
             }
 
             if (effTopRight > 0f && borderTopWidth > 0f && borderRightWidth > 0f && borderTopColor != Color.TRANSPARENT && borderRightColor != Color.TRANSPARENT) {
                 borderPaint.color = borderTopColor
-                borderPaint.strokeWidth = borderTopWidth.coerceAtLeast(borderRightWidth)
-                applyBorderStyle(borderPaint, borderTopWidth.coerceAtLeast(borderRightWidth), borderStyle)
+                val strokeW = borderTopWidth.coerceAtLeast(borderRightWidth)
+                borderPaint.strokeWidth = strokeW
+                applyBorderStyle(borderPaint, strokeW, borderStyle)
+                val halfStroke = strokeW / 2f
                 rectF.set(
-                    bounds.right - effTopRight * 2,
-                    bounds.top + halfTop,
-                    bounds.right - halfRight,
-                    bounds.top + effTopRight * 2
+                    bounds.right - effTopRight * 2f + halfStroke,
+                    bounds.top + halfStroke,
+                    bounds.right - halfStroke,
+                    bounds.top + effTopRight * 2f - halfStroke
                 )
                 canvas.drawArc(rectF, 270f, 90f, false, borderPaint)
             }
 
             if (effBottomRight > 0f && borderBottomWidth > 0f && borderRightWidth > 0f && borderBottomColor != Color.TRANSPARENT && borderRightColor != Color.TRANSPARENT) {
                 borderPaint.color = borderBottomColor
-                borderPaint.strokeWidth = borderBottomWidth.coerceAtLeast(borderRightWidth)
-                applyBorderStyle(borderPaint, borderBottomWidth.coerceAtLeast(borderRightWidth), borderStyle)
+                val strokeW = borderBottomWidth.coerceAtLeast(borderRightWidth)
+                borderPaint.strokeWidth = strokeW
+                applyBorderStyle(borderPaint, strokeW, borderStyle)
+                val halfStroke = strokeW / 2f
                 rectF.set(
-                    bounds.right - effBottomRight * 2,
-                    bounds.bottom - effBottomRight * 2,
-                    bounds.right - halfRight,
-                    bounds.bottom - halfBottom
+                    bounds.right - effBottomRight * 2f + halfStroke,
+                    bounds.bottom - effBottomRight * 2f + halfStroke,
+                    bounds.right - halfStroke,
+                    bounds.bottom - halfStroke
                 )
                 canvas.drawArc(rectF, 0f, 90f, false, borderPaint)
             }
 
             if (effBottomLeft > 0f && borderBottomWidth > 0f && borderLeftWidth > 0f && borderBottomColor != Color.TRANSPARENT && borderLeftColor != Color.TRANSPARENT) {
                 borderPaint.color = borderBottomColor
-                borderPaint.strokeWidth = borderBottomWidth.coerceAtLeast(borderLeftWidth)
-                applyBorderStyle(borderPaint, borderBottomWidth.coerceAtLeast(borderLeftWidth), borderStyle)
+                val strokeW = borderBottomWidth.coerceAtLeast(borderLeftWidth)
+                borderPaint.strokeWidth = strokeW
+                applyBorderStyle(borderPaint, strokeW, borderStyle)
+                val halfStroke = strokeW / 2f
                 rectF.set(
-                    bounds.left + halfLeft,
-                    bounds.bottom - effBottomLeft * 2,
-                    bounds.left + effBottomLeft * 2,
-                    bounds.bottom - halfBottom
+                    bounds.left + halfStroke,
+                    bounds.bottom - effBottomLeft * 2f + halfStroke,
+                    bounds.left + effBottomLeft * 2f - halfStroke,
+                    bounds.bottom - halfStroke
                 )
                 canvas.drawArc(rectF, 90f, 90f, false, borderPaint)
             }

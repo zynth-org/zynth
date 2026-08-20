@@ -1,7 +1,7 @@
 # SolidJS 2.0 Primitives Migration Guide & Inventory
 
 ## 📌 Overview
-This document provides the standard migration blueprint and complete inventory for converting Zynth UI primitive components (`packages/zynth-components/src/primitives/`) to be 100% compliant with **SolidJS 2.0 (beta 23)** and the `@solidjs/universal` custom renderer architecture.
+This document provides the standard migration blueprint and complete inventory for converting Zynth UI primitive components (`packages/zynth-components/src/primitives/`) to be 100% compliant with **SolidJS 2.0** and the `@solidjs/universal` custom renderer architecture.
 
 ---
 
@@ -31,6 +31,12 @@ This document provides the standard migration blueprint and complete inventory f
 ### 3. Removal of `JSX.Element`
 - **Problem**: `JSX.Element` was removed from `solid-js` types in Solid 2.0.
 - **Solution**: Import `Element as SolidElement` from `"solid-js"`.
+
+### 4. Props Utilities: `omit` and `merge`
+- **Problem**: `splitProps` and `mergeProps` from Solid 1.x are replaced in Solid 2.0.
+- **Solution**:
+  - Use `omit(props, "key1", "key2")` from `"solid-js"` instead of `splitProps`.
+  - Use `merge(defaultProps, props)` from `"solid-js"` instead of `mergeProps`. Note that `undefined` explicitly overrides values in `merge`.
 
 ---
 

@@ -4,6 +4,7 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  untrack,
 } from "solid-js";
 import type { ParentComponent, Element as SolidElement } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
@@ -73,7 +74,7 @@ export interface PressableProps {
   role?: PressableRole;
   type?: PressableType;
   pressEffect?: PressableEffect;
-  pressRetentionOffset?: RectOffset;
+  pressRetentionOffset?: number | RectOffset;
   delayPressInMs?: number;
   delayPressOutMs?: number;
   delayLongPressMs?: number;
@@ -246,9 +247,19 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
   const resolvedRole = createMemo(() => local.role ?? "none");
   const resolvedType = createMemo(() => local.type ?? "button");
   const resolvedPressEffect = createMemo(() => local.pressEffect ?? "none");
-  const resolvedPressRetention = createMemo(
-    () => local.pressRetentionOffset ?? DEFAULT_PRESS_RETENTION
-  );
+  const resolvedPressRetention = createMemo(() => {
+    const val = local.pressRetentionOffset;
+    if (val === undefined || val === null) return DEFAULT_PRESS_RETENTION;
+    if (typeof val === "number") {
+      return { top: val, right: val, bottom: val, left: val };
+    }
+    return {
+      top: val.top ?? DEFAULT_PRESS_RETENTION.top,
+      right: val.right ?? DEFAULT_PRESS_RETENTION.right,
+      bottom: val.bottom ?? DEFAULT_PRESS_RETENTION.bottom,
+      left: val.left ?? DEFAULT_PRESS_RETENTION.left,
+    };
+  });
   const resolvedDelayPressIn = createMemo(
     () => local.delayPressInMs ?? DEFAULT_DELAY_PRESS_IN
   );
@@ -332,14 +343,14 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     return children;
   });
 
-  let lastPressed = controller.pressed();
+  let lastPressed: boolean | undefined;
   createEffect(
     () => ({ pressed: controller.pressed() }),
     ({ pressed }) => {
-      if (pressed !== lastPressed) {
-        lastPressed = pressed;
+      if (lastPressed !== undefined && pressed !== lastPressed) {
         local.onPressChange?.(pressed);
       }
+      lastPressed = pressed;
     }
   );
 
@@ -504,7 +515,7 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
 
   return (
     <pressable
-      ref={(node: any) => {
+      ref={(node: any) => untrack(() => {
         const host = (node as unknown as HostNode) ?? null;
         if (host) {
           const imperativeNode = host as HostNode & PressableRef;
@@ -518,17 +529,13 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
           imperativeNode.click = controller.click;
           imperativeNode.cancel = controller.cancel;
           imperativeNode.setDisabled = controller.setDisabled;
-          setProperty(host, "pointerEvents", pointerBehavior());
-          if (local.accessibilityLabel != null) setProperty(host, "accessibilityLabel", local.accessibilityLabel);
-          if (local.accessibilityHint != null) setProperty(host, "accessibilityHint", local.accessibilityHint);
-          if (local.testID != null) setProperty(host, "testID", local.testID);
           setHostNode(host);
           local.ref?.(imperativeNode);
           return;
         }
         setHostNode(null);
         local.ref?.(null);
-      }}
+      })}
     >
       {resolvedChildren()}
     </pressable>

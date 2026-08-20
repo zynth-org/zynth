@@ -1,17 +1,19 @@
 /** @jsxImportSource solid-js */
-import { createMemo, splitProps } from "solid-js";
+import { createMemo, omit } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
 export const Switch = (props: any) => {
-  const [local, rest] = splitProps(props, [
+  const local = props;
+  const rest = omit(
+    props,
     "value",
     "onValueChange",
     "disabled",
     "trackColor",
     "thumbColor",
     "style",
-    "class",
-  ]);
+    "class"
+  );
 
   const toggle = () => {
     if (local.disabled) return;

@@ -2,7 +2,7 @@
 
 The `Font` API provides a deep integration with native font managers for dynamic registration and high-performance font scaling.
 
-It enables loading custom Typeface files (.ttf, .otf) at runtime and provides SolidJS-integrated loaders that synchronize with `Suspense` for a seamless loading experience.
+It enables loading custom Typeface files (.ttf, .otf) at runtime and provides SolidJS-integrated loaders for a seamless font loading experience.
 
 ## Basic usage
 
@@ -20,11 +20,11 @@ async function setupFonts() {
 
 ### SolidJS Integration (Recommended)
 
-Use `createFontLoader` to create a reactive resource. This works natively with SolidJS's `<Suspense>`, allowing you to show a loading state while fonts are being registered.
+Use `createFontLoader` to create a reactive font loading accessor. This works natively with SolidJS's `<Loading>` boundary or conditional rendering, allowing you to show a loading state while fonts are being registered.
 
 ```tsx
 import { createFontLoader } from "@zynthjs/apis";
-import { Suspense } from "solid-js";
+import { Loading } from "solid-js";
 
 const fontsReady = createFontLoader({
   "BrandFont": "brand-bold.ttf",
@@ -33,9 +33,9 @@ const fontsReady = createFontLoader({
 
 function App() {
   return (
-    <Suspense fallback={<Loading />}>
+    <Loading fallback={<LoadingSpinner />}>
        <MainScreen ready={fontsReady()} />
-    </Suspense>
+    </Loading>
   );
 }
 ```
@@ -70,7 +70,7 @@ Natively loads and registers a font.
 ### `Font.register(family, options): void`
 Registers a font mapping without immediately loading it. Useful for pre-defining web-specific sources.
 
-### `createFontLoader(map: Record<string, string | descriptor>): Resource<boolean>`
+### `createFontLoader(map: Record<string, string | descriptor>): Accessor<boolean>`
 A high-level SolidJS primitive that resolves when all fonts in the map are loaded.
 
 ### `FontLoadResult` (Type)

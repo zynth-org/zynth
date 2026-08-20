@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createMemo, splitProps } from "solid-js";
+import { createMemo } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
 const resolvePointerEvents = (value: string | undefined) => {
@@ -25,16 +25,7 @@ const resolveTintBackground = (tint: string | undefined, variant: string | undef
 };
 
 export const BlurView = (props: any) => {
-  const [local] = splitProps(props, [
-    "style",
-    "blurIntensity",
-    "blurTint",
-    "blurVariant",
-    "interactive",
-    "tintColor",
-    "pointerEvents",
-    "class",
-  ]);
+  const local = props;
 
   const baseStyle = createMemo(() => {
     const intensity = clampIntensity(local.blurIntensity);

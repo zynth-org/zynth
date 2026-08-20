@@ -153,6 +153,9 @@ export const View: ParentComponent<ViewProps> = (props) => {
   });
 
   const hasStyleAccessor = createMemo(() => typeof local.style === "function");
+
+  useAnimatedStyleMapper(() => local.style, hostNode);
+
   const needsImperativeStyleSync = createMemo(
     () =>
       hasStyleAccessor() ||

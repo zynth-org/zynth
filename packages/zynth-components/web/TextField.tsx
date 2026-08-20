@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, splitProps, untrack } from "solid-js";
+import { createEffect, createMemo, omit, untrack } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
 const resolveInputType = (keyboardType?: string, secure?: boolean) => {
@@ -46,7 +46,15 @@ const resolveVariantStyle = (variant?: string) => {
 
 const UNIT_KEYS = new Set([
   "border-radius",
+  "border-top-left-radius",
+  "border-top-right-radius",
+  "border-bottom-left-radius",
+  "border-bottom-right-radius",
   "border-width",
+  "border-top-width",
+  "border-right-width",
+  "border-bottom-width",
+  "border-left-width",
   "padding",
   "padding-top",
   "padding-right",
@@ -75,7 +83,9 @@ const normalizeStyleValue = (key: string, value: any) => {
 };
 
 export const TextField = (props: any) => {
-  const [local, rest] = splitProps(props, [
+  const local = props;
+  const rest = omit(
+    props,
     "value",
     "defaultValue",
     "placeholder",
@@ -101,8 +111,8 @@ export const TextField = (props: any) => {
     "textColor",
     "placeholderColor",
     "requestFocus",
-    "requestBlur",
-  ]);
+    "requestBlur"
+  );
 
   let ref: HTMLInputElement | undefined;
   let lastStyleKeys = new Set<string>();

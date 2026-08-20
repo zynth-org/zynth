@@ -1,10 +1,12 @@
 /** @jsxImportSource solid-js */
-import { createMemo, splitProps, createEffect } from "solid-js";
+import { createMemo, omit, createEffect } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 import type { Style } from "@zynthjs/core";
 
 export const TextInput = (props: any) => {
-  const [local, rest] = splitProps(props, [
+  const local = props;
+  const rest = omit(
+    props,
     "value",
     "defaultValue",
     "multiline",
@@ -22,8 +24,8 @@ export const TextInput = (props: any) => {
     "onSelectionChange",
     "onSubmitEditing",
     "style",
-    "class",
-  ]);
+    "class"
+  );
 
   let ref: HTMLInputElement | HTMLTextAreaElement | undefined;
 

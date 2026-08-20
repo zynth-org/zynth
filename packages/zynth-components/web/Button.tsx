@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 // cspell:ignore testid
-import { createMemo, splitProps, JSX, Show } from "solid-js";
+import { createMemo, omit, type Element as SolidElement, Show } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 import { ProgressIndicator } from "./ProgressIndicator";
 import type { Style } from "@zynthjs/core";
@@ -26,10 +26,10 @@ export type Size = "xs" | "sm" | "md" | "lg" | "xl";
 export type NativeSize = "mini" | "small" | "medium" | "large";
 
 export type ButtonProps = {
-  children?: JSX.Element;
+  children?: SolidElement;
   label?: string;
-  startIcon?: JSX.Element;
-  endIcon?: JSX.Element;
+  startIcon?: SolidElement;
+  endIcon?: SolidElement;
   iconOnly?: boolean;
   type?: ButtonType;
   disabled?: boolean;
@@ -73,7 +73,9 @@ const toneColorMap: Record<Tone, string> = {
 };
 
 export const Button = (props: ButtonProps) => {
-  const [local, rest] = splitProps(props, [
+  const local = props;
+  const rest = omit(
+    props,
     "children",
     "label",
     "startIcon",
@@ -94,8 +96,8 @@ export const Button = (props: ButtonProps) => {
     "class",
     "loadingIndicator",
     "loadingPlacement",
-    "loadingAriaLabel",
-  ]);
+    "loadingAriaLabel"
+  );
 
   const resolvedVariant = createMemo(() => local.variant ?? "solid");
   const resolvedTone = createMemo(() => local.tone ?? "primary");

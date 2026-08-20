@@ -1,11 +1,9 @@
-/** @jsxImportSource solid-js */
 import {
   createEffect,
   createMemo,
   createSignal,
   onCleanup,
   runWithOwner,
-  type JSX,
 } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
@@ -162,7 +160,7 @@ export const Modal = (props: any) => {
     applyOpenChange(false);
   };
 
-  const rootStyle = createMemo<JSX.CSSProperties>(() => ({
+  const rootStyle = createMemo<Record<string, any>>(() => ({
     position: "fixed",
     inset: "0",
     "z-index": 10000,
@@ -171,7 +169,7 @@ export const Modal = (props: any) => {
     "pointer-events": isOpen() ? ("auto" as const) : ("none" as const),
   }));
 
-  const overlayStyle = createMemo<JSX.CSSProperties>(() => ({
+  const overlayStyle = createMemo<Record<string, any>>(() => ({
     position: "absolute",
     inset: "0",
     "background-color": resolvedOverlayColor(),
@@ -186,7 +184,7 @@ export const Modal = (props: any) => {
         : "opacity 0.2s ease",
   }));
 
-  const contentBaseStyle = createMemo<JSX.CSSProperties>(() => ({
+  const contentBaseStyle = createMemo<Record<string, any>>(() => ({
     position: "absolute",
     top: "0",
     left: "0",
@@ -197,7 +195,7 @@ export const Modal = (props: any) => {
     ...props.style,
   }));
 
-  const contentMotionStyle = createMemo<JSX.CSSProperties>(() => {
+  const contentMotionStyle = createMemo<Record<string, any>>(() => {
     const animation = activeAnimation();
     if (animation === "none") {
       return {

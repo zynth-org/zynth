@@ -1,9 +1,11 @@
 /** @jsxImportSource solid-js */
-import { createMemo, splitProps } from "solid-js";
+import { createMemo, omit } from "solid-js";
 import { registerComponent } from "@zynthjs/core";
 
 export const Slider = (props: any) => {
-  const [local, rest] = splitProps(props, [
+  const local = props;
+  const rest = omit(
+    props,
     "value",
     "minimumValue",
     "maximumValue",
@@ -15,8 +17,8 @@ export const Slider = (props: any) => {
     "onValueChange",
     "onSlidingComplete",
     "style",
-    "class",
-  ]);
+    "class"
+  );
 
   const handleInput = (e: Event) => {
     const val = Number((e.target as HTMLInputElement).value);

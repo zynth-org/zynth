@@ -69,11 +69,25 @@ const UNIT_PROPS = new Set([
   "paddingHorizontal",
   "paddingVertical",
   "borderRadius",
+  "borderTopLeftRadius",
+  "borderTopRightRadius",
+  "borderBottomLeftRadius",
+  "borderBottomRightRadius",
+  "borderTopStartRadius",
+  "borderTopEndRadius",
+  "borderBottomStartRadius",
+  "borderBottomEndRadius",
+  "borderStartStartRadius",
+  "borderStartEndRadius",
+  "borderEndStartRadius",
+  "borderEndEndRadius",
   "borderWidth",
   "borderTopWidth",
   "borderRightWidth",
   "borderBottomWidth",
   "borderLeftWidth",
+  "borderStartWidth",
+  "borderEndWidth",
   "fontSize",
   "lineHeight",
   "gap",
@@ -174,6 +188,45 @@ export function normalizeStyle(style: any): any {
       const v = typeof value === "number" ? `${value}px` : value;
       next["margin-top"] = v;
       next["margin-bottom"] = v;
+      continue;
+    }
+
+    if (key === "borderTopStartRadius") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["border-top-left-radius"] = v;
+      continue;
+    }
+    if (key === "borderTopEndRadius") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["border-top-right-radius"] = v;
+      continue;
+    }
+    if (key === "borderBottomStartRadius") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["border-bottom-left-radius"] = v;
+      continue;
+    }
+    if (key === "borderBottomEndRadius") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["border-bottom-right-radius"] = v;
+      continue;
+    }
+    if (key === "borderStartWidth") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["border-left-width"] = v;
+      continue;
+    }
+    if (key === "borderEndWidth") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["border-right-width"] = v;
+      continue;
+    }
+    if (key === "borderStartColor") {
+      next["border-left-color"] = value;
+      continue;
+    }
+    if (key === "borderEndColor") {
+      next["border-right-color"] = value;
       continue;
     }
 
@@ -294,20 +347,21 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
   const hasLeftBorder =
     "border-left-width" in normalized || "border-left-color" in normalized;
 
+  const defaultBorderStyle = (normalized as any)["border-style"] || "solid";
   if (hasAnyBorder && !("border-style" in normalized)) {
-    (normalized as any)["border-style"] = "solid";
+    (normalized as any)["border-style"] = defaultBorderStyle;
   }
   if (hasTopBorder && !("border-top-style" in normalized)) {
-    (normalized as any)["border-top-style"] = "solid";
+    (normalized as any)["border-top-style"] = defaultBorderStyle;
   }
   if (hasRightBorder && !("border-right-style" in normalized)) {
-    (normalized as any)["border-right-style"] = "solid";
+    (normalized as any)["border-right-style"] = defaultBorderStyle;
   }
   if (hasBottomBorder && !("border-bottom-style" in normalized)) {
-    (normalized as any)["border-bottom-style"] = "solid";
+    (normalized as any)["border-bottom-style"] = defaultBorderStyle;
   }
   if (hasLeftBorder && !("border-left-style" in normalized)) {
-    (normalized as any)["border-left-style"] = "solid";
+    (normalized as any)["border-left-style"] = defaultBorderStyle;
   }
   
   for (const [key, value] of Object.entries(normalized)) {

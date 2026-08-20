@@ -2626,6 +2626,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         76 -> { setProp(nodeId, "letterSpacing", payload); return true }
         79 -> { setProp(nodeId, "minimumFontScale", payload); return true }
         80 -> { setProp(nodeId, "baselineShift", payload); return true }
+        114 -> { setProp(nodeId, "borderTopColor", payload); return true }
+        115 -> { setProp(nodeId, "borderRightColor", payload); return true }
+        116 -> { setProp(nodeId, "borderBottomColor", payload); return true }
+        117 -> { setProp(nodeId, "borderLeftColor", payload); return true }
       }
       return false
     }

@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, untrack } from "solid-js";
 import type { HostNode } from "@zynthjs/core";
 import { setProperty } from "@zynthjs/core";
 
@@ -88,8 +88,8 @@ export function createPressableRef(opts?: {
   };
 
   controller.__syncDisabled = (value) => {
-    if (disabled() !== value) {
-      setDisabledState(value);
+    if (untrack(disabled) !== value) {
+      untrack(() => setDisabledState(value));
     }
   };
 

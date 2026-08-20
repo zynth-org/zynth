@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document is a comprehensive reference for the SolidJS 2.0 (beta 23) issues encountered during the Zynth framework migration. It covers breaking changes from SolidJS 1.x, the warnings and errors produced by `@solidjs/signals`, and the architectural patterns required to fix them.
+This document is a comprehensive reference for the SolidJS 2.0 issues encountered during the Zynth framework migration. It covers breaking changes from SolidJS 1.x, the warnings and errors produced by `@solidjs/signals`, and the architectural patterns required to fix them.
 
 This guide is written for **Zynth framework contributors** working on `packages/zynth-core`, `packages/zynth-components`, and `packages/zynth-apis`. It complements the existing [Solid 2 Components Migration Guide](./solid-2-components-migration-guide.md) by focusing on **runtime behavior, reactivity semantics, and diagnostic patterns** rather than component structure.
 
