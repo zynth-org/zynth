@@ -23,7 +23,7 @@ import com.zynth.kit.core.ZynthRootView
 import java.lang.ref.WeakReference
 import org.json.JSONObject
 
-internal object ZynthNativeErrorOverlay {
+object ZynthNativeErrorOverlay {
   private const val TAG = "ZynthNativeOverlay"
   private const val RUNTIME_FONT_ASSET = "fonts/ZynthRuntime.ttf"
   private const val GLYPH_ARROW_RIGHT = "\uea06"
@@ -187,6 +187,18 @@ internal object ZynthNativeErrorOverlay {
     if (!isErrorTopic) return
     val kind = if (topic.startsWith("crash/")) "crash" else "error"
     val entry = parseEntry(event, kind)
+    mainHandler.post { showFatalOverlay(entry) }
+  }
+
+  @JvmStatic
+  fun showError(title: String, message: String, stack: String? = null) {
+    if (!isDebuggable) return
+    val entry = OverlayEntry(
+      topic = "error/native",
+      kind = "error",
+      message = if (title.isNotBlank()) "$title: $message" else message,
+      stack = stack,
+    )
     mainHandler.post { showFatalOverlay(entry) }
   }
 

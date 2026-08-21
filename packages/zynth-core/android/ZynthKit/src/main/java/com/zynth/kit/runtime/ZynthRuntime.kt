@@ -280,6 +280,11 @@ class ZynthRuntime(val root: ZynthRootView) {
             assets.open("main.js").use { it.bufferedReader().readText() }
           } catch (error: Exception) {
             startupMetrics.markBundleReadEnd()
+            ZynthNativeErrorOverlay.showError(
+              "Asset Load Failed",
+              "Unable to read main.js from APK assets. Ensure the JavaScript bundle was built before packaging the APK.\n\nCause: ${error.message}",
+              error.stackTraceToString()
+            )
             return@runOnJS
           }
         }

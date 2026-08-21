@@ -28,9 +28,9 @@ export class ZynthLogger {
   static info(tag: string, message?: any, ...args: any[]) {
     const prefix = `[Zynth:${tag}]`;
     if (message !== undefined) {
-      console.info(prefix, message, ...args);
+      console.log(prefix, message, ...args);
     } else {
-      console.info(prefix);
+      console.log(prefix);
     }
   }
 

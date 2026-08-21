@@ -105,6 +105,16 @@ configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession
                  }
                  if (loadError) {
                    NSLog(@"[Zynth] Failed to load bundle: %@", loadError);
+#if DEBUG
+                    NSString *devMsg = [NSString stringWithFormat:@"Failed to load bundle from dev server at %@.\n\nEnsure 'yarn dev' or 'rsbuild dev' is running on the host machine.\n\nError: %@", bundleURL.absoluteString, loadError.localizedDescription];
+                    [[ZynthNativeErrorOverlayManager shared] handleEventWithTopic:@"error/native"
+                                                                            level:@"error"
+                                                                              tag:@"bundle"
+                                                                             data:@{
+                                                                               @"message": devMsg,
+                                                                               @"stack": loadError.description ?: @""
+                                                                             }];
+#endif
 {{RUNTIME_LOAD_FAILURE}}
                    return;
                  }
@@ -117,6 +127,16 @@ configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession
     NSError *loadError = nil;
     if (![self.runtime loadInitialBundleWithJsBundleURL:bundleURL error:&loadError]) {
       NSLog(@"[Zynth] Failed to load bundle: %@", loadError);
+#if DEBUG
+      NSString *assetMsg = [NSString stringWithFormat:@"Failed to load bundle from app assets (main.hbc / main.js).\n\nEnsure the JavaScript bundle was built.\n\nError: %@", loadError.localizedDescription];
+      [[ZynthNativeErrorOverlayManager shared] handleEventWithTopic:@"error/native"
+                                                              level:@"error"
+                                                                tag:@"bundle"
+                                                               data:@{
+                                                                 @"message": assetMsg,
+                                                                 @"stack": loadError.description ?: @""
+                                                               }];
+#endif
 {{RUNTIME_LOAD_FAILURE}}
       return;
     }

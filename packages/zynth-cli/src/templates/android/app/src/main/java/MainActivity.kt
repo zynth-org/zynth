@@ -164,6 +164,25 @@ class MainActivity : AppCompatActivity() {
         }
       } catch (e: Exception) {
         Log.e("MainActivity", "Failed to load bundle", e)
+        val devMsg = if (!preloadUrl.isNullOrBlank()) {
+          "Failed to connect to dev server at $preloadUrl.\nEnsure 'yarn dev' or 'rsbuild dev' is running on the host machine and accessible from this device/emulator."
+        } else {
+          "Failed to load bundle from assets (main.hbc / main.js)."
+        }
+        val event = org.json.JSONObject()
+          .put("topic", "error/native")
+          .put("level", "error")
+          .put("tag", "bundle")
+          .put(
+            "data",
+            org.json.JSONObject()
+              .put("message", "Bundle Load Failed: $devMsg\n\nCause: ${e.message}")
+              .put("stack", e.stackTraceToString())
+          )
+        val envelope = org.json.JSONObject()
+          .put("type", "pub")
+          .put("event", event)
+        com.zynth.kit.runtime.modules.DevtoolsModule.emitNativeEvent(envelope.toString())
       } finally {
         logStartupPhase(
           "activity.bundlePreload",
