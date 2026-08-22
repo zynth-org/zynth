@@ -6,6 +6,7 @@ export { ScreenTabsContainer } from "./ScreenTabsContainer";
 
 // Types
 export type {
+  ScreenChildren,
   ScreenContainerProps,
   ScreenProps,
   ScreenTabsContainerProps,

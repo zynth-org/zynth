@@ -1,24 +1,36 @@
-import type { Style } from "@zynthjs/core";
-import type { JSX } from "solid-js";
+import type { HostNode, Style } from "@zynthjs/core";
+import type { Element as SolidElement } from "solid-js";
+import type {
+  ScreenAnimationType,
+  ScreenHeaderOptions,
+  ScreenTabBarOptions,
+  ScreenTabBarItemDescriptor,
+} from "./types";
 
-declare module "solid-js" {
+type ZynthChildren = SolidElement | SolidElement[] | null | undefined;
+type ZynthRef = (node: HostNode | null) => void;
+
+declare module "solid-js/jsx-runtime" {
   namespace JSX {
     interface IntrinsicElements {
       "zynth-screen-container": {
+        ref?: ZynthRef;
         style?: Style;
-        children?: JSX.Element;
+        children?: ZynthChildren;
       };
       "zynth-screen-sheet-container": {
+        ref?: ZynthRef;
         style?: Style;
-        children?: JSX.Element;
+        children?: ZynthChildren;
       };
       "zynth-screen": {
+        ref?: ZynthRef;
         screenKey?: string;
         active?: boolean;
         covered?: boolean;
-        animation?: string;
+        animation?: ScreenAnimationType;
         gestureEnabled?: boolean;
-        headerOptions?: Record<string, any>;
+        headerOptions?: ScreenHeaderOptions;
         onNativeBack?: () => void;
         onNativeHeaderRightPress?: () => void;
         onWillAppear?: () => void;
@@ -26,20 +38,31 @@ declare module "solid-js" {
         onWillDisappear?: () => void;
         onDidDisappear?: () => void;
         style?: Style;
-        children?: JSX.Element;
+        children?: ZynthChildren;
       };
       "zynth-screen-tabs-container": {
+        ref?: ZynthRef;
         selectedIndex?: number;
-        tabAnimation?: string;
+        tabAnimation?: ScreenAnimationType;
         style?: Style;
-        tabBarOptions?: Record<string, any>;
-        tabBarItems?: Array<Record<string, any>>;
+        tabBarOptions?: ScreenTabBarOptions;
+        tabBarItems?: ScreenTabBarItemDescriptor[];
         nativeTabBarEnabled?: boolean;
         onNativeTabSelect?: (index: number) => void;
-        onNativeTabMount?: (event: any) => void;
-        onNativeTabUpdate?: (event: any) => void;
-        children?: JSX.Element;
+        onNativeTabMount?: (event: {
+          surfaceId: number;
+          routeKey: string;
+          active: boolean;
+        }) => void;
+        onNativeTabUpdate?: (event: {
+          surfaceId: number;
+          routeKey: string;
+          active?: boolean;
+        }) => void;
+        children?: ZynthChildren;
       };
     }
   }
 }
+
+export {};

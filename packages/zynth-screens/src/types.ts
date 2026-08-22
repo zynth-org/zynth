@@ -1,5 +1,10 @@
-import type { JSX } from "solid-js";
+import type { Element as SolidElement } from "solid-js";
 import type { Style } from "@zynthjs/core";
+
+/**
+ * Children accepted by Zynth screen containers (Solid 2.0 renderer elements).
+ */
+export type ScreenChildren = SolidElement | SolidElement[] | null | undefined;
 
 /**
  * Animation types for screen transitions
@@ -11,7 +16,7 @@ export type ScreenAnimationType = "push" | "modal" | "sheet-blur" | "zoom" | "fa
  */
 export interface ScreenContainerProps {
   style?: Style;
-  children?: JSX.Element;
+  children?: ScreenChildren;
 }
 
 /**
@@ -54,7 +59,7 @@ export interface ScreenProps {
   onDidDisappear?: () => void;
 
   style?: Style;
-  children?: JSX.Element;
+  children?: ScreenChildren;
 }
 
 /**
@@ -182,7 +187,7 @@ export interface ScreenTabsContainerProps {
   }) => void;
 
   style?: Style;
-  children?: JSX.Element;
+  children?: ScreenChildren;
 }
 
 /**

@@ -30,7 +30,7 @@
   },
   "peerDependencies": {
     "solid-js": "2.0.0-rc.1",
-    "@zynthjs/core": "0.0.1-alpha.0"
+    "@zynthjs/core": ">=0.0.1-alpha.4"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.24.7",
@@ -44,7 +44,7 @@
   "scripts": {
     "build": "yarn build:js && yarn build:types",
     "build:js": "rm -rf dist/esm && esbuild src/*.ts src/*.tsx --outdir=dist/esm --format=esm --jsx=automatic --jsx-import-source=solid-js --loader:.ts=ts --loader:.tsx=tsx",
-    "build:types": "tsc --project tsconfig.types.json && mv dist/types/packages/zynth-screens/src/* dist/types/ && rm -rf dist/types/packages"
+    "build:types": "tsc --project tsconfig.types.json"
   },
   "zynthNative": {
     "ios": {

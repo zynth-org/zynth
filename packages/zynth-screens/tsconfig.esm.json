@@ -51,5 +51,8 @@
   "include": [
     "src"
   ],
+  "exclude": [
+    "src/index.web.ts"
+  ],
   "extends": "../../tsconfig.base.json"
 }

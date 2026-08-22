@@ -323,7 +323,7 @@ registerComponent("card", WebCard);
 | **`@zynthjs/components`** | Native Primitives | ✅ **MIGRATED** | Core | Maintained (all 28 primitives + web fallbacks clean). |
 | **`@zynthjs/apis`** | Core Device APIs | ✅ **MIGRATED** | Core | Maintained (`dimensions`, `font`, `safe-area`, `app-state`). |
 | **`@zynthjs/ui`** | UI Design System | ⏳ **PENDING** | High | Replace `splitProps` with `omit`, verify `Button`/`Card`/`Badge`. |
-| **`@zynthjs/screens`** | Navigation / Screens | ⏳ **PENDING** | High | Update `Screen.tsx` and `ScreenContainer.tsx` to `omit`/`merge`. |
+| **`@zynthjs/screens`** | Navigation / Screens | ✅ **MIGRATED** | High | Maintained (`Screen.tsx` + containers on `merge`, `refProp` initial props, 2-arg `createEffect`). |
 | **`@zynthjs/skia`** | 2D Graphics / Canvas | ⏳ **PENDING** | High | Replace `createResource` with async memos and `<Suspense>` with `<Loading>`. |
 | **`@zynthjs/router`** | Routing Engine | ⏳ **PENDING** | High | Replace `onMount` with `onSettled`, update JSX element types. |
 | **`@zynthjs/markdown`** | Markdown AST | ⏳ **PENDING** | Medium | Replace `splitProps` in markdown nodes, use 2-arg `createEffect`. |

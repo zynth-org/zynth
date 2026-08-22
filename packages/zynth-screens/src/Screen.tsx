@@ -1,7 +1,18 @@
-import { splitProps, children as resolveChildren, mergeProps } from "solid-js";
+import {
+  children as resolveChildren,
+  createEffect,
+  createMemo,
+  createSignal,
+  merge,
+  onCleanup,
+  untrack,
+} from "solid-js";
 import type { ParentComponent } from "solid-js";
+import type { HostNode, Style } from "@zynthjs/core";
+import { setProperty } from "@zynthjs/core";
 import type { ScreenProps } from "./types";
-import type { Style } from "@zynthjs/core";
+
+const DEFAULT_SCREEN_BACKGROUND = "#ffffff";
 
 /**
  * Individual screen primitive with built-in animations.
@@ -17,72 +28,112 @@ import type { Style } from "@zynthjs/core";
  *   active={currentRoute === 'profile'}
  *   animation="push"
  *   gestureEnabled={true}
- *   onDidAppear={() => console.log('Profile appeared')}
+ *   onDidAppear={() => logger.debug('Profile appeared')}
  * >
  *   <ProfileContent />
  * </Screen>
  * ```
  */
 export const Screen: ParentComponent<ScreenProps> = (props) => {
-  const merged = mergeProps(
+  // 1. Reactive defaults via merge (SolidJS 2.0 replaces mergeProps).
+  //    Do NOT destructure: `merged` stays a reactive proxy.
+  const merged = merge(
     {
       animation: "push" as const,
       gestureEnabled: true,
-      style: { flex: 1 },
+      style: { flex: 1 } as Style,
     },
     props
   );
 
-  const [local] = splitProps(merged, [
-    "screenKey",
-    "active",
-    "covered",
-    "animation",
-    "gestureEnabled",
-    "headerOptions",
-    "onNativeBack",
-    "onNativeHeaderRightPress",
-    "onWillAppear",
-    "onDidAppear",
-    "onWillDisappear",
-    "onDidDisappear",
-    "style",
-    "children",
-  ]);
+  // 2. Configure hostNode signal with ownedWrite: true (set from refProp)
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null, {
+    ownedWrite: true,
+  });
 
   // Use absolute positioning to ensure screens overlap and fill the container
   // instead of stacking and sharing space (which causes the "cut in half" bug).
-  const finalStyle: Style = {
+  const resolvedStyle = createMemo<Style>(() => ({
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
     backgroundColor: DEFAULT_SCREEN_BACKGROUND,
-    ...(local.style as Style),
+    ...(merged.style as Style),
+  }));
+
+  const resolved = resolveChildren(() => merged.children);
+
+  // 3. Helper to synchronize properties to the native host node
+  const applyProps = (node: HostNode) => {
+    if (merged.screenKey !== undefined)
+      setProperty(node, "screenKey", merged.screenKey);
+    if (merged.active !== undefined)
+      setProperty(node, "active", merged.active);
+    if (merged.covered !== undefined)
+      setProperty(node, "covered", merged.covered);
+    if (merged.animation !== undefined)
+      setProperty(node, "animation", merged.animation);
+    if (merged.gestureEnabled !== undefined)
+      setProperty(node, "gestureEnabled", merged.gestureEnabled);
+    if (merged.headerOptions !== undefined)
+      setProperty(node, "headerOptions", merged.headerOptions);
+    if (merged.onNativeBack !== undefined)
+      setProperty(node, "onNativeBack", merged.onNativeBack);
+    if (merged.onNativeHeaderRightPress !== undefined)
+      setProperty(node, "onNativeHeaderRightPress", merged.onNativeHeaderRightPress);
+    if (merged.onWillAppear !== undefined)
+      setProperty(node, "onWillAppear", merged.onWillAppear);
+    if (merged.onDidAppear !== undefined)
+      setProperty(node, "onDidAppear", merged.onDidAppear);
+    if (merged.onWillDisappear !== undefined)
+      setProperty(node, "onWillDisappear", merged.onWillDisappear);
+    if (merged.onDidDisappear !== undefined)
+      setProperty(node, "onDidDisappear", merged.onDidDisappear);
+
+    const st = resolvedStyle();
+    if (st != null) setProperty(node, "style", st);
   };
 
-  const resolved = resolveChildren(() => local.children);
+  // 4. Apply initial properties SYNCHRONOUSLY during node creation
+  const refProp = (node: HostNode | null) => {
+    if (node) {
+      untrack(() => applyProps(node));
+    }
+    setHostNode(node);
+  };
 
+  // 5. Subsequent updates applied IMPERATIVELY via 2-arg createEffect
+  createEffect(
+    () => ({
+      node: hostNode(),
+      screenKey: merged.screenKey,
+      active: merged.active,
+      covered: merged.covered,
+      animation: merged.animation,
+      gestureEnabled: merged.gestureEnabled,
+      headerOptions: merged.headerOptions,
+      onNativeBack: merged.onNativeBack,
+      onNativeHeaderRightPress: merged.onNativeHeaderRightPress,
+      onWillAppear: merged.onWillAppear,
+      onDidAppear: merged.onDidAppear,
+      onWillDisappear: merged.onWillDisappear,
+      onDidDisappear: merged.onDidDisappear,
+      st: resolvedStyle(),
+    }),
+    (cfg) => {
+      if (!cfg.node) return;
+      untrack(() => applyProps(cfg.node as HostNode));
+    }
+  );
+
+  onCleanup(() => {
+    setHostNode(null);
+  });
+
+  // 6. Keep intrinsic JSX tag clean (no dynamic attribute expressions)
   return (
-    // @ts-ignore: Custom native element
-    <zynth-screen
-      screenKey={local.screenKey}
-      active={local.active}
-      covered={local.covered}
-      animation={local.animation}
-      gestureEnabled={local.gestureEnabled}
-      headerOptions={local.headerOptions}
-      onNativeBack={local.onNativeBack}
-      onNativeHeaderRightPress={local.onNativeHeaderRightPress}
-      onWillAppear={local.onWillAppear}
-      onDidAppear={local.onDidAppear}
-      onWillDisappear={local.onWillDisappear}
-      onDidDisappear={local.onDidDisappear}
-      style={finalStyle}
-    >
-      {resolved()}
-    </zynth-screen>
+    <zynth-screen ref={refProp}>{resolved()}</zynth-screen>
   );
 };
-const DEFAULT_SCREEN_BACKGROUND = "#ffffff";
