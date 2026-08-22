@@ -609,39 +609,125 @@ function getZynthPackageCount(root, platform) {
     if (!fs.existsSync(appPkgPath)) return 0;
 
     const appPackage = readJSON(appPkgPath);
-    const queue = [];
-    const seen = new Set();
-    const nativePackages = new Set();
+    const isAndroid = platform === "android";
 
-    function enqueueDependencyNames(source) {
+    // The total must track the same units the build reporter increments on:
+    // Android counts distinct Gradle projects from "> Task :Project:" output,
+    // iOS counts distinct package directories ("packages/zynth-*") from
+    // compile output. Discovery therefore mirrors the native autolinker (see
+    // project-scripts/generate-android.ts and generate-ios.ts): the always
+    // linked runtime, every direct dependency exposing
+    // zynthNative.<platform>, and app-local module packages.
+    const androidUnits = new Set();
+    const iosPackages = new Set();
+
+    function registerNative(ownerName, packageJson) {
+      const platformConfig = packageJson?.zynthNative?.[platform];
+      if (!platformConfig) return;
+      if (isAndroid) {
+        for (const unitList of [
+          platformConfig.modules,
+          platformConfig.gradleProjects,
+        ]) {
+          if (!Array.isArray(unitList)) continue;
+          for (const unit of unitList) {
+            if (unit && unit.name) androidUnits.add(String(unit.name));
+          }
+        }
+        return;
+      }
+      const hasPods =
+        Array.isArray(platformConfig.pods) && platformConfig.pods.length > 0;
+      // iOS compile output only surfaces package directories, so pods sourced
+      // from the app itself or app-local modules are not countable and stay
+      // out of the total.
+      if (hasPods && ownerName) iosPackages.add(ownerName);
+    }
+
+    function registerDependency(source) {
       if (!source || typeof source !== "object") return;
-      for (const name of Object.keys(source)) {
-        if (name.startsWith("@zynthjs/")) {
-          queue.push(name);
+      for (const depName of Object.keys(source)) {
+        try {
+          const packageJsonPath = resolvePackageJsonFromApp(depName, appDir);
+          if (!packageJsonPath || !fs.existsSync(packageJsonPath)) continue;
+          registerNative(depName, readJSON(packageJsonPath));
+        } catch (_error) {
+          // Dependency might not provide native units; ignore resolution errors
         }
       }
     }
 
-    enqueueDependencyNames(appPackage.dependencies);
-    enqueueDependencyNames(appPackage.devDependencies);
-
-    while (queue.length > 0) {
-      const packageName = queue.shift();
-      if (!packageName || seen.has(packageName)) continue;
-      seen.add(packageName);
-
-      const packageJsonPath = resolvePackageJsonFromApp(packageName, appDir);
-      if (!packageJsonPath || !fs.existsSync(packageJsonPath)) continue;
-
-      const packageJson = readJSON(packageJsonPath);
-      if (packageJson?.zynthNative?.[platform]) {
-        nativePackages.add(packageName);
+    // Runtime: @zynthjs/core is always linked natively (ZynthKit), even though
+    // its package manifest carries no zynthNative block.
+    const runtimePkgPath = resolvePackageJsonFromApp("@zynthjs/core", appDir);
+    if (runtimePkgPath && fs.existsSync(runtimePkgPath)) {
+      const runtimeDir = path.dirname(runtimePkgPath);
+      const runtimeMarker =
+        platform === "ios"
+          ? path.join(runtimeDir, "ZynthKit.podspec")
+          : path.join(runtimeDir, "android", "ZynthKit");
+      if (fs.existsSync(runtimeMarker)) {
+        if (isAndroid) {
+          androidUnits.add("ZynthKit");
+        } else {
+          iosPackages.add("@zynthjs/core");
+        }
       }
-
-      enqueueDependencyNames(packageJson.dependencies);
     }
 
-    return nativePackages.size;
+    // Direct dependencies (autolinking never walks transitive dependencies).
+    registerDependency(appPackage.dependencies);
+    registerDependency(appPackage.devDependencies);
+
+    if (isAndroid) {
+      // App-declared native configuration and app-local module packages are
+      // autolinked as Gradle units too.
+      registerNative(appPackage.name || "(app)", appPackage);
+      const modulesDir = path.join(appDir, "modules");
+      if (fs.existsSync(modulesDir)) {
+        let moduleEntries = [];
+        try {
+          moduleEntries = fs.readdirSync(modulesDir, { withFileTypes: true });
+        } catch (_error) {
+          moduleEntries = [];
+        }
+        for (const entry of moduleEntries) {
+          if (!entry.isDirectory()) continue;
+          const modulePkgPath = path.join(
+            modulesDir,
+            entry.name,
+            "package.json"
+          );
+          if (!fs.existsSync(modulePkgPath)) continue;
+          try {
+            const modulePackage = readJSON(modulePkgPath);
+            registerNative(modulePackage?.name || entry.name, modulePackage);
+          } catch (_error) {
+            // Ignore malformed module manifests
+          }
+        }
+      }
+
+      // Honor app-level exclusions (mirrors the autolinker).
+      const androidConfig = appPackage?.zynthNative?.android || null;
+      const excludedUnits = new Set(
+        [
+          ...(Array.isArray(androidConfig?.excludeModules)
+            ? androidConfig.excludeModules
+            : []),
+          ...(Array.isArray(androidConfig?.excludeProjects)
+            ? androidConfig.excludeProjects
+            : []),
+        ].map((unitName) => String(unitName))
+      );
+      let unitCount = 0;
+      for (const unitName of androidUnits) {
+        if (!excludedUnits.has(unitName)) unitCount += 1;
+      }
+      return unitCount;
+    }
+
+    return iosPackages.size;
   } catch (_error) {
     // Ignore and keep indicator non-blocking
   }
