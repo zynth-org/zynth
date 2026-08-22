@@ -20,12 +20,12 @@ include(":app")
 include(":ZynthKit")
 
 val zynthAndroidDir = listOf(
-  File(rootDir, "../node_modules"),
-  File(rootDir, "../../node_modules"),
-  File(rootDir, "../../../node_modules"),
-  File(rootDir, "../../../../node_modules")
-).map { File(it, "{{ZYNTH_ANDROID_RUNTIME_PACKAGE}}/{{ZYNTH_ANDROID_RUNTIME_SUBDIR}}") }
-  .firstOrNull { it.exists() }
+  File(rootDir, "../../../packages/zynth-core/android/ZynthKit"),
+  File(rootDir, "../node_modules/{{ZYNTH_ANDROID_RUNTIME_PACKAGE}}/{{ZYNTH_ANDROID_RUNTIME_SUBDIR}}"),
+  File(rootDir, "../../node_modules/{{ZYNTH_ANDROID_RUNTIME_PACKAGE}}/{{ZYNTH_ANDROID_RUNTIME_SUBDIR}}"),
+  File(rootDir, "../../../node_modules/{{ZYNTH_ANDROID_RUNTIME_PACKAGE}}/{{ZYNTH_ANDROID_RUNTIME_SUBDIR}}"),
+  File(rootDir, "../../../../node_modules/{{ZYNTH_ANDROID_RUNTIME_PACKAGE}}/{{ZYNTH_ANDROID_RUNTIME_SUBDIR}}")
+).firstOrNull { it.exists() }
   ?: error("Unable to locate @zynthjs/core package from $rootDir")
 
 project(":ZynthKit").projectDir = zynthAndroidDir
