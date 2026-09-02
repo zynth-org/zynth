@@ -48,5 +48,16 @@
     "@solidjs/universal": "2.0.0-rc.1",
     "@solidjs/web": "2.0.0-rc.1",
     "solid-js": "2.0.0-rc.1"
+  },
+  "resolutions": {
+    "**/read-yaml-file/js-yaml": "^3.15.1",
+    "**/@changesets/parse/js-yaml": "^4.3.1",
+    "read-yaml-file/**/js-yaml": "^3.15.1",
+    "@changesets/parse/**/js-yaml": "^4.3.1",
+    "brace-expansion": "^5.0.9",
+    "sharp": "^0.35.4",
+    "uuid": "^11.1.1",
+    "hono": "^4.12.34",
+    "@hono/node-server": "^1.19.15"
   }
 }

@@ -162,12 +162,12 @@ export const Image: Component<ImageProps> = (props) => {
         retryIds.push(retryId);
       }
 
-      onCleanup(() => {
+      return () => {
         if (typeof clear !== "function") return;
         for (const retryId of retryIds) {
           clear(retryId);
         }
-      });
+      };
     }
   );
 

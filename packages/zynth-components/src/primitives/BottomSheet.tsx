@@ -200,7 +200,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
       const unsubscribe = viewport.observe("window", (metrics) => {
         setWindowSize(metrics);
       });
-      onCleanup(unsubscribe);
+      return unsubscribe;
     }
   );
 
@@ -213,7 +213,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
           setUncontrolledOpen(true);
         });
       }, 84);
-      onCleanup(() => clearTimeout(timeoutId));
+      return () => clearTimeout(timeoutId);
     }
   );
 

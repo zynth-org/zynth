@@ -525,9 +525,9 @@ export const TextInput: Component<TextInputProps> = (props) => {
     ({ node, signalId }) => {
       if (!node || typeof signalId !== "number") return;
       bindRuntimeSyncSignalNode(signalId, node.id);
-      onCleanup(() => {
+      return () => {
         unbindRuntimeSyncSignalNode(signalId, node.id);
-      });
+      };
     }
   );
 

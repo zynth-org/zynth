@@ -20,6 +20,7 @@ type ReleaseManifest = {
 };
 
 type RootPackageJson = {
+  dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
 type PackageJson = {
@@ -212,6 +213,7 @@ async function main() {
     log("  -> installing release tarballs into fixture app");
     const rootPackageJson = await readJsonFile<RootPackageJson>(join(repoRoot, "package.json"));
     const hermesCompilerVersion = rootPackageJson.devDependencies?.["hermes-compiler"] ?? "250829098.0.6";
+    const solidJsVersion = rootPackageJson.dependencies?.["solid-js"] ?? "2.0.0-rc.1";
     const appPackageJsonPath = join(appDir, "package.json");
     const appPackageJson = await readJsonFile<PackageJson>(appPackageJsonPath);
     const patchDependencies = (deps: Record<string, string> | undefined) => {
@@ -229,6 +231,10 @@ async function main() {
     patchDependencies(appPackageJson.dependencies);
     patchDependencies(appPackageJson.devDependencies);
 
+    if (appPackageJson.dependencies?.["solid-js"]) {
+      appPackageJson.dependencies["solid-js"] = solidJsVersion;
+    }
+
     if (platforms.includes("ios")) {
       appPackageJson.dependencies = appPackageJson.dependencies || {};
       appPackageJson.dependencies["hermes-compiler"] = hermesCompilerVersion;
@@ -245,6 +251,9 @@ async function main() {
       ],
       appDir,
     );
+
+    log("  -> building fixture app (production bundle)");
+    runCommand("npm", ["run", "build"], appDir);
 
     for (const platform of platforms) {
       log(`  -> bootstrapping ${platform} project from fixture app`);

@@ -174,8 +174,19 @@ export function createZynthRsbuildPlugin(
         configureImageAssets(config);
         configureFontAssets(config);
         configureModuleResolution(config);
-        if (isDev) {
-          ensureResolveCondition(config, "development");
+        if (!isWeb) {
+          config.resolve ??= {};
+          config.resolve.conditionNames = [
+            "import",
+            "module",
+            "default",
+            ...(isDev ? ["development"] : []),
+          ];
+        } else {
+          ensureResolveCondition(config, "browser");
+          if (isDev) {
+            ensureResolveCondition(config, "development");
+          }
         }
 
         if (hermesCompat) {
@@ -567,21 +578,28 @@ async function discoverInstalledZynthPackageAliases(
   isWeb: boolean,
 ): Promise<Record<string, string>> {
   const aliases: Record<string, string> = {};
-  const scopedDir = path.join(appRoot, "node_modules", "@zynth");
+  const scopedDirs = [
+    path.join(appRoot, "node_modules", "@zynthjs"),
+    path.join(appRoot, "node_modules", "@zynth"),
+  ];
 
-  let entries: import("node:fs").Dirent[] = [];
-  try {
-    entries = (await fs.readdir(scopedDir, {
-      withFileTypes: true,
-    })) as import("node:fs").Dirent[];
-  } catch {
-    return aliases;
-  }
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const packageName = `@zynthjs/${entry.name}`;
+  for (const scopedDir of scopedDirs) {
+    let entries: import("node:fs").Dirent[] = [];
     try {
+      entries = (await fs.readdir(scopedDir, {
+        withFileTypes: true,
+      })) as import("node:fs").Dirent[];
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const packageName = scopedDir.endsWith("@zynthjs")
+        ? `@zynthjs/${entry.name}`
+        : `@zynth/${entry.name}`;
+      if (aliases[`${packageName}$`]) continue;
+      try {
       const packageDir = path.join(scopedDir, entry.name);
       const packageJsonPath = path.join(packageDir, "package.json");
       if (!(await exists(packageJsonPath))) {
@@ -643,6 +661,7 @@ async function discoverInstalledZynthPackageAliases(
     } catch {
       // Ignore malformed or partially installed packages.
     }
+  }
   }
 
   return aliases;

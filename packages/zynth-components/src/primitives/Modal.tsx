@@ -108,7 +108,7 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
       const unsubscribe = viewport.observe("screen", (metrics) => {
         setScreenSize(metrics);
       });
-      onCleanup(unsubscribe);
+      return unsubscribe;
     }
   );
 

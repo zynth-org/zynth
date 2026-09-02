@@ -127,7 +127,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
   const isNative = isNativePlatform();
 
   // ─── Entry / exit presence state ──────────────────────────────────────────
-  const initialVisible = local.visible !== false;
+  const initialVisible = untrack(() => local.visible !== false);
   const [isMounted, setIsMounted] = createSignal(initialVisible);
   const [isExiting, setIsExiting] = createSignal(false);
   const [overrideStyle, setOverrideStyle] = createSignal<Style | undefined>(undefined);
@@ -277,10 +277,17 @@ export const View: ParentComponent<ViewProps> = (props) => {
   };
 
   // ─── Native transition helpers ─────────────────────────────────────────────
-  const startNativePhase = (phase: "enter" | "exit", nodeId?: number | string): void => {
+  const startNativePhase = (
+    phase: "enter" | "exit",
+    nodeId?: number | string,
+    transitionInput?: EntryExitAnimationLike | Keyframe,
+  ): void => {
     if (!nodeId) return;
     const numNodeId = typeof nodeId === "string" ? Number(nodeId) : nodeId;
-    const input = phase === "enter" ? local.entering : local.exiting;
+    const input =
+      transitionInput !== undefined
+        ? transitionInput
+        : untrack(() => (phase === "enter" ? local.entering : local.exiting));
     const config = resolveNativeTransitionConfig(input);
     if (!config) {
       setOverrideStyle(undefined);
@@ -378,18 +385,23 @@ export const View: ParentComponent<ViewProps> = (props) => {
               nativeEvent: { layout: event.layout },
             });
           }
-        }
+        },
       );
-      onCleanup(() => subscription.remove());
-    }
+      return () => subscription.remove();
+    },
   );
 
   // ─── Visibility / presence effect ──────────────────────────────────────────
   createEffect(
-    () => ({ show: local.visible !== false, nodeId: hostNode()?.id }),
-    ({ show: shouldShow, nodeId }) => {
+    () => ({
+      show: local.visible !== false,
+      nodeId: hostNode()?.id,
+      entering: local.entering,
+      exiting: local.exiting,
+    }),
+    ({ show: shouldShow, nodeId, entering, exiting }) => {
       const mounted = untrack(isMounted);
-      const exiting = untrack(isExiting);
+      const isCurrentlyExiting = untrack(isExiting);
       if (!isNative) {
         if (shouldShow) {
           if (!mounted) {
@@ -397,12 +409,12 @@ export const View: ParentComponent<ViewProps> = (props) => {
               setIsMounted(true);
               setIsExiting(false);
             });
-            startJsAnimation(resolveStyleAnimation(local.entering));
+            startJsAnimation(resolveStyleAnimation(entering));
           }
           return;
         }
-        if (mounted && !exiting) {
-          const exitAnim = resolveStyleAnimation(local.exiting);
+        if (mounted && !isCurrentlyExiting) {
+          const exitAnim = resolveStyleAnimation(exiting);
           if (!exitAnim) {
             untrack(() => {
               setIsMounted(false);
@@ -428,28 +440,33 @@ export const View: ParentComponent<ViewProps> = (props) => {
             setIsExiting(false);
           });
           didStartEnter = false;
-        } else if (exiting) {
+        } else if (isCurrentlyExiting) {
           if (nodeId) void stopNativeTransition(nodeId);
           untrack(() => setIsExiting(false));
           didStartEnter = false;
         }
         return;
       }
-      if (mounted && !exiting) {
+      if (mounted && !isCurrentlyExiting) {
         untrack(() => setIsExiting(true));
-        startNativePhase("exit", nodeId);
+        startNativePhase("exit", nodeId, exiting);
       }
-    }
+    },
   );
 
   // ─── Native enter animation trigger ────────────────────────────────────────
   createEffect(
-    () => ({ isNat: isNative, mounted: isMounted(), nodeId: hostNode()?.id }),
-    ({ isNat, mounted, nodeId }) => {
+    () => ({
+      isNat: isNative,
+      mounted: isMounted(),
+      nodeId: hostNode()?.id,
+      entering: local.entering,
+    }),
+    ({ isNat, mounted, nodeId, entering }) => {
       if (!isNat || !mounted || !nodeId || didStartEnter) return;
       didStartEnter = true;
-      startNativePhase("enter", nodeId);
-    }
+      startNativePhase("enter", nodeId, entering);
+    },
   );
 
   // ─── Ref forwarding ────────────────────────────────────────────────────────
