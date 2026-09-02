@@ -367,6 +367,7 @@ export function createIOSHost(): Host {
           }
 
           if (!rescued && exitTransition) {
+            exitTransitions.delete(childId);
             void startNativeTransition({
               nodeId: childId,
               animationId: nextExitAnimationId++,

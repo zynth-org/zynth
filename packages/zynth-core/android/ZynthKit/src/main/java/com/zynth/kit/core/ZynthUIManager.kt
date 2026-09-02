@@ -418,6 +418,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     var layoutTransition: LayoutTransitionConfig? = null,
     var layoutAnimator: ViewPropertyAnimator? = null,
     var measureHandler: com.zynth.kit.layout.MeasureHandler? = null,
+    var pendingText: CharSequence? = null,
   )
 
   init {
@@ -1787,6 +1788,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
                 val nodeType = nodeState?.type ?: "unknown"
                 val isText = nodeType == "text"
                 
+                if (isText && nodeState != null) {
+                  val pending = nodeState.pendingText
+                  if (pending != null) {
+                    (view as? TextView)?.text = pending
+                    nodeState.pendingText = null
+                  }
+                }
+                
                 val needsMeasure =
                   forceUpdate ||
                     !isText ||
@@ -1865,8 +1874,19 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           )
         )
       }
+      flushPendingText()
       endBatch("applyMountTransaction")
       dispatchLayoutEvents()
+    }
+  }
+
+  private fun flushPendingText() {
+    for (node in nodeStates.values) {
+      val pending = node.pendingText
+      if (pending != null) {
+        (node.view as? TextView)?.text = pending
+        node.pendingText = null
+      }
     }
   }
 

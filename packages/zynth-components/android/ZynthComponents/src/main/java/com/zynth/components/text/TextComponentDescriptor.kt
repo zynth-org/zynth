@@ -77,9 +77,14 @@ private fun rebuildComposedText(manager: ZynthUIManager, rootId: Int, styleKey: 
   val composed = composer.compose(root)
   val previous = textView.text?.toString() ?: ""
   val next = composed.text.toString()
-  // Always apply composed text so span-only style changes (color/weight/lineHeight/etc.)
-  // are reflected even when the raw string is unchanged.
-  applyTextSynchronously(textView, composed.text)
+  // Stage text in pendingText so it commits atomically with the new layout frame in applyMountTransaction,
+  // preventing a 1-frame flash where new text renders with obsolete bounds.
+  root.pendingText = composed.text
+  if (root.view.width == 0 || !root.view.isAttachedToWindow) {
+    applyTextSynchronously(textView, composed.text)
+    root.pendingText = null
+  }
+  root.attachments.remove(TEXT_MEASURE_CACHE_KEY)
   if (previous != next) {
     manager.markNodeDirty(root.id, "text:rebuildComposed")
   }
@@ -95,26 +100,13 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
   }
   val didChange = rootTextView.text.toString() != immediateText
   if (didChange) {
-    val previousText = rootTextView.text?.toString() ?: ""
-    val previousSize = measureRawTextSizeForCurrentBounds(manager, rootTextView, previousText)
-    val nextSize = measureRawTextSizeForCurrentBounds(manager, rootTextView, immediateText)
-    rootTextView.text = immediateText
-    val shouldDirty = previousSize == null || nextSize == null || previousSize != nextSize
-    if (shouldDirty) {
-      manager.markNodeDirty(root.id, "text:rebuildRaw")
-    } else {
-      root.attachments[TEXT_MEASURE_CACHE_KEY] = TextMeasureCache(
-        key = hashMeasureKey(
-          immediateText,
-          false,
-          rootTextView,
-          MeasureSpec.makeMeasureSpec(rootTextView.width.coerceAtLeast(0), MeasureSpec.AT_MOST),
-          MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
-        ),
-        width = nextSize.width.toFloat(),
-        height = nextSize.height.toFloat(),
-      )
+    root.pendingText = immediateText
+    if (root.view.width == 0 || !root.view.isAttachedToWindow) {
+      rootTextView.text = immediateText
+      root.pendingText = null
     }
+    root.attachments.remove(TEXT_MEASURE_CACHE_KEY)
+    manager.markNodeDirty(root.id, "text:rebuildRaw")
   }
 }
 
@@ -535,6 +527,7 @@ private fun updateComposedText(
   val manager = node.attachments[textManagerKey] as? ZynthUIManager ?: return
   val root = findTextRoot(node, manager)
   root.attachments.remove(TEXT_MEASURE_CACHE_KEY)
+  node.attachments.remove(TEXT_MEASURE_CACHE_KEY)
   val hasInlineSpans = subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)
   val rootStyle = root.attachments[textStyleKey] as? TextStyleAttributes
   val rootNeedsSpans = rootStyle?.let { needsRootSpanStyles(it) } ?: false

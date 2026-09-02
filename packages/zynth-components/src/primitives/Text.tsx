@@ -44,20 +44,18 @@ export const Text: ParentComponent<TextProps> = (props) => {
     ownedWrite: true,
   });
 
-  const directTextContent = createMemo<string | undefined>(
-    () => {
-      const rawText =
-        typeof props.text === "function" ? props.text() : props.text;
-      if (rawText != null) return String(rawText);
-      const result = extractTextContent(props.children);
-      return result;
-    },
-    { lazy: true }
-  );
+  const directTextContent = createMemo<string | undefined>(() => {
+    const rawText =
+      typeof props.text === "function" ? props.text() : props.text;
+    if (rawText != null) return String(rawText);
+    const result = extractTextContent(props.children);
+    return result;
+  });
 
   const applyTextProps = (node: HostNode) => {
     const st = resolvedStyle();
     if (st != null) setProperty(node, "style", st);
+    if (props.numberOfLines != null) setProperty(node, "numberOfLines", props.numberOfLines);
     const txt = directTextContent();
     if (txt !== undefined) setProperty(node, "text", txt);
   };
@@ -84,10 +82,12 @@ export const Text: ParentComponent<TextProps> = (props) => {
       node: hostNode(),
       st: resolvedStyle(),
       text: directTextContent(),
+      lines: props.numberOfLines,
     }),
-    ({ node, st, text }) => {
+    ({ node, st, text, lines }) => {
       if (!node) return;
       if (st != null) setProperty(node, "style", st);
+      if (lines != null) setProperty(node, "numberOfLines", lines);
       if (text !== undefined) setProperty(node, "text", text);
     }
   );

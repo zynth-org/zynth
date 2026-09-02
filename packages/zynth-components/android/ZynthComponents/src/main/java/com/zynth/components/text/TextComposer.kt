@@ -158,30 +158,39 @@ internal class TextComposer(
       lineHeight: Int,
       fm: Paint.FontMetricsInt,
     ) {
+      val targetHeight = heightPx.toInt()
       val originHeight = fm.descent - fm.ascent
       if (originHeight <= 0) {
-        // Fallback for invalid metrics
-        fm.ascent = -heightPx.toInt()
+        fm.ascent = -targetHeight
         fm.descent = 0
         fm.top = fm.ascent
         fm.bottom = fm.descent
         return
       }
 
-      // Preserve baseline ratio
-      val ratio = heightPx / originHeight
-      fm.ascent = (fm.ascent * ratio).toInt()
-      fm.descent = (fm.descent * ratio).toInt()
-
-      // Adjust for rounding errors to ensure exact height
-      val newHeight = fm.descent - fm.ascent
-      val diff = heightPx.toInt() - newHeight
-      if (diff != 0) {
-        fm.descent += diff
+      if (fm.descent > targetHeight) {
+        fm.descent = targetHeight.coerceAtMost(fm.descent)
+        fm.ascent = 0
+        fm.top = fm.ascent
+        fm.bottom = fm.descent
+      } else if (-fm.ascent + fm.descent > targetHeight) {
+        fm.bottom = fm.descent
+        fm.ascent = -targetHeight + fm.descent
+        fm.top = fm.ascent
+      } else if (-fm.ascent + fm.bottom > targetHeight) {
+        fm.top = fm.ascent
+        fm.bottom = fm.ascent + targetHeight
+      } else if (-fm.top + fm.bottom > targetHeight) {
+        fm.top = fm.bottom - targetHeight
+      } else {
+        val additionalContent = targetHeight - (-fm.ascent + fm.descent)
+        val ascentDiff = (additionalContent / 2.0f).toInt()
+        val descentDiff = additionalContent - ascentDiff
+        fm.ascent -= ascentDiff
+        fm.descent += descentDiff
+        fm.top = minOf(fm.top, fm.ascent)
+        fm.bottom = maxOf(fm.bottom, fm.descent)
       }
-
-      fm.top = fm.ascent
-      fm.bottom = fm.descent
     }
   }
 

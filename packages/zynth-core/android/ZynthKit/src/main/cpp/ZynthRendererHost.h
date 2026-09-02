@@ -548,11 +548,11 @@ public:
     }
     for (const auto &mut : commit.textProps) {
       auto* node = getNode(mut.nodeId);
-      if (node) bumpMeasuredNodeRevision(*node);
+      if (node) markMeasuredNodeDirty(*node);
     }
     for (const auto &tm : commit.textMutations) {
       auto* node = getNode(tm.nodeId);
-      if (node) bumpMeasuredNodeRevision(*node);
+      if (node) markMeasuredNodeDirty(*node);
     }
 
     telemetry.dirtySurfaceCount = static_cast<uint32_t>(dirtySurfaces_.size());

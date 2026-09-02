@@ -170,6 +170,12 @@ export const View: ParentComponent<ViewProps> = (props) => {
   const resolvedHostExit = createMemo<
     Omit<NativeTransitionConfig, "nodeId" | "animationId" | "phase"> | null
   >(() => {
+    // When visibility is controlled via `visible`, View manages its own
+    // presence lifecycle (keeps view mounted, plays exit animation, then unmounts).
+    // The native host runtime must NOT intercept unmount to replay an exit transition.
+    if (local.visible !== undefined) {
+      return null;
+    }
     return resolveNativeTransitionConfig(local.exiting);
   });
 
@@ -293,6 +299,10 @@ export const View: ParentComponent<ViewProps> = (props) => {
       setOverrideStyle(undefined);
       if (phase === "exit") {
         setIsExiting(false);
+        const node = hostNode();
+        if (node) {
+          setProperty(node, "__zynthExiting", null);
+        }
         setIsMounted(false);
       }
       return;
@@ -353,6 +363,10 @@ export const View: ParentComponent<ViewProps> = (props) => {
           setOverrideStyle(undefined);
         } else if (data.phase === "exit") {
           setIsExiting(false);
+          const node = hostNode();
+          if (node) {
+            setProperty(node, "__zynthExiting", null);
+          }
           setIsMounted(false);
         }
       },
@@ -490,6 +504,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
     const node = hostNode();
     if (node && isNative) {
       void stopNativeTransition(node.id);
+      setProperty(node, "__zynthExiting", null);
     }
     setHostNode(null);
     (local.ref ?? noopRef)(null);

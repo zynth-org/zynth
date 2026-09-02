@@ -25,6 +25,7 @@ export * from "./primitives/GlassView";
 export * from "./primitives/GlassContainer";
 export * from "./primitives/BlurView";
 import "./runtimeGlyphs";
+import "./jsx.d.ts";
 export * from "./primitives/GestureDetector";
 export { createStyle, mergeStyles } from "./hooks/createStyle";
 export { useAnimatedStyleMapper } from "./hooks/useAnimatedStyleMapper";
