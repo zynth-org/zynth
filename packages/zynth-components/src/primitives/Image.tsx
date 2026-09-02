@@ -57,8 +57,8 @@ export interface ImageProps {
 export type ImageElementProps = Partial<ImageProps> & { children?: never; ref?: (node: HostNode | null) => void };
 
 export const Image: Component<ImageProps> = (props) => {
-  const [currentSourceIndex, setCurrentSourceIndex] = createSignal(0);
-  const [devServerReadyTick, setDevServerReadyTick] = createSignal(0);
+  const [currentSourceIndex, setCurrentSourceIndex] = createSignal(0, { ownedWrite: true });
+  const [devServerReadyTick, setDevServerReadyTick] = createSignal(0, { ownedWrite: true });
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
 
   const sources = () => {
@@ -113,7 +113,7 @@ export const Image: Component<ImageProps> = (props) => {
     props.onLoad?.(event);
   };
 
-  let prevSource = props.source;
+  let prevSource = untrack(() => props.source);
   createEffect(
     () => props.source,
     (src) => {

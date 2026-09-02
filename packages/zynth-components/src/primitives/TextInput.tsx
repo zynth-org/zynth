@@ -4,6 +4,7 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  untrack,
   Show,
 } from "solid-js";
 import type { HostNode, StyleProp, SyncSignalAccessor } from "@zynthjs/core";
@@ -56,8 +57,9 @@ export function useTextInputRef(opts?: {
   value?: string | SyncSignalAccessor<string>;
   driveFromValue?: boolean;
 }): TextInputRef {
-  const initialValue =
-    typeof opts?.value === "function" ? opts.value() : (opts?.value ?? "");
+  const initialValue = untrack(() =>
+    typeof opts?.value === "function" ? opts.value() : (opts?.value ?? "")
+  );
   const [text, setText] = createSignal(initialValue);
   const [selection, setSelection] = createSignal<Selection>({
     start: 0,
@@ -318,8 +320,8 @@ function isSyncSignal(value: unknown): value is SyncSignalAccessor<string> {
 export const TextInput: Component<TextInputProps> = (props) => {
   const local = props;
   const controller = useTextInputRef({
-    value: local.value ?? local.defaultValue,
-    driveFromValue: local.value !== undefined,
+    value: untrack(() => (typeof local.value === "function" ? local.value() : (local.value ?? local.defaultValue))),
+    driveFromValue: untrack(() => local.value !== undefined),
   }) as TextInputRef & {
     __setEditing?: (value: boolean) => void;
     __setComposing?: (value: boolean) => void;
@@ -334,7 +336,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
     () => local.secureTextEntry !== undefined,
   );
   const syncSignalId = createMemo(() => readSyncSignalId(local.value));
-  const hasStyleAccessor = typeof local.style === "function";
+  const hasStyleAccessor = createMemo(() => typeof local.style === "function");
   const resolvedStyle = createStyle(() => {
     const style = local.style;
     return typeof style === "function" ? style() : style;
@@ -596,9 +598,13 @@ export const TextInput: Component<TextInputProps> = (props) => {
   , { scope: true });
 
   effect(
-    () => ({ node: hostNode(), nextStyle: resolvedStyle() }),
-    ({ node, nextStyle }) => {
-      if (!node || !hasStyleAccessor) return;
+    () => ({
+      node: hostNode(),
+      nextStyle: resolvedStyle(),
+      hasAccessor: hasStyleAccessor(),
+    }),
+    ({ node, nextStyle, hasAccessor }) => {
+      if (!node || !hasAccessor) return;
       logSync("style", { nodeId: (node as any)?.id, value: nextStyle });
       setProperty(node, "style", nextStyle as any);
     }
@@ -606,18 +612,21 @@ export const TextInput: Component<TextInputProps> = (props) => {
 
   const syncOptionalProp = (name: string, value: Accessor<unknown>) => {
     effect(
-      () => ({ node: hostNode(), nextValue: value() }),
-      ({ node, nextValue }) => {
+      () => ({
+        node: hostNode(),
+        nextValue: value(),
+        isSecure: isPotentiallySecure(),
+      }),
+      ({ node, nextValue, isSecure }) => {
         if (!node || nextValue === undefined) return;
-        if (isPotentiallySecure() && name === "numberOfLines") return;
-        logSync(`prop:${name}`, { nodeId: (node as any)?.id, value: nextValue });
+        if (isSecure && name === "numberOfLines") return;
         setProperty(node, name, nextValue);
       }
     , { scope: true });
   };
 
   syncOptionalProp("style", () =>
-    hasStyleAccessor ? undefined : (resolvedStyle() as any),
+    hasStyleAccessor() ? undefined : (resolvedStyle() as any),
   );
   syncOptionalProp("defaultValue", () => local.defaultValue);
   syncOptionalProp("placeholder", () => local.placeholder);
@@ -685,7 +694,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
               imperativeNode.commit = controller.commit;
               imperativeNode.cancelPending = controller.cancelPending;
               imperativeNode.driveFromValue = controller.driveFromValue;
-              if (!hasStyleAccessor) setProperty(host, "style", resolvedStyle() as any);
+              if (!hasStyleAccessor()) setProperty(host, "style", resolvedStyle() as any);
               local.ref?.(imperativeNode);
             })()
           }
@@ -723,7 +732,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
             imperativeNode.commit = controller.commit;
             imperativeNode.cancelPending = controller.cancelPending;
             imperativeNode.driveFromValue = controller.driveFromValue;
-            if (!hasStyleAccessor) setProperty(host, "style", resolvedStyle() as any);
+            if (!hasStyleAccessor()) setProperty(host, "style", resolvedStyle() as any);
             local.ref?.(imperativeNode);
           })()
         }

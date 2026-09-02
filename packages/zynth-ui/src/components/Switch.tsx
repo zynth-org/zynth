@@ -1,5 +1,5 @@
 import { Switch as NativeSwitch, View, Text } from "@zynthjs/components";
-import { splitProps, type Component } from "solid-js";
+import { createMemo, type Component } from "solid-js";
 import { useUITheme } from "../hooks";
 import type { Style } from "@zynthjs/core";
 
@@ -18,39 +18,38 @@ export interface SwitchProps {
 }
 
 export const Switch: Component<SwitchProps> = (props) => {
-  const [local] = splitProps(props, [
-    "label",
-    "helperText",
-    "style",
-    "value",
-    "onValueChange",
-    "disabled",
-    "trackColor",
-    "thumbColor",
-    "testID",
-  ]);
   const theme = useUITheme();
-  const resolvedTrackColor = () => {
+
+  const resolvedTrackColor = createMemo(() => {
     const t = theme();
     return (
-      local.trackColor ?? {
+      props.trackColor ?? {
         false: t.colors.border,
         true: t.colors.accent,
       }
     );
-  };
-  const resolvedThumbColor = () => {
+  });
+
+  const resolvedThumbColor = createMemo(() => {
     const t = theme();
     return (
-      local.thumbColor ?? {
+      props.thumbColor ?? {
         false: t.colors.textSubtle,
         true: t.colors.surface,
       }
     );
-  };
+  });
+
+  const containerStyle = createMemo(() => {
+    const userStyle = typeof props.style === "function" ? props.style() : props.style;
+    return {
+      gap: theme().spacing.xs,
+      ...((userStyle as object) ?? {}),
+    };
+  });
 
   return (
-    <View style={{ gap: theme().spacing.xs, ...(local.style as object) }}>
+    <View style={containerStyle()}>
       <View
         style={{
           flexDirection: "row",
@@ -62,11 +61,11 @@ export const Switch: Component<SwitchProps> = (props) => {
           backgroundColor: theme().colors.surface,
         }}
       >
-        {local.label ? (
+        {props.label ? (
           <Text
             style={{
               flex: 1,
-              color: local.disabled
+              color: props.disabled
                 ? theme().colors.textSubtle
                 : theme().colors.text,
               fontSize: theme().typography.fontSizes.md,
@@ -75,21 +74,21 @@ export const Switch: Component<SwitchProps> = (props) => {
             }}
             numberOfLines={1}
           >
-            {local.label}
+            {props.label}
           </Text>
         ) : (
           <View style={{ flex: 1 }} />
         )}
         <NativeSwitch
-          value={local.value}
-          onValueChange={local.onValueChange}
-          disabled={local.disabled}
+          value={props.value}
+          onValueChange={props.onValueChange}
+          disabled={props.disabled}
           trackColor={resolvedTrackColor()}
           thumbColor={resolvedThumbColor()}
-          testID={local.testID}
+          testID={props.testID}
         />
       </View>
-      {local.helperText ? (
+      {props.helperText ? (
         <Text
           style={{
             color: theme().colors.textMuted,
@@ -97,7 +96,7 @@ export const Switch: Component<SwitchProps> = (props) => {
             marginLeft: theme().spacing.xs,
           }}
         >
-          {local.helperText}
+          {props.helperText}
         </Text>
       ) : null}
     </View>

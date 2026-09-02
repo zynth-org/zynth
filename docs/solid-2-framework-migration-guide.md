@@ -715,6 +715,7 @@ export function createSensorStream(sensorName: string) {
 | `REACTIVITY_HALTED` | An uncaught owned write error escalated. | Fix the root `REACTIVE_WRITE_IN_OWNED_SCOPE` write. |
 | `Cannot read property 'e' of undefined` | Inline dynamic signal accessor placed on intrinsic JSX tag (`<view style={s()}>`). | Apply properties imperatively via `refProp` + `createEffect` and keep intrinsic tags clean. |
 | `onCleanup is forbidden in createTrackedEffect` | `onCleanup` called inside `onSettled` callback. | Return the cleanup function from `onSettled` callback (`return () => cleanup()`). |
+| Duplicate / Blinking child nodes on interaction | `typeof props.children === "function"` used to detect render props (true for all Solid 2.0 JSX child component getters). | Differentiate using `typeof props.children === "function" && props.children.length > 0`. |
 
 ---
 
@@ -725,7 +726,7 @@ export function createSensorStream(sensorName: string) {
 | **`@zynthjs/core`** | Core Runtime | ✅ **MIGRATED** | Core | Maintained (`@solidjs/universal` renderer + JSI bridges). Opportunities: Core `createNativeResource` helper. |
 | **`@zynthjs/components`** | Native Primitives | ✅ **MIGRATED** | Core | Maintained (all 28 primitives + clean JSX). Opportunities: Seamless `<Loading>` leaf boundaries. |
 | **`@zynthjs/apis`** | Core Device APIs | ✅ **MIGRATED** | Core | Maintained (`dimensions`, `font`, `safe-area`, `app-state`). Opportunities: Colorless asset/font loaders. |
-| **`@zynthjs/ui`** | UI Design System | ⏳ **PENDING** | High | Replace `splitProps` with `omit`, verify `Button`/`Card`/`Badge`. Integrate `<Loading>` fallbacks. |
+| **`@zynthjs/ui`** | UI Design System | ✅ **MIGRATED** | High | Replaced `splitProps` with `omit`, direct `<UIThemeContext>` and `<RadioContext>`, 2-arg `createEffect`, zero prop destructuring. |
 | **`@zynthjs/screens`** | Navigation / Screens | ✅ **MIGRATED** | High | Maintained (`Screen.tsx` on `merge`, `refProp` initial props, 2-arg `createEffect`). Opportunities: `latest()` screen state transitions. |
 | **`@zynthjs/skia`** | 2D Graphics / Canvas | ⏳ **PENDING** | High | Replace `createResource` with async memos, use `<Loading>` for typeface/SVG loads. |
 | **`@zynthjs/router`** | Routing Engine | ⏳ **PENDING** | High | Replace `onMount` with `onSettled`, adopt API-less async transitions and `isPending()`. |

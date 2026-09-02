@@ -4,7 +4,7 @@ import {
   View,
   Text,
 } from "@zynthjs/components";
-import { type ParentComponent, splitProps, createSignal } from "solid-js";
+import { createMemo, createSignal, omit, type Element, type ParentComponent } from "solid-js";
 import { useUITheme } from "../hooks";
 import type { StyleProp } from "@zynthjs/core";
 
@@ -13,12 +13,12 @@ export interface TextInputProps extends NativeTextInputProps {
   error?: string;
   variant?: "outlined" | "filled" | "ghost";
   tone?: "default" | "success" | "warning" | "danger";
-  startContent?: any;
-  endContent?: any;
+  startContent?: Element;
+  endContent?: Element;
 }
 
 export const TextInput: ParentComponent<TextInputProps> = (props) => {
-  const [local, others] = splitProps(props, [
+  const rest = omit(props, [
     "style",
     "label",
     "error",
@@ -30,85 +30,29 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
     "onBlur",
   ]);
   const theme = useUITheme();
-  const [isFocused, setIsFocused] = createSignal(false);
+  const [isFocused, setIsFocused] = createSignal(false, { ownedWrite: true });
 
-  const resolvedStyle = () => {
+  const resolvedStyle = createMemo<StyleProp>(() => {
     const t = theme();
-    const variant = local.variant ?? "outlined";
-    const tone = local.error ? "danger" : (local.tone ?? "default");
-
-    let base: StyleProp = {
-      fontFamily: t.typography.fontFamily,
-      fontSize: t.typography.fontSizes.md,
-      color: t.colors.text,
-      borderRadius: t.radii.md,
-      paddingHorizontal: t.spacing.md,
-      paddingVertical: t.spacing.sm,
-      minHeight: t.sizes.controlMd,
-      flex: 1, // Allow text input to take available width inside container
-    };
-
-    let borderColor = t.colors.border;
-    let backgroundColor = "transparent";
-    let borderWidth = 0;
-
-    // Tone logic for borders/backgrounds
-    switch (tone) {
-      case "danger":
-        borderColor = t.colors.danger;
-        break;
-      case "success":
-        borderColor = t.colors.success;
-        break;
-      case "warning":
-        borderColor = t.colors.warning;
-        break;
-      case "default":
-      default:
-        borderColor = isFocused() ? t.colors.accent : t.colors.border;
-        break;
-    }
-
-    // Variant logic
-    if (variant === "outlined") {
-      borderWidth = 1;
-      backgroundColor = t.colors.surface;
-    } else if (variant === "filled") {
-      backgroundColor = t.colors.surfaceAlt;
-      if (isFocused()) {
-        borderWidth = 1;
-        // filled usually has an underline or slight border on focus
-      }
-    } else if (variant === "ghost") {
-      // minimal
-    }
-
-    // Apply container-like styles to the input itself if no start/end content
-    // But since we wrap in a View for start/end content, we apply most structural styles to the wrapper
-    // The native input needs to reset some things to fit nicely.
-
-    // Actually, NativeTextInput is the input itself.
-    // If we want start/end content, we need a wrapper View.
-    // So 'resolvedStyle' should probably be for the *wrapper*.
+    const userStyle = typeof props.style === "function" ? props.style() : props.style;
 
     return {
-      // Input specific styles (text mostly)
       flex: 1,
       color: t.colors.text,
       fontSize: t.typography.fontSizes.md,
       fontFamily: t.typography.fontFamily,
-      padding: 0, // Reset padding as container handles it
+      padding: 0,
       backgroundColor: "transparent",
-      ...((local.style as object) ?? {}),
+      ...((userStyle as object) ?? {}),
     };
-  };
+  });
 
-  const containerStyle = () => {
+  const containerStyle = createMemo<StyleProp>(() => {
     const t = theme();
-    const variant = local.variant ?? "outlined";
-    const tone = local.error ? "danger" : (local.tone ?? "default");
+    const variant = props.variant ?? "outlined";
+    const tone = props.error ? "danger" : (props.tone ?? "default");
 
-    let base: StyleProp = {
+    const base: Record<string, unknown> = {
       flexDirection: "row",
       alignItems: "center",
       borderRadius: t.radii.md,
@@ -146,7 +90,6 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
       backgroundColor = t.colors.surfaceAlt;
       if (isFocused()) {
         borderWidth = 1;
-        // background might lighten or darken?
       }
     } else if (variant === "ghost") {
       borderWidth = 0;
@@ -157,50 +100,50 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
       borderColor,
       borderWidth,
       backgroundColor,
-    };
-  };
+    } as StyleProp;
+  });
 
   const handleFocus = () => {
     setIsFocused(true);
-    local.onFocus?.();
+    props.onFocus?.();
   };
 
   const handleBlur = () => {
     setIsFocused(false);
-    local.onBlur?.();
+    props.onBlur?.();
   };
 
   return (
     <View style={{ gap: theme().spacing.xs }}>
-      {local.label && (
+      {props.label && (
         <Text
           style={{
             fontSize: theme().typography.fontSizes.sm,
             fontWeight: theme().typography.fontWeights.medium,
-            color: local.error
+            color: props.error
               ? theme().colors.danger
               : theme().colors.textMuted,
             marginLeft: theme().spacing.xs,
           }}
         >
-          {local.label}
+          {props.label}
         </Text>
       )}
 
       <View style={containerStyle()}>
-        {local.startContent}
+        {props.startContent}
         <NativeTextInput
-          style={{ ...(resolvedStyle() as any) }}
-          placeholderTextColor={theme().colors.textMuted} // Default placeholder color
+          style={resolvedStyle()}
+          placeholderTextColor={theme().colors.textMuted}
           selectionColor={theme().colors.accent}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          {...others}
+          {...rest}
         />
-        {local.endContent}
+        {props.endContent}
       </View>
 
-      {local.error && (
+      {props.error && (
         <Text
           style={{
             fontSize: theme().typography.fontSizes.xs,
@@ -208,7 +151,7 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
             marginLeft: theme().spacing.xs,
           }}
         >
-          {local.error}
+          {props.error}
         </Text>
       )}
     </View>

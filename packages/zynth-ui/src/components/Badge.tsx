@@ -1,5 +1,5 @@
 import { View, type ViewProps } from "@zynthjs/components";
-import { type ParentComponent, splitProps } from "solid-js";
+import { createMemo, omit, type ParentComponent } from "solid-js";
 import { useUITheme } from "../hooks";
 import { Text } from "./Text";
 import type { StyleProp } from "@zynthjs/core";
@@ -11,15 +11,15 @@ export interface BadgeProps extends ViewProps {
 }
 
 export const Badge: ParentComponent<BadgeProps> = (props) => {
-  const [local, others] = splitProps(props, ["label", "tone", "variant", "style"]);
+  const rest = omit(props, "label", "tone", "variant", "style");
   const theme = useUITheme();
 
-  const resolvedStyle = () => {
+  const resolvedStyle = createMemo<StyleProp>(() => {
     const t = theme();
-    const tone = local.tone ?? "neutral";
-    const variant = local.variant ?? "subtle";
-    
-    let base: StyleProp = {
+    const tone = props.tone ?? "neutral";
+    const variant = props.variant ?? "subtle";
+
+    const base: Record<string, unknown> = {
       paddingHorizontal: t.spacing.sm,
       paddingVertical: t.spacing.xs,
       borderRadius: t.radii.full,
@@ -37,8 +37,7 @@ export const Badge: ParentComponent<BadgeProps> = (props) => {
         borderColor = t.colors.accent;
         break;
       case "success":
-        // Fallback for success muted if not in theme (using surfaceAlt + text color logic ideally, but for now specific)
-        bgColor = variant === "solid" ? t.colors.success : (t.colors.success + "20"); 
+        bgColor = variant === "solid" ? t.colors.success : (t.colors.success + "20");
         borderColor = t.colors.success;
         break;
       case "warning":
@@ -70,18 +69,19 @@ export const Badge: ParentComponent<BadgeProps> = (props) => {
       base.borderColor = borderColor;
     }
 
-    if (local.style) {
-      return { ...base, ...(local.style as object) };
+    const userStyle = typeof props.style === "function" ? props.style() : props.style;
+    if (userStyle) {
+      return { ...base, ...(userStyle as object) };
     }
-    return base;
-  };
+    return base as StyleProp;
+  });
 
-  const textColor = () => {
+  const textColor = createMemo(() => {
     const t = theme();
-    const tone = local.tone ?? "neutral";
-    const variant = local.variant ?? "subtle";
+    const tone = props.tone ?? "neutral";
+    const variant = props.variant ?? "subtle";
 
-    if (variant === "solid") return "#ffffff"; // Or contrasting text
+    if (variant === "solid") return "#ffffff";
 
     switch (tone) {
       case "primary": return t.colors.accent;
@@ -91,18 +91,18 @@ export const Badge: ParentComponent<BadgeProps> = (props) => {
       case "info": return t.colors.info;
       case "neutral": default: return t.colors.textSubtle;
     }
-  };
+  });
+
+  const textStyle = createMemo(() => ({
+    fontSize: theme().typography.fontSizes.xs,
+    fontWeight: theme().typography.fontWeights.medium,
+    color: textColor(),
+  }));
 
   return (
-    <View style={resolvedStyle()} {...others}>
-      <Text 
-        style={{ 
-          fontSize: theme().typography.fontSizes.xs,
-          fontWeight: theme().typography.fontWeights.medium,
-          color: textColor()
-        }}
-      >
-        {local.label}
+    <View style={resolvedStyle()} {...rest}>
+      <Text style={textStyle()}>
+        {props.label}
       </Text>
     </View>
   );

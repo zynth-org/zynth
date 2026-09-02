@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onSettled, type Component } from "solid-js";
+import { createMemo, createSignal, onCleanup, onSettled, untrack, type Component } from "solid-js";
 import { Font, Glyphs } from "@zynthjs/apis";
 import { Platform, setProperty } from "@zynthjs/core";
 import type { HostNode } from "@zynthjs/core";
@@ -16,10 +16,14 @@ const warnedMissingGlyph = new Set<string>();
 const warnedLoadFailure = new Set<string>();
 
 export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
-  const resolveEntry = () => Glyphs.resolve(props.name);
+  const resolveEntry = createMemo(() => Glyphs.resolve(props.name));
   const isNative = !Platform.isWeb;
   const [isReady, setIsReady] = createSignal(
-    isNative ? !!resolveEntry() : resolveEntry() ? Glyphs.isLoaded(props.name) : false
+    untrack(() => {
+      const entry = Glyphs.resolve(props.name);
+      return isNative ? !!entry : entry ? Glyphs.isLoaded(props.name) : false;
+    }),
+    { ownedWrite: true },
   );
   const resolvedStyle = createStyle(() => {
     const nextStyle = props.style;
@@ -81,7 +85,7 @@ export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
     };
   });
 
-  const mergedStyle = () => {
+  const mergedStyle = createMemo(() => {
     const base = { ...(resolvedStyle() ?? {}) } as Record<string, unknown>;
     if (props.size !== undefined) base.fontSize = props.size;
     if (props.size !== undefined) base.height = props.size;
@@ -90,7 +94,7 @@ export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
     const entry = resolveEntry();
     if (isReady() && entry) base.fontFamily = entry.fontFamily;
     return base;
-  };
+  });
 
   return (
     <Text style={mergedStyle()}>

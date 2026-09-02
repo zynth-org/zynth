@@ -19,6 +19,9 @@ internal data class ZynthTextStyleState(
   var hyphenation: String? = null,
 ) {
   fun applyTo(textView: TextView) {
+    if (rawText.isEmpty() && !textView.text.isNullOrEmpty()) {
+      rawText = textView.text.toString()
+    }
     val transformed = applyTextTransform(rawText)
     val spannable = SpannableString(transformed)
 

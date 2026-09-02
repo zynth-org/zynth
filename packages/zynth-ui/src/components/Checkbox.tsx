@@ -1,4 +1,4 @@
-import { createEffect, createSignal } from "solid-js";
+import { createEffect, createMemo, createSignal, untrack, type Component } from "solid-js";
 import { Pressable, View, Text } from "@zynthjs/components";
 import { useUITheme } from "../hooks";
 import type { Style } from "@zynthjs/core";
@@ -18,26 +18,34 @@ export interface CheckboxProps {
   borderColor?: string;
 }
 
-export const Checkbox = (props: CheckboxProps) => {
+export const Checkbox: Component<CheckboxProps> = (props) => {
   const theme = useUITheme();
-  const [internal, setInternal] = createSignal(props.value ?? false);
+  const [internal, setInternal] = createSignal(
+    untrack(() => props.value ?? false),
+    { ownedWrite: true },
+  );
 
-  createEffect(() => {
-    if (props.value !== undefined) {
-      setInternal(props.value);
-    }
-  });
+  createEffect(
+    () => props.value,
+    (val) => {
+      if (val !== undefined) {
+        setInternal(val);
+      }
+    },
+  );
 
-  const isChecked = () => (props.value !== undefined ? props.value : internal());
+  const isChecked = createMemo(() =>
+    props.value !== undefined ? props.value : internal()
+  );
 
   const toggle = () => {
     if (props.disabled) return;
     const next = !isChecked();
-    if (props.value === undefined) setInternal(next);
+    if (untrack(() => props.value) === undefined) setInternal(next);
     props.onChange?.(next);
   };
 
-  const boxStyle = (): Style => {
+  const boxStyle = createMemo((): Style => {
     const t = theme();
     const checked = isChecked();
     const borderColor = props.borderColor
@@ -55,9 +63,9 @@ export const Checkbox = (props: CheckboxProps) => {
       justifyContent: "center",
       backgroundColor: checked ? fillColor : (props.uncheckedColor ?? "transparent"),
     };
-  };
+  });
 
-  const checkMarkStyle = (): Style => {
+  const checkMarkStyle = createMemo((): Style => {
     const t = theme();
     return {
       width: 10,
@@ -66,13 +74,20 @@ export const Checkbox = (props: CheckboxProps) => {
         ?? (props.disabled ? t.colors.surfaceAlt : t.colors.surface),
       borderRadius: 2,
     };
-  };
+  });
 
-  const labelPosition = props.labelPosition ?? "right";
-  const labelFirst = labelPosition === "left";
+  const containerStyle = createMemo(() => {
+    const userStyle = typeof props.style === "function" ? props.style() : props.style;
+    return {
+      gap: theme().spacing.xs,
+      ...((userStyle as object) ?? {}),
+    };
+  });
+
+  const labelFirst = createMemo(() => (props.labelPosition ?? "right") === "left");
 
   return (
-    <View style={{ gap: theme().spacing.xs, ...(props.style as object) }}>
+    <View style={containerStyle()}>
       <Pressable
         onPress={toggle}
         disabled={props.disabled}
@@ -83,7 +98,7 @@ export const Checkbox = (props: CheckboxProps) => {
         }}
         testID={props.testID}
       >
-        {labelFirst && props.label ? (
+        {labelFirst() && props.label ? (
           <Text
             style={{
               color: props.disabled ? theme().colors.textSubtle : theme().colors.text,
@@ -98,7 +113,7 @@ export const Checkbox = (props: CheckboxProps) => {
         <View style={boxStyle()}>
           {isChecked() ? <View style={checkMarkStyle()} /> : null}
         </View>
-        {!labelFirst && props.label ? (
+        {!labelFirst() && props.label ? (
           <Text
             style={{
               color: props.disabled ? theme().colors.textSubtle : theme().colors.text,

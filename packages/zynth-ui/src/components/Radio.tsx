@@ -1,4 +1,4 @@
-import { createContext, useContext, createSignal, createEffect, splitProps, type Component, JSX } from "solid-js";
+import { createContext, useContext, createSignal, createEffect, createMemo, untrack, type Component, type Element } from "solid-js";
 import { Pressable, View, Text } from "@zynthjs/components";
 import { useUITheme } from "../hooks";
 import type { Style } from "@zynthjs/core";
@@ -22,21 +22,28 @@ export interface RadioGroupProps {
   disabled?: boolean;
   size?: number;
   color?: string;
-  children?: JSX.Element;
+  children?: Element;
   style?: Style;
 }
 
 export const Radio: Component<RadioGroupProps> = (props) => {
-  const [selected, setSelected] = createSignal<RadioValue | undefined>(props.value ?? props.defaultValue);
-  createEffect(() => {
-    if (props.value !== undefined) {
-      setSelected(props.value);
-    }
-  });
+  const [selected, setSelected] = createSignal<RadioValue | undefined>(
+    untrack(() => props.value ?? props.defaultValue),
+    { ownedWrite: true },
+  );
+
+  createEffect(
+    () => props.value,
+    (val) => {
+      if (val !== undefined) {
+        setSelected(val);
+      }
+    },
+  );
 
   const handleChange = (value: RadioValue) => {
     if (props.disabled) return;
-    if (props.value === undefined) {
+    if (untrack(() => props.value) === undefined) {
       setSelected(value);
     }
     props.onChange?.(value);
@@ -50,10 +57,15 @@ export const Radio: Component<RadioGroupProps> = (props) => {
     color: () => props.color,
   };
 
+  const containerStyle = createMemo(() => {
+    const userStyle = typeof props.style === "function" ? props.style() : props.style;
+    return userStyle as object | undefined;
+  });
+
   return (
-    <RadioContext.Provider value={ctx}>
-      <View style={props.style as object}>{props.children}</View>
-    </RadioContext.Provider>
+    <RadioContext value={ctx}>
+      <View style={containerStyle()}>{props.children}</View>
+    </RadioContext>
   );
 };
 
@@ -70,36 +82,33 @@ export interface RadioItemProps {
 }
 
 export const RadioItem: Component<RadioItemProps> = (props) => {
-  const [local] = splitProps(props, [
-    "value",
-    "label",
-    "helperText",
-    "disabled",
-    "size",
-    "color",
-    "labelPosition",
-    "style",
-    "testID",
-  ]);
   const theme = useUITheme();
   const ctx = useContext(RadioContext);
 
-  const isDisabled = () => local.disabled || ctx?.disabled?.() || false;
-  const isChecked = () => ctx?.selected?.() === local.value;
+  const isDisabled = createMemo(() => props.disabled || ctx?.disabled?.() || false);
+  const isChecked = createMemo(() => ctx?.selected?.() === props.value);
 
-  const diameter = () => local.size ?? ctx?.size?.() ?? 20;
-  const inner = () => Math.max(8, Math.floor(diameter() * 0.55));
-  const accent = () => local.color ?? ctx?.color?.() ?? theme().colors.accent;
+  const diameter = createMemo(() => props.size ?? ctx?.size?.() ?? 20);
+  const inner = createMemo(() => Math.max(8, Math.floor(diameter() * 0.55)));
+  const accent = createMemo(() => props.color ?? ctx?.color?.() ?? theme().colors.accent);
 
-  const labelFirst = (local.labelPosition ?? "right") === "left";
+  const labelFirst = createMemo(() => (props.labelPosition ?? "right") === "left");
 
   const toggle = () => {
     if (isDisabled()) return;
-    ctx?.setSelected?.(local.value);
+    ctx?.setSelected?.(props.value);
   };
 
+  const containerStyle = createMemo(() => {
+    const userStyle = typeof props.style === "function" ? props.style() : props.style;
+    return {
+      gap: theme().spacing.xs,
+      ...((userStyle as object) ?? {}),
+    };
+  });
+
   return (
-    <View style={{ gap: theme().spacing.xs, ...(local.style as object) }}>
+    <View style={containerStyle()}>
       <Pressable
         onPress={toggle}
         disabled={isDisabled()}
@@ -108,9 +117,9 @@ export const RadioItem: Component<RadioItemProps> = (props) => {
           alignItems: "center",
           gap: theme().spacing.sm,
         }}
-        testID={local.testID}
+        testID={props.testID}
       >
-        {labelFirst && local.label ? (
+        {labelFirst() && props.label ? (
           <Text
             style={{
               color: isDisabled() ? theme().colors.textSubtle : theme().colors.text,
@@ -119,7 +128,7 @@ export const RadioItem: Component<RadioItemProps> = (props) => {
             }}
             numberOfLines={1}
           >
-            {local.label}
+            {props.label}
           </Text>
         ) : null}
 
@@ -146,7 +155,7 @@ export const RadioItem: Component<RadioItemProps> = (props) => {
           ) : null}
         </View>
 
-        {!labelFirst && local.label ? (
+        {!labelFirst() && props.label ? (
           <Text
             style={{
               color: isDisabled() ? theme().colors.textSubtle : theme().colors.text,
@@ -155,11 +164,11 @@ export const RadioItem: Component<RadioItemProps> = (props) => {
             }}
             numberOfLines={1}
           >
-            {local.label}
+            {props.label}
           </Text>
         ) : null}
       </Pressable>
-      {local.helperText ? (
+      {props.helperText ? (
         <Text
           style={{
             color: theme().colors.textMuted,
@@ -167,7 +176,7 @@ export const RadioItem: Component<RadioItemProps> = (props) => {
             marginLeft: 0,
           }}
         >
-          {local.helperText}
+          {props.helperText}
         </Text>
       ) : null}
     </View>

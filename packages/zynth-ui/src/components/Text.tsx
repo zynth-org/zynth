@@ -1,5 +1,5 @@
 import { Text as NativeText, type TextProps as NativeTextProps } from "@zynthjs/components";
-import { type ParentComponent, splitProps } from "solid-js";
+import { createMemo, omit, type ParentComponent } from "solid-js";
 import { useUITheme } from "../hooks";
 import type { Style, StyleProp } from "@zynthjs/core";
 
@@ -10,32 +10,32 @@ export interface TextProps extends NativeTextProps {
   size?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
 }
 
+const mergeDefinedStyle = (
+  base: StyleProp,
+  override: StyleProp | null | undefined,
+): StyleProp => {
+  if (!override) return base;
+  if (Array.isArray(override)) {
+    return override.reduce<StyleProp>((acc, item) => mergeDefinedStyle(acc, item), base);
+  }
+  const next: Style = { ...(base as Style) };
+  for (const [key, value] of Object.entries(override as object)) {
+    if (value !== undefined) {
+      (next as Record<string, unknown>)[key] = value;
+    }
+  }
+  return next;
+};
+
 export const Text: ParentComponent<TextProps> = (props) => {
-  const [local, others] = splitProps(props, ["style", "variant", "color", "weight", "size"]);
+  const rest = omit(props, "style", "variant", "color", "weight", "size");
   const theme = useUITheme();
 
-  const mergeDefinedStyle = (
-    base: StyleProp,
-    override: StyleProp | null | undefined,
-  ): StyleProp => {
-    if (!override) return base;
-    if (Array.isArray(override)) {
-      return override.reduce<StyleProp>((acc, item) => mergeDefinedStyle(acc, item), base);
-    }
-    const next: Style = { ...(base as Style) };
-    for (const [key, value] of Object.entries(override as object)) {
-      if (value !== undefined) {
-        (next as Record<string, unknown>)[key] = value;
-      }
-    }
-    return next;
-  };
-
-  const resolvedStyle = () => {
+  const resolvedStyle = createMemo<StyleProp>(() => {
     const t = theme();
     const overrideStyle =
-      typeof local.style === "function" ? local.style() : local.style;
-    
+      typeof props.style === "function" ? props.style() : props.style;
+
     // Default style base
     let base: StyleProp = {
       fontFamily: t.typography.fontFamily,
@@ -45,42 +45,42 @@ export const Text: ParentComponent<TextProps> = (props) => {
     };
 
     // Apply size overrides
-    if (local.size) {
-      base.fontSize = t.typography.fontSizes[local.size];
-      base.lineHeight = t.typography.lineHeights[local.size];
+    if (props.size) {
+      base.fontSize = t.typography.fontSizes[props.size];
+      base.lineHeight = t.typography.lineHeights[props.size];
     }
 
     // Apply weight overrides
-    if (local.weight) {
-      base.fontWeight = t.typography.fontWeights[local.weight];
+    if (props.weight) {
+      base.fontWeight = t.typography.fontWeights[props.weight];
     }
 
     // Apply variant presets
-    switch (local.variant) {
+    switch (props.variant) {
       case "heading":
         base.fontWeight = t.typography.fontWeights.bold;
-        base.fontSize = local.size ? base.fontSize : t.typography.fontSizes.xl;
-        base.lineHeight = local.size ? base.lineHeight : t.typography.lineHeights.xl;
+        base.fontSize = props.size ? base.fontSize : t.typography.fontSizes.xl;
+        base.lineHeight = props.size ? base.lineHeight : t.typography.lineHeights.xl;
         break;
       case "subheading":
         base.fontWeight = t.typography.fontWeights.semibold;
-        base.fontSize = local.size ? base.fontSize : t.typography.fontSizes.lg;
-        base.lineHeight = local.size ? base.lineHeight : t.typography.lineHeights.lg;
+        base.fontSize = props.size ? base.fontSize : t.typography.fontSizes.lg;
+        base.lineHeight = props.size ? base.lineHeight : t.typography.lineHeights.lg;
         break;
       case "caption":
-        base.fontSize = local.size ? base.fontSize : t.typography.fontSizes.xs;
-        base.lineHeight = local.size ? base.lineHeight : t.typography.lineHeights.xs;
-        base.color = local.color ? base.color : t.colors.textSubtle;
+        base.fontSize = props.size ? base.fontSize : t.typography.fontSizes.xs;
+        base.lineHeight = props.size ? base.lineHeight : t.typography.lineHeights.xs;
+        base.color = props.color ? base.color : t.colors.textSubtle;
         break;
       case "label":
         base.fontWeight = t.typography.fontWeights.medium;
-        base.fontSize = local.size ? base.fontSize : t.typography.fontSizes.sm;
+        base.fontSize = props.size ? base.fontSize : t.typography.fontSizes.sm;
         break;
     }
 
     // Apply color overrides
-    if (local.color) {
-      switch (local.color) {
+    if (props.color) {
+      switch (props.color) {
         case "muted": base.color = t.colors.textMuted; break;
         case "subtle": base.color = t.colors.textSubtle; break;
         case "accent": base.color = t.colors.accent; break;
@@ -95,7 +95,11 @@ export const Text: ParentComponent<TextProps> = (props) => {
 
     // Merge with user provided style
     return mergeDefinedStyle(base, overrideStyle);
-  };
+  });
 
-  return <NativeText style={resolvedStyle()} {...others} />;
+  return (
+    <NativeText style={resolvedStyle()} {...rest}>
+      {props.children}
+    </NativeText>
+  );
 };

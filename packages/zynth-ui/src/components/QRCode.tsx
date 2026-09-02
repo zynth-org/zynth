@@ -5,7 +5,7 @@ import {
   type ImageSource,
   type ViewProps,
 } from "@zynthjs/components";
-import { createEffect, createMemo, createSignal, For, type JSX, type ParentComponent } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, type Element, type ParentComponent } from "solid-js";
 import type { StyleProp } from "@zynthjs/core";
 import { generateQRCodeMatrix, type QRErrorCorrectionLevel } from "./qr";
 import { generateNativeQRCodeSync, isNativeAvailable } from "../native";
@@ -75,9 +75,9 @@ export interface QRCodeProps extends ViewProps {
   /** Called when an internal render error occurs. */
   onRenderError?: (message: string) => void;
   /** Optional loading placeholder (used when preparing first native frame). */
-  loadingFallback?: JSX.Element;
+  loadingFallback?: Element;
   /** Optional error placeholder (used when no renderable frame is available). */
-  errorFallback?: (message: string) => JSX.Element;
+  errorFallback?: (message: string) => Element;
   /**
    * Allow JS vector fallback even when native generation fails.
    * Keep disabled for production performance diagnostics on native targets.
@@ -180,13 +180,27 @@ const parseNativePayload = (payload: unknown): NativeImageSource | null => {
 export const QRCode: ParentComponent<QRCodeProps> = (props) => {
   const nativeBridgeAvailable = isNativeAvailable();
 
-  const [displayedNativeSource, setDisplayedNativeSource] = createSignal<NativeImageSource | null>(null);
-  const [displayedNativeKey, setDisplayedNativeKey] = createSignal("");
-  const [stagedNativeSource, setStagedNativeSource] = createSignal<NativeImageSource | null>(null);
-  const [stagedNativeKey, setStagedNativeKey] = createSignal("");
-  const [decodeFailedNativeKey, setDecodeFailedNativeKey] = createSignal("");
-  const [renderState, setRenderState] = createSignal<QRRenderState>("idle");
-  const [renderError, setRenderError] = createSignal<string | null>(null);
+  const [displayedNativeSource, setDisplayedNativeSource] = createSignal<NativeImageSource | null>(null, {
+    ownedWrite: true,
+  });
+  const [displayedNativeKey, setDisplayedNativeKey] = createSignal("", {
+    ownedWrite: true,
+  });
+  const [stagedNativeSource, setStagedNativeSource] = createSignal<NativeImageSource | null>(null, {
+    ownedWrite: true,
+  });
+  const [stagedNativeKey, setStagedNativeKey] = createSignal("", {
+    ownedWrite: true,
+  });
+  const [decodeFailedNativeKey, setDecodeFailedNativeKey] = createSignal("", {
+    ownedWrite: true,
+  });
+  const [renderState, setRenderState] = createSignal<QRRenderState>("idle", {
+    ownedWrite: true,
+  });
+  const [renderError, setRenderError] = createSignal<string | null>(null, {
+    ownedWrite: true,
+  });
 
   const qrMatrix = createMemo(() => {
     const quietZone = Math.max(0, Math.floor(props.quietZone ?? DEFAULT_QUIET_ZONE));
@@ -242,66 +256,70 @@ export const QRCode: ParentComponent<QRCodeProps> = (props) => {
     }
   });
 
-  createEffect(() => {
-    const result = nativeResolveResult();
-
-    if (result.mode === "unavailable") {
-      setStagedNativeSource(null);
-      setStagedNativeKey("");
-      setDecodeFailedNativeKey("");
-      setRenderError(null);
-      setRenderState("ready");
-      return;
-    }
-
-    if (result.mode === "error") {
-      setStagedNativeSource(null);
-      setStagedNativeKey("");
-      setRenderError(result.message);
-      setRenderState(displayedNativeSource() ? "ready" : "error");
-      return;
-    }
-
-    if (result.key === decodeFailedNativeKey()) {
-      setRenderError("Failed to decode native QR image.");
-      setRenderState(displayedNativeSource() ? "ready" : "error");
-      return;
-    }
-
-    if (result.key === displayedNativeKey() || result.key === stagedNativeKey()) {
-      if (displayedNativeSource()) {
+  createEffect(
+    () => ({
+      result: nativeResolveResult(),
+      keepPrevious: props.keepPreviousOnUpdate ?? true,
+      decodeFailedKey: decodeFailedNativeKey(),
+      currentDisplayedKey: displayedNativeKey(),
+      currentStagedKey: stagedNativeKey(),
+      hasDisplayedSource: Boolean(displayedNativeSource()),
+    }),
+    ({ result, decodeFailedKey, currentDisplayedKey, hasDisplayedSource }) => {
+      if (result.mode === "unavailable") {
+        setDisplayedNativeSource(null);
+        setDisplayedNativeKey("");
+        setStagedNativeSource(null);
+        setStagedNativeKey("");
+        setDecodeFailedNativeKey("");
         setRenderError(null);
         setRenderState("ready");
+        return;
       }
-      return;
-    }
 
-    const keepPrevious = props.keepPreviousOnUpdate ?? true;
-    if (!keepPrevious) {
-      setDisplayedNativeSource(null);
-      setDisplayedNativeKey("");
-    }
+      if (result.mode === "error") {
+        setStagedNativeSource(null);
+        setStagedNativeKey("");
+        setRenderError(result.message);
+        setRenderState(hasDisplayedSource ? "ready" : "error");
+        return;
+      }
 
-    setStagedNativeSource(result.source);
-    setStagedNativeKey(result.key);
-    setRenderError(null);
-    setRenderState("loading");
-  });
+      if (result.mode === "payload") {
+        setDisplayedNativeSource(result.source);
+        setDisplayedNativeKey(result.key);
+        setStagedNativeSource(null);
+        setStagedNativeKey("");
+        setDecodeFailedNativeKey("");
+        setRenderError(null);
+        setRenderState("ready");
+        return;
+      }
+    },
+  );
 
-  createEffect(() => {
-    props.onLoadingChange?.(renderState() === "loading");
-  });
+  createEffect(
+    () => renderState() === "loading",
+    (loading) => {
+      props.onLoadingChange?.(loading);
+    },
+  );
 
-  createEffect(() => {
-    props.onRenderStateChange?.(renderState());
-  });
+  createEffect(
+    () => renderState(),
+    (state) => {
+      props.onRenderStateChange?.(state);
+    },
+  );
 
-  createEffect(() => {
-    const message = renderError();
-    if (message) {
-      props.onRenderError?.(message);
-    }
-  });
+  createEffect(
+    () => renderError(),
+    (message) => {
+      if (message) {
+        props.onRenderError?.(message);
+      }
+    },
+  );
 
   const promoteStagedNativeSource = () => {
     const staged = stagedNativeSource();
@@ -406,9 +424,11 @@ export const QRCode: ParentComponent<QRCodeProps> = (props) => {
     return renderState() === "error" && !displayedNativeSource() && renderError() != null;
   });
 
+  const hasLogo = createMemo(() => Boolean(props.logoSource) && logoSize() > 0);
+
   return (
     <View
-      style={wrapperStyle}
+      style={wrapperStyle()}
       onPress={props.onPress}
       onLayout={props.onLayout}
       accessibilityLabel={props.accessibilityLabel}
@@ -503,7 +523,7 @@ export const QRCode: ParentComponent<QRCodeProps> = (props) => {
         </View>
       ) : null}
 
-      {props.logoSource && logoSize() > 0 ? (
+      <Show when={hasLogo()}>
         <View
           style={{
             position: "absolute",
@@ -520,7 +540,7 @@ export const QRCode: ParentComponent<QRCodeProps> = (props) => {
           pointerEvents="none"
         >
           <Image
-            source={props.logoSource}
+            source={props.logoSource!}
             style={{
               width: logoSize(),
               height: logoSize(),
@@ -528,7 +548,7 @@ export const QRCode: ParentComponent<QRCodeProps> = (props) => {
             resizeMode="contain"
           />
         </View>
-      ) : null}
+      </Show>
 
       {props.children}
     </View>

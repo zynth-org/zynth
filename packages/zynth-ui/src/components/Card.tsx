@@ -1,5 +1,5 @@
 import { View, type ViewProps } from "@zynthjs/components";
-import { type ParentComponent, splitProps } from "solid-js";
+import { createMemo, omit, type ParentComponent } from "solid-js";
 import { useUITheme } from "../hooks";
 import type { StyleProp } from "@zynthjs/core";
 
@@ -9,19 +9,19 @@ export interface CardProps extends ViewProps {
 }
 
 export const Card: ParentComponent<CardProps> = (props) => {
-  const [local, others] = splitProps(props, ["style", "variant", "padding"]);
+  const rest = omit(props, "style", "variant", "padding");
   const theme = useUITheme();
 
-  const resolvedStyle = () => {
+  const resolvedStyle = createMemo<StyleProp>(() => {
     const t = theme();
-    
-    let base: StyleProp = {
+
+    const base: Record<string, unknown> = {
       backgroundColor: t.colors.card,
       borderRadius: t.radii.lg,
     };
 
     // Padding
-    switch (local.padding ?? "md") {
+    switch (props.padding ?? "md") {
       case "sm": base.padding = t.spacing.sm; break;
       case "md": base.padding = t.spacing.md; break;
       case "lg": base.padding = t.spacing.lg; break;
@@ -29,7 +29,7 @@ export const Card: ParentComponent<CardProps> = (props) => {
     }
 
     // Variant
-    const variant = local.variant ?? "elevated";
+    const variant = props.variant ?? "elevated";
     if (variant === "elevated") {
       base.shadowColor = t.colors.shadow;
       // iOS
@@ -45,11 +45,12 @@ export const Card: ParentComponent<CardProps> = (props) => {
       base.backgroundColor = t.colors.surfaceAlt;
     }
 
-    if (local.style) {
-      return { ...base, ...(local.style as object) };
+    const userStyle = typeof props.style === "function" ? props.style() : props.style;
+    if (userStyle) {
+      return { ...base, ...(userStyle as object) };
     }
-    return base;
-  };
+    return base as StyleProp;
+  });
 
-  return <View style={resolvedStyle()} {...others} />;
+  return <View style={resolvedStyle()} {...rest} />;
 };

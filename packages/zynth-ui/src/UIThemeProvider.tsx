@@ -3,10 +3,10 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  onCleanup,
+  runWithOwner,
   type Accessor,
   type Component,
-  type JSX,
+  type Element,
 } from "solid-js";
 import {
   createUITheme,
@@ -28,7 +28,7 @@ const UIThemeContext = createContext<Accessor<UITheme>>(() => uiThemeLight);
 export { UIThemeContext };
 
 export interface UIThemeProviderProps {
-  children: JSX.Element;
+  children?: Element;
   theme?: UIThemeOverride;
   colorScheme?: ThemeMode;
   followSystem?: boolean;
@@ -44,7 +44,8 @@ const resolveExplicitScheme = (mode: ThemeMode | undefined): ColorScheme => {
 
 export const UIThemeProvider: Component<UIThemeProviderProps> = (props) => {
   const [systemScheme, setSystemScheme] = createSignal<ColorScheme>(
-    getSystemColorScheme()
+    getSystemColorScheme(),
+    { ownedWrite: true }
   );
 
   const shouldFollowSystem = createMemo(() => {
@@ -54,42 +55,41 @@ export const UIThemeProvider: Component<UIThemeProviderProps> = (props) => {
     return (props.colorScheme ?? "system") === "system";
   });
 
-  createEffect(() => {
-    if (!shouldFollowSystem()) return;
-    setSystemScheme(getSystemColorScheme());
-    const unsubscribe = subscribeToSystemColorScheme((scheme) => {
-      setSystemScheme(scheme);
-    });
-    const retryIds: Array<ReturnType<typeof setTimeout>> = [];
-    const schedule = (globalThis as any)?.setTimeout as
-      | ((handler: () => void, timeout: number) => ReturnType<typeof setTimeout>)
-      | undefined;
-    const clear = (globalThis as any)?.clearTimeout as
-      | ((id: ReturnType<typeof setTimeout>) => void)
-      | undefined;
+  createEffect(
+    () => shouldFollowSystem(),
+    (follow) => {
+      if (!follow) return;
+      setSystemScheme(getSystemColorScheme());
+      const unsubscribe = subscribeToSystemColorScheme((scheme) => {
+        runWithOwner(null, () => setSystemScheme(scheme));
+      });
+      const retryIds: Array<ReturnType<typeof setTimeout>> = [];
+      const schedule = (globalThis as unknown as { setTimeout?: (handler: () => void, timeout: number) => ReturnType<typeof setTimeout> }).setTimeout;
+      const clear = (globalThis as unknown as { clearTimeout?: (id: ReturnType<typeof setTimeout>) => void }).clearTimeout;
 
-    if (typeof schedule === "function") {
-      const retryDelays = [0, 32, 128, 512, 1500];
-      for (const delay of retryDelays) {
-        const retryId = schedule(() => {
-          const next = getSystemColorScheme();
-          if (next !== systemScheme()) {
-            setSystemScheme(next);
-          }
-        }, delay);
-        retryIds.push(retryId);
-      }
-    }
-
-    onCleanup(() => {
-      if (typeof clear === "function") {
-        for (const retryId of retryIds) {
-          clear(retryId);
+      if (typeof schedule === "function") {
+        const retryDelays = [0, 32, 128, 512, 1500];
+        for (const delay of retryDelays) {
+          const retryId = schedule(() => {
+            const next = getSystemColorScheme();
+            if (next !== systemScheme()) {
+              runWithOwner(null, () => setSystemScheme(next));
+            }
+          }, delay);
+          retryIds.push(retryId);
         }
       }
-      unsubscribe();
-    });
-  });
+
+      return () => {
+        if (typeof clear === "function") {
+          for (const retryId of retryIds) {
+            clear(retryId);
+          }
+        }
+        unsubscribe();
+      };
+    }
+  );
 
   const scheme = createMemo<ColorScheme>(() => {
     if (shouldFollowSystem()) {
@@ -98,32 +98,34 @@ export const UIThemeProvider: Component<UIThemeProviderProps> = (props) => {
     return resolveExplicitScheme(props.colorScheme);
   });
 
-  createEffect(() => {
-    if (typeof document === "undefined") return;
+  createEffect(
+    () => ({ currentScheme: scheme(), webTheme: props.webTheme }),
+    ({ currentScheme, webTheme }) => {
+      if (typeof document === "undefined") return;
 
-    const root = document.body;
-    const currentScheme = scheme();
+      const root = document.body;
 
-    // Toggle Scheme class
-    if (currentScheme === "dark") {
-      root.classList.add("zynth-scheme-dark");
-      root.classList.remove("zynth-scheme-light");
-    } else {
-      root.classList.add("zynth-scheme-light");
-      root.classList.remove("zynth-scheme-dark");
-    }
+      // Toggle Scheme class
+      if (currentScheme === "dark") {
+        root.classList.add("zynth-scheme-dark");
+        root.classList.remove("zynth-scheme-light");
+      } else {
+        root.classList.add("zynth-scheme-light");
+        root.classList.remove("zynth-scheme-dark");
+      }
 
-    // Toggle Web Theme class
-    if (props.webTheme) {
-      if (props.webTheme === "ios") {
-        root.classList.add("zynth-theme-ios");
-        root.classList.remove("zynth-theme-android");
-      } else if (props.webTheme === "android") {
-        root.classList.add("zynth-theme-android");
-        root.classList.remove("zynth-theme-ios");
+      // Toggle Web Theme class
+      if (webTheme) {
+        if (webTheme === "ios") {
+          root.classList.add("zynth-theme-ios");
+          root.classList.remove("zynth-theme-android");
+        } else if (webTheme === "android") {
+          root.classList.add("zynth-theme-android");
+          root.classList.remove("zynth-theme-ios");
+        }
       }
     }
-  });
+  );
 
   const theme = createMemo<UITheme>(() => {
     if (props.webTheme) {
@@ -133,8 +135,8 @@ export const UIThemeProvider: Component<UIThemeProviderProps> = (props) => {
   });
 
   return (
-    <UIThemeContext.Provider value={theme}>
+    <UIThemeContext value={theme}>
       {props.children}
-    </UIThemeContext.Provider>
+    </UIThemeContext>
   );
 };

@@ -343,6 +343,47 @@ createEffect(
 
 **When pattern 2 is acceptable**: The compute function already tracks the signals that drive the effect's re-runs. The helper function reads the same signals (plus additional ones), but since the compute function already triggers re-runs, the untracked reads are just imperative applications. The helper won't re-run when the untracked signals change, but that's the intended behavior.
 
+**Fix pattern 3 — Initializing internal signals from props** (for controlled/uncontrolled hybrid components like Checkbox, Slider, Radio):
+
+```ts
+// ❌ BAD — props.value read at root component body triggers STRICT_READ_UNTRACKED
+export const Checkbox = (props) => {
+  const [internal, setInternal] = createSignal(props.value ?? false, {
+    ownedWrite: true,
+  });
+
+  const toggle = () => {
+    if (props.value === undefined) setInternal(!internal()); // WARNING on read
+  };
+};
+
+// ✅ GOOD — Wrap initial snapshot read and untracked callbacks in untrack()
+export const Checkbox = (props) => {
+  const [internal, setInternal] = createSignal(
+    untrack(() => props.value ?? false),
+    { ownedWrite: true }
+  );
+
+  createEffect(
+    () => props.value,
+    (val) => {
+      if (val !== undefined) setInternal(val);
+    }
+  );
+
+  const isChecked = createMemo(() =>
+    props.value !== undefined ? props.value : internal()
+  );
+
+  const toggle = () => {
+    if (props.disabled) return;
+    const next = !isChecked();
+    if (untrack(() => props.value) === undefined) setInternal(next);
+    props.onChange?.(next);
+  };
+};
+```
+
 ---
 
 ### 3.4. `[MISSING_EFFECT_FN]`
@@ -490,6 +531,46 @@ createEffect(
 ```
 
 **When to use which**: Use Approach A when the helper reads fewer than ~5 signals. Use Approach B when the helper reads many signals and the compute function already tracks the driving signals. The compute function's return value drives re-runs; the helper just applies the values.
+
+---
+
+### 4.5. Render Props vs. SolidJS 2.0 JSX Child Getters (Duplicate / Blinking Nodes)
+
+**Symptom**: Interactive components (e.g. `<Pressable>`) blink or duplicate their children elements whenever state changes (e.g. pressed, hovered).
+
+**Cause**: In SolidJS 2.0, standard JSX component children:
+```tsx
+<Pressable>
+  <View><Text>Accent Action</Text></View>
+</Pressable>
+```
+are compiled by the JSX transform into **zero-argument getter functions** (`() => createComponent(View, ...)`).
+
+If a primitive component attempts to support render-prop functions (`children={(state) => <View ... />}`) by checking:
+```ts
+// ❌ BAD: Returns true for ALL JSX component children!
+if (typeof local.children === "function") {
+  return local.children(currentState()); // 💥 Re-executes createComponent(View) on every press!
+}
+```
+Evaluating `local.children(currentState())` on state changes re-runs the child component factory, creating brand new HostNodes with new IDs and appending duplicate native views.
+
+**Fix**: Differentiate render props from compiler getters using `fn.length > 0`:
+
+```ts
+// ✅ GOOD: Only pass state if children explicitly expects arguments
+const isRenderProp =
+  typeof local.children === "function" && local.children.length > 0;
+
+const resolvedChildren = resolveChildren(() => {
+  if (isRenderProp) {
+    return (local.children as (state: PressableState) => SolidElement)(
+      currentState()
+    );
+  }
+  return local.children as SolidElement;
+});
+```
 
 ---
 

@@ -1,4 +1,4 @@
-import { createEffect, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, untrack, Show, type Component } from "solid-js";
 import { Slider as PrimitiveSlider, View } from "@zynthjs/components";
 import type { Style } from "@zynthjs/core";
 import { useUITheme } from "../hooks";
@@ -29,27 +29,30 @@ export interface SliderProps {
   testID?: string;
 }
 
-export const Slider = (props: SliderProps) => {
+export const Slider: Component<SliderProps> = (props) => {
   const theme = useUITheme();
 
   const [internal, setInternal] = createSignal(
-    props.value ??
-      props.defaultValue ??
-      props.min ??
-      0,
+    untrack(() => props.value ?? props.defaultValue ?? props.min ?? 0),
+    { ownedWrite: true },
   );
 
-  createEffect(() => {
-    if (props.value !== undefined) {
-      setInternal(props.value);
-    }
-  });
+  createEffect(
+    () => props.value,
+    (val) => {
+      if (val !== undefined) {
+        setInternal(val);
+      }
+    },
+  );
 
-  const current = () =>
-    props.value !== undefined ? props.value : internal();
+  const current = createMemo(() =>
+    props.value !== undefined ? props.value : internal()
+  );
 
-  const precision = () =>
-    typeof props.precision === "number" ? props.precision : 5;
+  const precision = createMemo(() =>
+    typeof props.precision === "number" ? props.precision : 5
+  );
 
   const formatValue = (value: number) => {
     if (props.formatValue) return props.formatValue(value);
@@ -58,18 +61,30 @@ export const Slider = (props: SliderProps) => {
   };
 
   const handleChange = (value: number) => {
-    if (props.value === undefined) setInternal(value);
+    if (untrack(() => props.value) === undefined) setInternal(value);
     props.onChange?.(value);
   };
 
-  const trackActive = () =>
-    props.minimumTrackColor ?? theme().colors.accent;
-  const trackInactive = () =>
-    props.maximumTrackColor ?? theme().colors.borderMuted;
-  const thumbColor = () => props.thumbColor ?? theme().colors.accent;
+  const trackActive = createMemo(() =>
+    props.minimumTrackColor ?? theme().colors.accent
+  );
+  const trackInactive = createMemo(() =>
+    props.maximumTrackColor ?? theme().colors.borderMuted
+  );
+  const thumbColor = createMemo(() =>
+    props.thumbColor ?? theme().colors.accent
+  );
+
+  const containerStyle = createMemo(() => {
+    const userStyle = typeof props.style === "function" ? props.style() : props.style;
+    return {
+      gap: theme().spacing.xs,
+      ...((userStyle as object) ?? {}),
+    };
+  });
 
   return (
-    <View style={{ gap: theme().spacing.xs, ...(props.style as object) }}>
+    <View style={containerStyle()}>
       <Show when={props.label || props.showValue !== false}>
         <View
           style={{

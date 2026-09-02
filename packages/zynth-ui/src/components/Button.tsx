@@ -1,5 +1,5 @@
 import { Button as NativeButton, type ButtonProps as NativeButtonProps } from "@zynthjs/components";
-import { type ParentComponent, splitProps } from "solid-js";
+import { createMemo, omit, type ParentComponent } from "solid-js";
 import { useUITheme } from "../hooks";
 
 export interface ButtonProps extends NativeButtonProps {
@@ -11,29 +11,29 @@ export interface ButtonProps extends NativeButtonProps {
 }
 
 export const Button: ParentComponent<ButtonProps> = (props) => {
-  const [local, others] = splitProps(props, ["baseColor", "tone", "style"]);
+  const rest = omit(props, "baseColor", "tone", "style");
   const theme = useUITheme();
 
-  const resolvedBaseColor = () => {
-    if (local.baseColor) return local.baseColor;
-    
+  const resolvedBaseColor = createMemo(() => {
+    if (props.baseColor) return props.baseColor;
+
     const t = theme();
-    switch (local.tone) {
+    switch (props.tone) {
       case "primary": return t.colors.accent;
       case "success": return t.colors.success;
       case "warning": return t.colors.warning;
       case "danger": return t.colors.danger;
-      case "neutral": return t.colors.textSubtle; // or surfaceAlt
-      default: return undefined; // Let native component decide default
+      case "neutral": return t.colors.textSubtle;
+      default: return undefined;
     }
-  };
+  });
 
   return (
-    <NativeButton 
-      tone={local.tone}
+    <NativeButton
+      tone={props.tone}
       baseColor={resolvedBaseColor()}
-      style={local.style}
-      {...others} 
+      style={props.style}
+      {...rest}
     />
   );
 };

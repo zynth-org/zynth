@@ -1,4 +1,4 @@
-import {  createSignal, onCleanup, type Component } from "solid-js";
+import {  createSignal, onCleanup, untrack, type Component } from "solid-js";
 import type { HostNode, Style } from "@zynthjs/core";
 import { effect,  setProperty } from "@zynthjs/core";
 
@@ -57,10 +57,12 @@ export const Slider: Component<SliderProps> = (props) => {
   const precision = () =>
     typeof local.precision === "number" ? local.precision : 5;
 
-  let lastValue =
-    local.value ??
-    local.defaultValue ??
-    roundToPrecision(local.minimumValue ?? 0, precision());
+  let lastValue = untrack(
+    () =>
+      local.value ??
+      local.defaultValue ??
+      roundToPrecision(local.minimumValue ?? 0, precision()),
+  );
 
   const wrapHandler =
     (handler?: (value: number) => void) => (value: number | SliderEvent) => {

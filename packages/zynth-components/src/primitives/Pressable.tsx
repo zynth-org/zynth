@@ -212,7 +212,7 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
   const local = props;
 
   const controller = createPressableRef({
-    disabled: local.disabled,
+    disabled: untrack(() => local.disabled),
   }) as unknown as InternalPressableController;
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null, { ownedWrite: true });
@@ -335,12 +335,16 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     return value as Style | undefined;
   });
 
+  const isRenderProp =
+    typeof local.children === "function" && local.children.length > 0;
+
   const resolvedChildren = resolveChildren(() => {
-    const children = local.children;
-    if (typeof children === "function") {
-      return children(currentState());
+    if (isRenderProp) {
+      return (local.children as (state: PressableState) => SolidElement)(
+        currentState()
+      );
     }
-    return children;
+    return local.children as SolidElement;
   });
 
   let lastPressed: boolean | undefined;

@@ -36,11 +36,11 @@ type PressableCommand =
 export function createPressableRef(opts?: {
   disabled?: boolean;
 }): PressableRef {
-  const [pressed, setPressed] = createSignal(false);
-  const [hovered, setHovered] = createSignal(false);
-  const [focused, setFocused] = createSignal(false);
-  const [disabled, setDisabledState] = createSignal(opts?.disabled ?? false);
-  const [longPressActive, setLongPressActive] = createSignal(false);
+  const [pressed, setPressed] = createSignal(false, { ownedWrite: true });
+  const [hovered, setHovered] = createSignal(false, { ownedWrite: true });
+  const [focused, setFocused] = createSignal(false, { ownedWrite: true });
+  const [disabled, setDisabledState] = createSignal(opts?.disabled ?? false, { ownedWrite: true });
+  const [longPressActive, setLongPressActive] = createSignal(false, { ownedWrite: true });
 
   let host: HostNode | null = null;
   let commandSeq = 0;

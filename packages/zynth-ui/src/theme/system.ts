@@ -1,4 +1,5 @@
 import { sharedNativeEventEmitter } from "@zynthjs/core";
+import { runWithOwner } from "solid-js";
 import type { ColorScheme } from "./types";
 
 type AppearanceSnapshot = {
@@ -22,7 +23,7 @@ const MODULE_KEY = "ZynthAppearance";
 const EVENT_NAME = "ZynthAppearance:change";
 
 declare global {
-  var NativeConstants: Record<string, any>;
+  var NativeConstants: Record<string, unknown> | undefined;
   var __ZYNTH_APPEARANCE__: NativeAppearanceModule | undefined;
 }
 
@@ -64,7 +65,6 @@ function readNativeConstants(): ColorScheme | null {
   const constants = globalObj.NativeConstants as
     | Record<string, unknown>
     | undefined;
-  // console.log("[UITheme] NativeConstants", constants ? Object.keys(constants) : null);
   if (!constants) return null;
 
   const rawSnapshot =
@@ -81,7 +81,6 @@ function readFromBridge(): ColorScheme | null {
   const bridge = (globalObj as { __modules?: unknown }).__modules as
     | NativeBridge
     | undefined;
-  // console.log("[UITheme] __modules", bridge ? Object.keys(bridge as object) : null);
   if (!bridge?.callSync) return null;
   try {
     const result = bridge.callSync(MODULE_KEY, "getCurrent", null);
@@ -116,9 +115,7 @@ function readFromNativeModule(): ColorScheme | null {
 
 function readFromMatchMedia(): ColorScheme | null {
   if (typeof globalThis === "undefined") return null;
-  const matchMedia = (globalThis as any).matchMedia as
-    | ((query: string) => MediaQueryList)
-    | undefined;
+  const matchMedia = (globalThis as unknown as { matchMedia?: (query: string) => MediaQueryList }).matchMedia;
   if (typeof matchMedia !== "function") return null;
   const query = matchMedia("(prefers-color-scheme: dark)");
   return query.matches ? "dark" : "light";
@@ -136,14 +133,6 @@ export function getSystemColorScheme(): ColorScheme {
     fromMatchMedia ??
     "light";
 
-  // console.log("[UITheme] system scheme", {
-  //   resolved,
-  //   fromNativeModule,
-  //   fromConstants,
-  //   fromBridge,
-  //   fromMatchMedia,
-  // });
-
   return resolved;
 }
 
@@ -152,45 +141,46 @@ export function subscribeToSystemColorScheme(
 ): () => void {
   const unsubscribers: Array<() => void> = [];
 
+  const safeNotify = (scheme: ColorScheme) => {
+    runWithOwner(null, () => listener(scheme));
+  };
+
   const globalObj = getGlobalObject() as {
     __ZYNTH_APPEARANCE__?: NativeAppearanceModule;
   };
   const module = globalObj.__ZYNTH_APPEARANCE__;
   if (module?.addColorSchemeListener) {
-    unsubscribers.push(module.addColorSchemeListener(listener));
+    unsubscribers.push(module.addColorSchemeListener((scheme) => safeNotify(scheme)));
   }
 
   const subscription = sharedNativeEventEmitter.addListener(
     EVENT_NAME,
     (payload) => {
-      // console.log("[UITheme] native event", EVENT_NAME, payload);
       if (!payload) return;
       if (typeof payload === "string") {
         const scheme = normalizeScheme(payload);
-        if (scheme) listener(scheme);
+        if (scheme) safeNotify(scheme);
         return;
       }
       if (typeof payload === "object") {
         const snapshot = payload as AppearanceSnapshot;
         const scheme = normalizeScheme(snapshot.colorScheme ?? snapshot.scheme);
-        if (scheme) listener(scheme);
+        if (scheme) safeNotify(scheme);
       }
     },
   );
   unsubscribers.push(() => subscription.remove());
 
-  const globalMatchMedia = (getGlobalObject() as any).matchMedia as
-    | ((query: string) => MediaQueryList)
-    | undefined;
+  const globalMatchMedia = (getGlobalObject() as unknown as { matchMedia?: (query: string) => MediaQueryList }).matchMedia;
   if (typeof globalMatchMedia === "function") {
     const query = globalMatchMedia("(prefers-color-scheme: dark)");
-    const handler = () => listener(query.matches ? "dark" : "light");
+    const handler = () => safeNotify(query.matches ? "dark" : "light");
     if (typeof query.addEventListener === "function") {
       query.addEventListener("change", handler);
       unsubscribers.push(() => query.removeEventListener("change", handler));
-    } else if (typeof query.addListener === "function") {
-      query.addListener(handler);
-      unsubscribers.push(() => query.removeListener(handler));
+    } else if (typeof (query as unknown as { addListener?: (h: () => void) => void }).addListener === "function") {
+      (query as unknown as { addListener: (h: () => void) => void }).addListener(handler);
+      unsubscribers.push(() => (query as unknown as { removeListener: (h: () => void) => void }).removeListener(handler));
     }
   }
 

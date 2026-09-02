@@ -3,6 +3,7 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  untrack,
   type ParentComponent,
   type Element as SolidElement,
 } from "solid-js";
@@ -83,7 +84,8 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
 
   let host: HostNode | null = null;
   const [uncontrolledOpen, setUncontrolledOpen] = createSignal(
-    local.defaultOpen ?? false
+    untrack(() => local.defaultOpen ?? false),
+    { ownedWrite: true },
   );
   const isControlled = () => local.open !== undefined;
   const resolvedOpen = () =>

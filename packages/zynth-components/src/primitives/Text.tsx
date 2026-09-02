@@ -44,6 +44,17 @@ export const Text: ParentComponent<TextProps> = (props) => {
     ownedWrite: true,
   });
 
+  const directTextContent = createMemo<string | undefined>(
+    () => {
+      const rawText =
+        typeof props.text === "function" ? props.text() : props.text;
+      if (rawText != null) return String(rawText);
+      const result = extractTextContent(props.children);
+      return result;
+    },
+    { lazy: true }
+  );
+
   const applyTextProps = (node: HostNode) => {
     const st = resolvedStyle();
     if (st != null) setProperty(node, "style", st);
@@ -66,17 +77,6 @@ export const Text: ParentComponent<TextProps> = (props) => {
   // Lazily attaches a native style mapper when `props.style` is an animated
   // style accessor from `createAnimatedStyle`. Zero cost for plain styles.
   useAnimatedStyleMapper(() => props.style, hostNode);
-
-  const directTextContent = createMemo<string | undefined>(
-    () => {
-      const rawText =
-        typeof props.text === "function" ? props.text() : props.text;
-      if (rawText != null) return String(rawText);
-      const result = extractTextContent(props.children);
-      return result;
-    },
-    { lazy: true }
-  );
 
   // ─── Imperative property updates for host node ───────────────────────────
   createEffect(
