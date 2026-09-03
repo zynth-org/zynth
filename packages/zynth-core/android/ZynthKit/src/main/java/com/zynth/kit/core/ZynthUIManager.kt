@@ -598,6 +598,12 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       return
     }
 
+    if (node?.type == "text" && isStylePropForDescriptor(name)) {
+      maybeNotifyStyle(descriptor, node, name, value.toString())
+      traceOp("setProp", node?.type, startNs)
+      return
+    }
+
     if (applyStyleProp(id, view, name, value)) {
       maybeNotifyStyle(descriptor, node, name, value.toString())
       traceOp("setProp", node?.type, startNs)
@@ -619,6 +625,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (node != null && descriptor?.applyProperty?.invoke(node, name, value) == true) {
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node.type, startNs)
+      return
+    }
+    if (node?.type == "text" && isStylePropForDescriptor(name)) {
+      maybeNotifyStyle(descriptor, node, name, value)
+      traceOp("setProp", node?.type, startNs)
       return
     }
     if (applyStyleProp(id, view, name, value)) {
@@ -1421,10 +1432,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         val result = handler(input)
         val mw = result.first
         val mh = result.second
-        
-        val modeStrW = when(widthMode) { 1 -> "EXACTLY"; 2 -> "AT_MOST"; else -> "UNDEFINED" }
-        val modeStrH = when(heightMode) { 1 -> "EXACTLY"; 2 -> "AT_MOST"; else -> "UNDEFINED" }
-
 
         val mwBits = mw.toRawBits().toLong()
         val mhBits = mh.toRawBits().toLong()
@@ -1774,7 +1781,22 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
               
               val rect = layoutFrames[nodeId] ?: Rect().also { layoutFrames[nodeId] = it }
               val forceUpdate = view.isLayoutRequested || rect.isEmpty()
-              
+
+              val nodeState = nodeStates[nodeId]
+              val nodeType = nodeState?.type ?: "unknown"
+              val isText = nodeType == "text"
+
+              // Apply pending text BEFORE the bounds-change check so it commits
+              // atomically with the new layout frame. This also handles the case
+              // where text changes but measured bounds stay identical.
+              if (isText && nodeState != null) {
+                val pending = nodeState.pendingText
+                if (pending != null) {
+                  (view as? TextView)?.text = pending
+                  nodeState.pendingText = null
+                }
+              }
+
               if (forceUpdate || rect.left != rLeft || rect.top != rTop || rect.right != rRight || rect.bottom != rBottom) {
                 rect.set(rLeft, rTop, rRight, rBottom)
                 if (view is ZynthLayoutView) {
@@ -1783,18 +1805,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
                 val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(frameWidth, View.MeasureSpec.EXACTLY)
                 val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(frameHeight, View.MeasureSpec.EXACTLY)
-                
-                val nodeState = nodeStates[nodeId]
-                val nodeType = nodeState?.type ?: "unknown"
-                val isText = nodeType == "text"
-                
-                if (isText && nodeState != null) {
-                  val pending = nodeState.pendingText
-                  if (pending != null) {
-                    (view as? TextView)?.text = pending
-                    nodeState.pendingText = null
-                  }
-                }
                 
                 val needsMeasure =
                   forceUpdate ||
@@ -1874,7 +1884,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           )
         )
       }
-      flushPendingText()
+      // Only flush pending text in post-layout transactions (source="async").
+      // The sync transaction runs BEFORE Yoga layout, so flushing there would
+      // prematurely apply new text with old layout bounds, causing a 1-frame
+      // flicker where text wraps or clips. The post-layout transaction applies
+      // text atomically with the correct bounds via the frame op handler.
+      if (source != "sync") {
+        flushPendingText()
+      }
       endBatch("applyMountTransaction")
       dispatchLayoutEvents()
     }

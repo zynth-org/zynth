@@ -224,7 +224,7 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
     }
   }
 
-  if (view is TextView) {
+  if (view is TextView && nodeStates[id]?.type != "text") {
     val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
     when (name) {
       "lineHeight" -> {
@@ -550,7 +550,7 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
     }
   }
 
-  if (view is TextView) {
+  if (view is TextView && nodeStates[id]?.type != "text") {
     val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
     when (name) {
       "lineHeight" -> {

@@ -19,22 +19,25 @@ internal data class ZynthTextStyleState(
   var hyphenation: String? = null,
 ) {
   fun applyTo(textView: TextView) {
-    if (rawText.isEmpty() && !textView.text.isNullOrEmpty()) {
-      rawText = textView.text.toString()
-    }
-    val transformed = applyTextTransform(rawText)
-    val spannable = SpannableString(transformed)
+    val needsSpannable = textDecorationLine != null || baselineShift != null || textTransform != null
+    if (needsSpannable) {
+      if (rawText.isEmpty() && !textView.text.isNullOrEmpty()) {
+        rawText = textView.text.toString()
+      }
+      val transformed = applyTextTransform(rawText)
+      val spannable = SpannableString(transformed)
 
-    if (textDecorationLine?.contains("underline") == true) {
-      spannable.setSpan(UnderlineSpan(), 0, spannable.length, 0)
+      if (textDecorationLine?.contains("underline") == true) {
+        spannable.setSpan(UnderlineSpan(), 0, spannable.length, 0)
+      }
+      if (textDecorationLine?.contains("line-through") == true) {
+        spannable.setSpan(StrikethroughSpan(), 0, spannable.length, 0)
+      }
+      if (baselineShift != null) {
+        spannable.setSpan(BaselineShiftSpan(baselineShift ?: 0f), 0, spannable.length, 0)
+      }
+      textView.text = spannable
     }
-    if (textDecorationLine?.contains("line-through") == true) {
-      spannable.setSpan(StrikethroughSpan(), 0, spannable.length, 0)
-    }
-    if (baselineShift != null) {
-      spannable.setSpan(BaselineShiftSpan(baselineShift ?: 0f), 0, spannable.length, 0)
-    }
-    textView.text = spannable
 
     if (letterSpacing != null) {
       val size = textView.textSize
